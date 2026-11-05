@@ -1,0 +1,28 @@
+!!! oculus/appearance/style.mat
+!!! Style rules — how windows are painted.
+!!!
+!!! Controls the visual rendering parameters: shadows,
+!!! corner radii, and elevation levels for the neumorphic
+!!! appearance.
+
+book oculus.appearance.style
+
+read everything from ny.lang.core
+
+!!! Elevation levels for window depth.
+
+public elevation begin choice
+    when Flat
+    when Low
+    when Medium
+    when High
+end choice
+
+!!! Style configuration for rendering windows.
+
+public style-rules begin record
+    field corner-radius as override long
+    field elevation as elevation
+    field has-shadow as boolean
+    field border-width as override long
+end record

@@ -1,0 +1,12 @@
+[package]
+name = "anomalous-abi"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Experimental versioned wire types for the Anomalous semantic control plane"
+publish = false
+
+[lib]
+path = "src/lib.rs"

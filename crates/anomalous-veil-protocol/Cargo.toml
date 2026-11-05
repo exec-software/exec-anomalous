@@ -1,0 +1,16 @@
+[package]
+name = "anomalous-veil-protocol"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+default = []
+linux-policy = []
+linux-tls-policy = ["linux-policy"]
+linux-loader-policy = []
+read-only-files = []
+source-read = []
+source-mapping = ["source-read"]

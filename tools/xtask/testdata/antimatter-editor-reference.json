@@ -1,0 +1,76 @@
+{
+  "profile": "antimatter_native_editor_v1",
+  "focus_calls": 1,
+  "frames": [
+    {
+      "sequence": 1,
+      "document_revision": 1,
+      "text": "const before = 1;",
+      "anchor": 0,
+      "head": 0,
+      "dirty": false,
+      "theme": 1,
+      "undo_depth": 0
+    },
+    {
+      "sequence": 2,
+      "document_revision": 1,
+      "text": "const before = 1;",
+      "anchor": 6,
+      "head": 12,
+      "dirty": false,
+      "theme": 1,
+      "undo_depth": 0
+    },
+    {
+      "sequence": 3,
+      "document_revision": 2,
+      "text": "const after = 1;",
+      "anchor": 11,
+      "head": 11,
+      "dirty": true,
+      "theme": 1,
+      "undo_depth": 1
+    },
+    {
+      "sequence": 4,
+      "document_revision": 2,
+      "text": "const after = 1;",
+      "anchor": 11,
+      "head": 11,
+      "dirty": true,
+      "theme": 0,
+      "undo_depth": 1
+    },
+    {
+      "sequence": 5,
+      "document_revision": 2,
+      "text": "const after = 1;",
+      "anchor": 11,
+      "head": 11,
+      "dirty": true,
+      "theme": 1,
+      "undo_depth": 1
+    },
+    {
+      "sequence": 6,
+      "document_revision": 2,
+      "text": "const after = 1;",
+      "anchor": 8,
+      "head": 8,
+      "dirty": true,
+      "theme": 1,
+      "undo_depth": 1
+    },
+    {
+      "sequence": 7,
+      "document_revision": 3,
+      "text": "const before = 1;",
+      "anchor": 6,
+      "head": 12,
+      "dirty": false,
+      "theme": 1,
+      "undo_depth": 0
+    }
+  ]
+}

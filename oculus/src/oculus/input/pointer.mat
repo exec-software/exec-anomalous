@@ -1,0 +1,18 @@
+!!! oculus/input/pointer.mat
+!!! Pointer state and routing.
+!!!
+!!! The pointer (mouse/cursor) has its own state machine
+!!! separate from keyboard focus.
+
+book oculus.input.pointer
+
+read everything from oculus.window.geometry
+read everything from ny.lang.core
+
+!!! Pointer state — tracks cursor position and active button.
+
+public pointer-state begin record
+    field cursor-position as point
+    field active-button as override long
+    field is-hovering-window as boolean
+end record

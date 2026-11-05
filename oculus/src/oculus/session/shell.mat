@@ -1,0 +1,30 @@
+!!! oculus/session/shell.mat
+!!! The session shell — top-level entry point for the Oculus desktop.
+!!!
+!!! The shell is the orchestrator: it creates the desktop context,
+!!! initializes the compositor, input routing, and window manager,
+!!! and drives the main event loop.
+
+book oculus.session.shell
+
+read everything from ny.lang.core
+read everything from oculus.window.viewport
+read everything from oculus.compositor.compositor
+read everything from oculus.input.routing
+read everything from oculus.appearance.appearance
+
+!!! The shell's current state.
+
+public shell-state begin choice
+    when Uninitialized
+    when Running
+    when Shutting-down
+end choice
+
+!!! The session shell.
+
+public session-shell begin record
+    field state as shell-state
+    field frame-revision as override long
+    field event-count as override long
+end record

@@ -1,0 +1,24 @@
+!!! oculus/compositor/frame.mat
+!!! A composed snapshot of the scene.
+!!!
+!!! A frame is the result of one composition pass — the
+!!! scene as rendered to a specific surface, with damage
+!!! tracking and output routing.
+
+book oculus.compositor.frame
+
+read everything from oculus.compositor.surface
+read everything from oculus.compositor.damage
+read everything from oculus.compositor.output
+read everything from oculus.scene.manager
+read everything from ny.lang.core
+
+!!! A composed frame.
+
+public frame begin record
+    field revision as override long
+    field surface as surface
+    field damage as damage-tracker
+    field output-id as override long
+    field is-dirty as boolean
+end record

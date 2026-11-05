@@ -1,0 +1,27 @@
+[package]
+name = "anomalous-native-durable-client"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+failure_proof = []
+repeated_proof = []
+interactive_proof = ["dep:anomalous-workspace-service", "dep:anomalous-desktop-workspace"]
+remote_workspace_proof = ["anomalous-editor-contract/remote_editor", "anomalous-document-protocol/remote_workspace"]
+
+[[bin]]
+name = "anomalous-native-durable-client"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+anomalous-abi.workspace = true
+anomalous-editor-contract = { path = "../../crates/anomalous-editor-contract" }
+anomalous-native-runtime = { path = "../../crates/anomalous-native-runtime" }
+anomalous-document-protocol = { path = "../../crates/anomalous-document-protocol" }
+anomalous-workspace-service = { path = "../anomalous-workspace-service", optional = true }
+anomalous-desktop-workspace = { path = "../../crates/anomalous-desktop-workspace", optional = true }

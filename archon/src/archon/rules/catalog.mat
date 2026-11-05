@@ -1,0 +1,32 @@
+!!! archon/rules/catalog.mat
+!!! The rule catalog: which rules apply to which kind of target.
+!!!
+!!! Generic rules apply to every target. Language-specific rule sets are added
+!!! when the target's kind matches. The catalog is the single place that decides
+!!! this, so a new analyzer changes one function, not every scan site.
+
+book archon.rules.catalog
+
+read everything from ny.lang.core
+read everything from archon.model.rule
+read everything from archon.rules.generic
+read everything from archon.rules.matrix
+
+!!! The rules that apply to a target of the given kind.
+public rules-for receives kind as text returns array of knowledge-rule begin paragraph
+    variable rules as array of knowledge-rule is generic-rules with nothing
+
+    when kind equals "matrix" then
+        value specific is matrix-rules with nothing
+        repeat for each rule in specific
+            append rule to rules
+        end repeat
+    end when
+
+    give rules
+end paragraph
+
+!!! How many rules apply to a target of the given kind.
+public rule-count-for receives kind as text returns number begin paragraph
+    give the length of (rules-for with kind being kind)
+end paragraph

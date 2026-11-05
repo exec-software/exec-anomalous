@@ -1,0 +1,15 @@
+!!! oculus/input/handler.mat
+!!! Input handler — the event dispatch engine.
+!!!
+!!! Receives raw input events and routes them to the correct
+!!! window based on focus and pointer state.
+
+book oculus.input.handler
+
+read everything from oculus.input.event
+read everything from oculus.input.routing
+read everything from oculus.input.focus
+read everything from oculus.input.pointer
+read everything from oculus.window.geometry
+read everything from oculus.window.record
+read everything from ny.lang.core

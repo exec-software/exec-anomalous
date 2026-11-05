@@ -1,0 +1,50 @@
+!!! archon/engine/scanner.mat
+!!! The Archon scanner: target and rules in, findings and report out.
+!!!
+!!! `scan` walks the target's lines, applies every rule to every line, and
+!!! returns the findings in deterministic order (line, then rule). `summarize`
+!!! folds the findings into the report's highest severity.
+
+book archon.engine.scanner
+
+read everything from ny.lang.core
+read everything from archon.model.severity
+read everything from archon.model.confidence
+read everything from archon.model.category
+read everything from archon.model.location
+read everything from archon.model.finding
+read everything from archon.model.rule
+read everything from archon.model.target
+read everything from archon.model.report
+read everything from archon.engine.patterns
+read everything from archon.engine.rules
+
+!!! Scan a target with a set of rules and return the findings.
+public scan receives target as scan-target, rules as array of knowledge-rule returns array of finding begin paragraph
+    variable findings as array of finding is []
+    value lines is split-lines with content being target.content
+    variable line-number as number is 0
+    variable next-identity as number is 1
+    repeat for each line in lines
+        set line-number to line-number plus 1
+        repeat for each rule in rules
+            when rule-matches with rule being rule, line being line then
+                value place is build location with target being target.label, path being target.label, line being line-number, column being 0, excerpt being line
+                append (finding-from-rule with rule being rule, place being place, identity-value being next-identity) to findings
+                set next-identity to next-identity plus 1
+            end when
+        end repeat
+    end repeat
+    give findings
+end paragraph
+
+!!! Fold a set of findings into the report for their target.
+public summarize receives target as scan-target, findings as array of finding, rules-applied as number returns scan-report begin paragraph
+    variable highest as severity is severity.Info
+    repeat for each item in findings
+        when (severity-rank with level being item.level) is greater than (severity-rank with level being highest) then
+            set highest to item.level
+        end when
+    end repeat
+    give build scan-report with target-label being target.label, finding-count being (the length of findings), highest-level being highest, rules-applied being rules-applied
+end paragraph

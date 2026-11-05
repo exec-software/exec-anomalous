@@ -1,0 +1,11 @@
+!!! oculus/scene/builder.mat
+!!! Build a deterministic scene from the current window state.
+!!!
+!!! The compositor consumes this ordered scene for rendering.
+
+book oculus.scene.builder
+
+read everything from oculus.scene.node
+read everything from oculus.window.record
+read everything from oculus.window.role
+read everything from oculus.scene.z-order

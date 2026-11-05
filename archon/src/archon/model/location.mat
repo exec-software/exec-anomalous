@@ -1,0 +1,29 @@
+!!! archon/model/location.mat
+!!! Where a finding was observed.
+!!!
+!!! A location is meaningful for any target kind: a line in source, a key in a
+!!! configuration document, a field of a permission record, or a slot in live
+!!! runtime state. `line` and `column` are zero when the target has no line
+!!! structure.
+
+book archon.model.location
+
+read everything from ny.lang.core
+read everything from ny.lang.text
+
+public location begin record
+    field target as text
+    field path as text
+    field line as number
+    field column as number
+    field excerpt as text
+end record
+
+!!! A compact `path:line:column` rendering.
+public location-summary receives place as location returns text begin paragraph
+    give place.path
+        plus ":"
+        plus (ny.lang.text::int_to_string_i64 with n being place.line)
+        plus ":"
+        plus (ny.lang.text::int_to_string_i64 with n being place.column)
+end paragraph

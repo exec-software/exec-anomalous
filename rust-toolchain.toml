@@ -1,0 +1,7 @@
+[toolchain]
+# Pinning prevents a later compiler snapshot from silently changing the boot
+# artifact. This snapshot is verified by the boot smoke test in CI.
+channel = "nightly-2026-05-07"
+components = ["clippy", "llvm-tools-preview", "rust-src", "rustfmt"]
+profile = "minimal"
+targets = ["x86_64-unknown-none"]

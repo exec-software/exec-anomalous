@@ -1,0 +1,22 @@
+#![no_std]
+#![forbid(unsafe_code)]
+#![allow(non_camel_case_types, non_upper_case_globals)]
+
+//! Experimental native startup data and a private, precommitted byte arena.
+//! Descriptor values describe a launch; they cannot grant authority or map RAM.
+//! The allocator only splits exclusively borrowed storage. It has no reset,
+//! deallocation, growth, global allocator, or operating-system dependency.
+
+#[path = "arena.rs"]
+mod allocation;
+mod console;
+mod program_startup;
+mod startup;
+
+pub use allocation::{arena, arena_error};
+pub use console::{console_error, console_transport, console_writer, maximum_write_bytes};
+pub use program_startup::{
+    granted_handle, maximum_arena_bytes, maximum_edition_bytes, minimum_arena_bytes,
+    program_descriptor, program_startup_error, program_startup_size, service,
+};
+pub use startup::{arena_byte_count, startup_descriptor, startup_error, startup_size};

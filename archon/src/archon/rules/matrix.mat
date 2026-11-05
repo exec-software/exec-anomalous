@@ -1,0 +1,35 @@
+!!! archon/rules/matrix.mat
+!!! Matrix-language-specific code security rules.
+!!!
+!!! Matrix is the target language for the new operating system, so it gets its
+!!! own rule set before the broader language support arrives. Each rule names a
+!!! construct that is specific to Matrix and that carries a security or safety
+!!! meaning: inline assembly, runtime intrinsics, manual memory, raw text
+!!! blocks, broad imports, unbounded loops, agent self-description, and casts.
+!!!
+!!! They are literal patterns in this increment; each is grounded in the
+!!! construct the Matrix guide documents (see https://github.com/exec-software/exec-nil-framework/tree/master/matrix).
+
+book archon.rules.matrix
+
+read everything from ny.lang.core
+read everything from archon.model.severity
+read everything from archon.model.confidence
+read everything from archon.model.category
+read everything from archon.model.rule
+
+!!! The Matrix-specific rule set, in stable order.
+public matrix-rules returns array of knowledge-rule begin paragraph
+    variable rules as array of knowledge-rule is []
+
+    append (build knowledge-rule with identity being "mat.inline-assembly", title being "Inline assembly", needle being "assembly for", guidance being "Inline assembly bypasses language safety; justify and review it.", level being severity.High, certainty being confidence.Certain, domain being category.Code) to rules
+    append (build knowledge-rule with identity being "mat.intrinsic", title being "Runtime intrinsic", needle being "note intrinsic", guidance being "Intrinsics cross into a runtime provider; audit the provider and its inputs.", level being severity.Medium, certainty being confidence.Likely, domain being category.Code) to rules
+    append (build knowledge-rule with identity being "mat.manual-memory", title being "Manual memory allocation", needle being "allocate ", guidance being "Prefer owned arrays; if allocating, release on every path.", level being severity.Medium, certainty being confidence.Likely, domain being category.Code) to rules
+    append (build knowledge-rule with identity being "mat.unbounded-loop", title being "Unbounded loop", needle being "repeat forever", guidance being "Ensure the loop has a reachable exit.", level being severity.Medium, certainty being confidence.Likely, domain being category.Code) to rules
+    append (build knowledge-rule with identity being "mat.raw-text-block", title being "Raw text block", needle being "begin text", guidance being "Audit the block for embedded secrets or unintended data.", level being severity.Low, certainty being confidence.Speculative, domain being category.Data) to rules
+    append (build knowledge-rule with identity being "mat.broad-import", title being "Broad import", needle being "read everything from", guidance being "Import only what is needed to keep the surface narrow.", level being severity.Low, certainty being confidence.Likely, domain being category.Code) to rules
+    append (build knowledge-rule with identity being "mat.self-description", title being "Agent self-description", needle being "context ", guidance being "Context text is unauthenticated; never place secrets in it.", level being severity.Low, certainty being confidence.Speculative, domain being category.Data) to rules
+    append (build knowledge-rule with identity being "mat.unchecked-cast", title being "Unchecked cast", needle being "becomes", guidance being "Verify the width and semantics of the target type.", level being severity.Info, certainty being confidence.Speculative, domain being category.Code) to rules
+
+    give rules
+end paragraph

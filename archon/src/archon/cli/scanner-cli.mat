@@ -1,0 +1,79 @@
+!!! archon/cli/scanner-cli.mat
+!!! The Archon command-line scanner.
+!!!
+!!! Usage:  archon <path> [<path> ...]
+!!!
+!!! Each argument is a target. The kind is taken from the path's extension, the
+!!! matching rules are drawn from the catalog, and the target is scanned into
+!!! findings and a machine-readable report line. Reading uses the shared runtime
+!!! (`ny.lang.system` arguments, `ny.lang.io` file reads), so the same page runs
+!!! under the interpreter today and, later, on the Anomalous ABI.
+
+book archon.cli.scanner
+
+read everything from ny.lang.core
+read everything from ny.lang.text
+read everything from ny.lang.system
+read everything from ny.lang.io
+read everything from archon.model.target
+read everything from archon.model.rule
+read everything from archon.model.finding
+read everything from archon.model.report
+read everything from archon.engine.scanner
+read everything from archon.rules.catalog
+
+!!! The target kind implied by a path's extension.
+kind-of receives path as text returns text begin paragraph
+    when ny.lang.text::ends_with with s being path, suffix being ".matrix" then
+        give "matrix"
+    otherwise when ny.lang.text::ends_with with s being path, suffix being ".mat" then
+        give "matrix"
+    otherwise
+        give "code"
+    end when
+end paragraph
+
+!!! Scan one path and print its findings and report. Returns the finding count,
+!!! or -1 when the path could not be read.
+scan-path receives path as text returns number begin paragraph
+    value contents is read_text with path being path
+    consider contents
+        when Result.Ok holding source then
+            value kind is kind-of with path being path
+            value rules is rules-for with kind being kind
+            value target is build scan-target with label being path, kind being kind, content being source
+            value findings is scan with target being target, rules being rules
+            repeat for each item in findings
+                say (finding-summary with item being item)
+            end repeat
+            value summary is summarize with target being target, findings being findings, rules-applied being (the length of rules)
+            say (report-summary with summary being summary)
+            give the length of findings
+        when Result.Error holding message then
+            say "error: " plus path plus ": " plus message
+            give minus 1
+        otherwise
+            give minus 1
+    end consider
+end paragraph
+
+main returns number begin paragraph
+    value count is arg_count with nothing
+    when count is less than 1 then
+        say "usage: archon <path> [<path> ...]"
+        give 2
+    end when
+
+    variable failures as number is 0
+    repeat for index from 0 to count
+        value found is scan-path with path being (arg with index being index)
+        when found is less than 0 then
+            set failures to failures plus 1
+        end when
+    end repeat
+
+    when failures is greater than 0 then
+        give 1
+    end when
+    give 0
+end paragraph

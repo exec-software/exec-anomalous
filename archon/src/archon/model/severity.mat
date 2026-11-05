@@ -1,0 +1,44 @@
+!!! archon/model/severity.mat
+!!! Risk severity for an Archon finding.
+!!!
+!!! Severity is ordinal: a higher rank means a more serious issue. It is
+!!! deliberately separate from confidence, because a certain low-severity issue
+!!! and a speculative critical one must stay distinguishable in a report.
+
+book archon.model.severity
+
+read everything from ny.lang.core
+
+public severity begin choice
+    when Info
+    when Low
+    when Medium
+    when High
+    when Critical
+end choice
+
+!!! Ordinal rank; higher means more severe.
+public severity-rank receives level as severity returns number begin paragraph
+    value rank as number is consider level
+        when severity.Info give 0
+        when severity.Low give 1
+        when severity.Medium give 2
+        when severity.High give 3
+        when severity.Critical give 4
+        otherwise give 0
+    end consider
+    give rank
+end paragraph
+
+!!! A stable, lower-case name for machine-readable output.
+public severity-name receives level as severity returns text begin paragraph
+    value name as text is consider level
+        when severity.Info give "info"
+        when severity.Low give "low"
+        when severity.Medium give "medium"
+        when severity.High give "high"
+        when severity.Critical give "critical"
+        otherwise give "info"
+    end consider
+    give name
+end paragraph

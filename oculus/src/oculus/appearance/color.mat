@@ -1,0 +1,19 @@
+!!! oculus/appearance/color.mat
+!!! Color system for the Oculus desktop.
+!!!
+!!! Colors are organized into a semantic palette. Applications
+!!! reference semantic roles (background, surface, text) rather
+!!! than raw values, so themes can change without breaking anything.
+
+book oculus.appearance.color
+
+read everything from ny.lang.core
+
+!!! A single color value in RGBA.
+
+public color-value begin record
+    field red as override long
+    field green as override long
+    field blue as override long
+    field alpha as override long
+end record

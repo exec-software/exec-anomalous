@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="300" viewBox="0 0 420 300" role="img" aria-labelledby="title">
+<title id="title">Anomalous High Contrast control states</title>
+<defs>
+<symbol id="minimize" viewBox="0 0 24 24">
+<line x1="7" y1="16" x2="17" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+</symbol>
+<symbol id="maximize" viewBox="0 0 24 24">
+<line x1="7" y1="7" x2="17" y2="7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="17" y1="7" x2="17" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="17" y1="17" x2="7" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="7" y1="17" x2="7" y2="7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+</symbol>
+<symbol id="restore" viewBox="0 0 24 24">
+<line x1="9" y1="6" x2="18" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="18" y1="6" x2="18" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="18" y1="15" x2="17" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="6" y1="9" x2="15" y2="9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="15" y1="9" x2="15" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="15" y1="18" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="6" y1="18" x2="6" y2="9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+</symbol>
+<symbol id="close" viewBox="0 0 24 24">
+<line x1="8" y1="8" x2="16" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="16" y1="8" x2="8" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+</symbol>
+</defs>
+<rect width="420" height="300" fill="#000000"/>
+<text x="20" y="28" font-family="sans-serif" font-size="16" fill="#ffffff">Anomalous High Contrast / controls</text>
+<text x="20" y="74" font-family="sans-serif" font-size="12" fill="#ffffff">normal</text>
+<rect x="150" y="56" width="28" height="28" rx="0" fill="#ffffff"/>
+<use href="#minimize" x="156" y="62" width="16" height="16" color="#000000"/>
+<rect x="210" y="56" width="28" height="28" rx="0" fill="#ffffff"/>
+<use href="#maximize" x="216" y="62" width="16" height="16" color="#000000"/>
+<rect x="270" y="56" width="28" height="28" rx="0" fill="#ffffff"/>
+<use href="#restore" x="276" y="62" width="16" height="16" color="#000000"/>
+<rect x="330" y="56" width="28" height="28" rx="0" fill="#ffffff"/>
+<use href="#close" x="336" y="62" width="16" height="16" color="#000000"/>
+<text x="20" y="118" font-family="sans-serif" font-size="12" fill="#ffffff">hover</text>
+<rect x="150" y="100" width="28" height="28" rx="0" fill="#ffff00"/>
+<use href="#minimize" x="156" y="106" width="16" height="16" color="#000000"/>
+<rect x="210" y="100" width="28" height="28" rx="0" fill="#ffff00"/>
+<use href="#maximize" x="216" y="106" width="16" height="16" color="#000000"/>
+<rect x="270" y="100" width="28" height="28" rx="0" fill="#ffff00"/>
+<use href="#restore" x="276" y="106" width="16" height="16" color="#000000"/>
+<rect x="330" y="100" width="28" height="28" rx="0" fill="#ffff00"/>
+<use href="#close" x="336" y="106" width="16" height="16" color="#000000"/>
+<text x="20" y="162" font-family="sans-serif" font-size="12" fill="#ffffff">pressed</text>
+<rect x="150" y="144" width="28" height="28" rx="0" fill="#ffffff"/>
+<use href="#minimize" x="156" y="150" width="16" height="16" color="#000000"/>
+<rect x="210" y="144" width="28" height="28" rx="0" fill="#ffffff"/>
+<use href="#maximize" x="216" y="150" width="16" height="16" color="#000000"/>
+<rect x="270" y="144" width="28" height="28" rx="0" fill="#ffffff"/>
+<use href="#restore" x="276" y="150" width="16" height="16" color="#000000"/>
+<rect x="330" y="144" width="28" height="28" rx="0" fill="#ffffff"/>
+<use href="#close" x="336" y="150" width="16" height="16" color="#000000"/>
+<text x="20" y="206" font-family="sans-serif" font-size="12" fill="#ffffff">inactive</text>
+<rect x="150" y="188" width="28" height="28" rx="0" fill="#000000"/>
+<use href="#minimize" x="156" y="194" width="16" height="16" color="#ffffff"/>
+<rect x="210" y="188" width="28" height="28" rx="0" fill="#000000"/>
+<use href="#maximize" x="216" y="194" width="16" height="16" color="#ffffff"/>
+<rect x="270" y="188" width="28" height="28" rx="0" fill="#000000"/>
+<use href="#restore" x="276" y="194" width="16" height="16" color="#ffffff"/>
+<rect x="330" y="188" width="28" height="28" rx="0" fill="#000000"/>
+<use href="#close" x="336" y="194" width="16" height="16" color="#ffffff"/>
+<text x="20" y="250" font-family="sans-serif" font-size="12" fill="#ffffff">disabled</text>
+<rect x="150" y="232" width="28" height="28" rx="0" fill="#ffffff"/>
+<use href="#minimize" x="156" y="238" width="16" height="16" color="#000000"/>
+<rect x="162" y="257" width="4" height="1" fill="#000000"/>
+<rect x="210" y="232" width="28" height="28" rx="0" fill="#ffffff"/>
+<use href="#maximize" x="216" y="238" width="16" height="16" color="#000000"/>
+<rect x="222" y="257" width="4" height="1" fill="#000000"/>
+<rect x="270" y="232" width="28" height="28" rx="0" fill="#ffffff"/>
+<use href="#restore" x="276" y="238" width="16" height="16" color="#000000"/>
+<rect x="282" y="257" width="4" height="1" fill="#000000"/>
+<rect x="330" y="232" width="28" height="28" rx="0" fill="#ffffff"/>
+<use href="#close" x="336" y="238" width="16" height="16" color="#000000"/>
+<rect x="342" y="257" width="4" height="1" fill="#000000"/>
+</svg>

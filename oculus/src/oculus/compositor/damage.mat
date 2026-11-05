@@ -1,0 +1,23 @@
+!!! oculus/compositor/damage.mat
+!!! Damage tracking for incremental redraws.
+!!!
+!!! The compositor tracks which regions of the framebuffer
+!!! changed (are "damaged") so it can redraw only what's
+!!! necessary rather than the full frame every time.
+
+book oculus.compositor.damage
+
+read everything from oculus.window.geometry
+read everything from ny.lang.core
+
+!!! A damage region — a rectangle that needs redrawing.
+
+public damage-region begin record
+    field rect as rectangle
+    field priority as override long
+end record
+
+!!! Track accumulated damage across a frame.
+public damage-tracker begin record
+    field has-damage as boolean
+end record

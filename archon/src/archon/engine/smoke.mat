@@ -1,0 +1,47 @@
+!!! archon/engine/smoke.mat
+!!! End-to-end smoke test for the scanning engine.
+!!!
+!!! Scans one sample target with three rules drawn from three different
+!!! categories (code, security, permission) and asserts the finding count and
+!!! the highest severity through the machine-readable report line.
+
+book archon.engine.smoke
+
+read everything from ny.lang.core
+read everything from ny.lang.text
+read everything from archon.model.severity
+read everything from archon.model.confidence
+read everything from archon.model.category
+read everything from archon.model.location
+read everything from archon.model.finding
+read everything from archon.model.rule
+read everything from archon.model.target
+read everything from archon.model.report
+read everything from archon.engine.scanner
+read everything from archon.engine.patterns
+
+main returns number begin paragraph
+    !!! A small mixed sample: one issue per rule.
+    value sample as text is begin text
+        char password[32];
+        strcpy(buffer, input);
+        chmod 777 /data;
+    end text
+
+    variable rules as array of knowledge-rule is []
+    append (build knowledge-rule with identity being "code.unsafe-copy", title being "Unbounded string copy", needle being "strcpy(", guidance being "Use a bounded copy.", level being severity.High, certainty being confidence.Likely, domain being category.Code) to rules
+    append (build knowledge-rule with identity being "sec.hardcoded-secret", title being "Hard-coded secret", needle being "password", guidance being "Move secrets out of source.", level being severity.Critical, certainty being confidence.Speculative, domain being category.Security) to rules
+    append (build knowledge-rule with identity being "perm.world-writable", title being "World-writable path", needle being "chmod 777", guidance being "Grant the narrowest permission.", level being severity.High, certainty being confidence.Likely, domain being category.Permission) to rules
+
+    value target is build scan-target with label being "engine/sample.c", kind being "code", content being sample
+
+    value findings is scan with target being target, rules being rules
+    value summary is summarize with target being target, findings being findings, rules-applied being (the length of rules)
+
+    repeat for each item in findings
+        say (finding-summary with item being item)
+    end repeat
+    say (report-summary with summary being summary)
+
+    give 0
+end paragraph

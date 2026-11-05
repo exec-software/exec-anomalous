@@ -1,0 +1,44 @@
+!!! archon/model/confidence.mat
+!!! How certain an analyzer is that a finding is real.
+!!!
+!!! Confidence is separate from severity so a scan can rank by risk while still
+!!! disclosing how much of that risk is a guess. Pattern matches are usually
+!!! Speculative or Low; a parser-backed analysis can be Likely or Certain.
+
+book archon.model.confidence
+
+read everything from ny.lang.core
+
+public confidence begin choice
+    when Speculative
+    when Low
+    when Moderate
+    when Likely
+    when Certain
+end choice
+
+!!! Ordinal rank; higher means more certain.
+public confidence-rank receives certainty as confidence returns number begin paragraph
+    value rank as number is consider certainty
+        when confidence.Speculative give 0
+        when confidence.Low give 1
+        when confidence.Moderate give 2
+        when confidence.Likely give 3
+        when confidence.Certain give 4
+        otherwise give 0
+    end consider
+    give rank
+end paragraph
+
+!!! A stable, lower-case name for machine-readable output.
+public confidence-name receives certainty as confidence returns text begin paragraph
+    value name as text is consider certainty
+        when confidence.Speculative give "speculative"
+        when confidence.Low give "low"
+        when confidence.Moderate give "moderate"
+        when confidence.Likely give "likely"
+        when confidence.Certain give "certain"
+        otherwise give "speculative"
+    end consider
+    give name
+end paragraph

@@ -1,0 +1,46 @@
+!!! oculus/window/operations.mat
+!!! Window management operations: create, focus, raise, minimize,
+!!! maximize, close.
+!!!
+!!! Each operation is idempotent and returns the updated window.
+!!! Operations on an already-closed window are no-ops.
+
+book oculus.window.operations
+
+read everything from ny.lang.core
+read everything from oculus.window.geometry
+read everything from oculus.window.lifecycle
+read everything from oculus.window.record
+read everything from oculus.window.workspace
+
+!!! Create a new window at the given position with the given label.
+public create-window receives position-x as override long, position-y as override long, width as override long, height as override long, label as text, window-id as override long returns window begin paragraph
+    value origin is build point with x being position-x, y being position-y
+    value geom is build rectangle with origin being origin, width being width, height being height
+    value ws is build workspace with index being 0, label being "workspace-0"
+    give build window with identity being window-id, state being window-state.Created, geometry being geom, workspace being ws, z-index being 0, focused being false, label being label
+end paragraph
+
+!!! Set a window as the focused window (returns true if successful).
+public focus-window receives window-obj as window, should-focus as boolean returns window begin paragraph
+    value updated is build window with identity being window-obj.identity, state being window-obj.state, geometry being window-obj.geometry, workspace being window-obj.workspace, z-index being window-obj.z-index, focused being should-focus, label being window-obj.label
+    give updated
+end paragraph
+
+!!! Raise a window to the top of the z-order.
+public raise-window receives window-obj as window, new-z-index as override long returns window begin paragraph
+    value updated is build window with identity being window-obj.identity, state being window-obj.state, geometry being window-obj.geometry, workspace being window-obj.workspace, z-index being new-z-index, focused being window-obj.focused, label being window-obj.label
+    give updated
+end paragraph
+
+!!! Minimize a window (only if it's visible).
+public minimize-window receives window-obj as window returns window begin paragraph
+    value updated is build window with identity being window-obj.identity, state being window-state.Minimized, geometry being window-obj.geometry, workspace being window-obj.workspace, z-index being window-obj.z-index, focused being false, label being window-obj.label
+    give updated
+end paragraph
+
+!!! Close a window.
+public close-window receives window-obj as window returns window begin paragraph
+    value updated is build window with identity being window-obj.identity, state being window-state.Closed, geometry being window-obj.geometry, workspace being window-obj.workspace, z-index being window-obj.z-index, focused being false, label being window-obj.label
+    give updated
+end paragraph

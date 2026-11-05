@@ -1,0 +1,16 @@
+!!! oculus/window-identity.mat
+!!! Unique generational identifiers for windows and scene elements.
+!!!
+!!! An identity is a nonzero, nonwrapping counter value. The book
+!!! provides a fresh identity source and identity equality checking.
+
+book oculus.window.identity
+
+read everything from ny.lang.core
+
+public variable identity-counter as override long is 1
+
+fresh-identity returns override long begin paragraph
+    set identity-counter to (identity-counter plus 1)
+    give identity-counter
+end paragraph

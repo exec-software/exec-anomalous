@@ -1,0 +1,11 @@
+!!! oculus/compositor/clipping.mat
+!!! Viewport-scoped geometry clipping.
+!!!
+!!! Windows that extend beyond the viewport need to be clipped
+!!! to their visible region. This module handles the intersection
+!!! math for clipping rectangles to a bounds.
+
+book oculus.compositor.clipping
+
+read everything from oculus.window.geometry
+read everything from ny.lang.core

@@ -1,0 +1,20 @@
+[package]
+name = "anomalous-desktop-recovery"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Host-only bounded recovery coordinator for semantic presentation"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+anomalous-desktop-scene.workspace = true
+anomalous-desktop-service = { path = "../anomalous-desktop-service" }
+anomalous-desktop-transport = { path = "../anomalous-desktop-transport", features = ["service_adapter"] }
+
+[dev-dependencies]
+anomalous-desktop-renderer = { path = "../anomalous-desktop-renderer", features = ["transport"] }

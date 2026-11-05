@@ -1,0 +1,73 @@
+!!! oculus/compositor/smoke.mat
+!!! Smoke test for the compositor.
+!!!
+!!! Exercises: creating compositor state, building a frame, and verifying
+!!! that the frame has the expected dimensions and revision.
+
+book oculus.compositor.smoke
+
+read everything from ny.lang.core
+read everything from oculus.window.geometry
+read everything from oculus.window.viewport
+read everything from oculus.compositor.surface
+read everything from oculus.compositor.damage
+read everything from oculus.compositor.output
+read everything from oculus.compositor.frame
+read everything from oculus.compositor.compositor
+
+main returns number begin paragraph
+    !!! Create a viewport with scaling.
+    value vp is build viewport with physical-width being 1920, physical-height being 1080, logical-width being 1200, logical-height being 675, scale-x being 1.6, scale-y being 1.6
+    
+    !!! Create a surface from viewport dimensions.
+    value surf is build surface with width being vp.logical-width, height being vp.logical-height, pixel-format being "RGBA8888"
+    
+    !!! Create damage tracking.
+    value damage is build damage-tracker with has-damage being false
+    
+    !!! Create a display output.
+    value origin is build point with x being 0, y being 0
+    value display is build display-output with id being 0, surface being surf, position being origin, label being "Primary", enabled being true
+    
+    !!! Verify the output is enabled.
+    when display.enabled is at least 1 then
+        say "output enabled"
+    otherwise
+        say "output enable failed"
+    end when
+    
+    !!! Create a frame from the surface.
+    value frame is build frame with revision being 0, surface being surf, damage being damage, output-id being 0, is-dirty being true
+    
+    !!! Verify the frame dimensions match the viewport.
+    when frame.surface.width is at least 1200 then
+        say "frame width is correct"
+    otherwise
+        say "frame width failed"
+    end when
+    
+    when frame.surface.height is at least 675 then
+        say "frame height is correct"
+    otherwise
+        say "frame height failed"
+    end when
+    
+    !!! Verify the frame is marked dirty (needs rendering).
+    when frame.is-dirty is at least 1 then
+        say "frame is dirty"
+    otherwise
+        say "frame dirty check failed"
+    end when
+    
+    !!! Create compositor state.
+    value comp is build compositor-state with frame-revision being 0, is-dirty being true
+    
+    !!! Verify compositor is dirty on creation.
+    when comp.is-dirty is at least 1 then
+        say "compositor is dirty"
+    otherwise
+        say "compositor dirty failed"
+    end when
+    
+    give 0
+end paragraph

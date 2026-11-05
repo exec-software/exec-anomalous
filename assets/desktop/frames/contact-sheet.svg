@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1320" height="1560" viewBox="0 0 1320 1560" role="img" aria-labelledby="title">
+<title id="title">Anomalous native frame asset contact sheet</title>
+<rect width="1320" height="1560" fill="#141414"/>
+<text x="24" y="38" font-family="sans-serif" font-size="24" fill="#ece9e5">Anomalous / native frame system</text>
+<text x="24" y="64" font-family="sans-serif" font-size="14" fill="#bcb5ae">Clay-inspired dark, warm light, and high contrast. Shared vector control recipes.</text>
+<text x="28" y="104" font-family="sans-serif" font-size="12" fill="#ece9e5">dark / active</text>
+<image href="dark/active.svg" x="12" y="112" width="420" height="256"/>
+<text x="28" y="382" font-family="sans-serif" font-size="12" fill="#ece9e5">dark / inactive</text>
+<image href="dark/inactive.svg" x="12" y="390" width="420" height="256"/>
+<text x="28" y="660" font-family="sans-serif" font-size="12" fill="#ece9e5">dark / maximized</text>
+<image href="dark/maximized.svg" x="12" y="668" width="420" height="256"/>
+<text x="28" y="938" font-family="sans-serif" font-size="12" fill="#ece9e5">dark / tiled</text>
+<image href="dark/tiled.svg" x="12" y="946" width="420" height="256"/>
+<text x="28" y="1216" font-family="sans-serif" font-size="12" fill="#ece9e5">dark / controls</text>
+<image href="dark/controls.svg" x="12" y="1224" width="420" height="300"/>
+<text x="464" y="104" font-family="sans-serif" font-size="12" fill="#ece9e5">light / active</text>
+<image href="light/active.svg" x="448" y="112" width="420" height="256"/>
+<text x="464" y="382" font-family="sans-serif" font-size="12" fill="#ece9e5">light / inactive</text>
+<image href="light/inactive.svg" x="448" y="390" width="420" height="256"/>
+<text x="464" y="660" font-family="sans-serif" font-size="12" fill="#ece9e5">light / maximized</text>
+<image href="light/maximized.svg" x="448" y="668" width="420" height="256"/>
+<text x="464" y="938" font-family="sans-serif" font-size="12" fill="#ece9e5">light / tiled</text>
+<image href="light/tiled.svg" x="448" y="946" width="420" height="256"/>
+<text x="464" y="1216" font-family="sans-serif" font-size="12" fill="#ece9e5">light / controls</text>
+<image href="light/controls.svg" x="448" y="1224" width="420" height="300"/>
+<text x="900" y="104" font-family="sans-serif" font-size="12" fill="#ece9e5">high-contrast / active</text>
+<image href="high-contrast/active.svg" x="884" y="112" width="420" height="256"/>
+<text x="900" y="382" font-family="sans-serif" font-size="12" fill="#ece9e5">high-contrast / inactive</text>
+<image href="high-contrast/inactive.svg" x="884" y="390" width="420" height="256"/>
+<text x="900" y="660" font-family="sans-serif" font-size="12" fill="#ece9e5">high-contrast / maximized</text>
+<image href="high-contrast/maximized.svg" x="884" y="668" width="420" height="256"/>
+<text x="900" y="938" font-family="sans-serif" font-size="12" fill="#ece9e5">high-contrast / tiled</text>
+<image href="high-contrast/tiled.svg" x="884" y="946" width="420" height="256"/>
+<text x="900" y="1216" font-family="sans-serif" font-size="12" fill="#ece9e5">high-contrast / controls</text>
+<image href="high-contrast/controls.svg" x="884" y="1224" width="420" height="300"/>
+</svg>

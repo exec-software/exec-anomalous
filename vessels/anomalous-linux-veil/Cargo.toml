@@ -1,0 +1,35 @@
+[package]
+name = "anomalous-linux-veil"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+default = []
+tls = ["anomalous-veil-protocol/linux-tls-policy"]
+loader-entry = ["anomalous-veil-protocol/linux-loader-policy", "anomalous-veil-protocol/source-mapping", "anomalous-veil-protocol/read-only-files"]
+
+[[bin]]
+name = "anomalous-linux-veil"
+path = "src/main.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "anomalous-linux-tls-veil"
+path = "src/tls_main.rs"
+required-features = ["tls"]
+test = false
+bench = false
+
+[[bin]]
+name = "anomalous-linux-loader-entry-veil"
+path = "src/loader_entry_main.rs"
+required-features = ["loader-entry"]
+test = false
+bench = false
+
+[dependencies]
+anomalous-veil-protocol = { workspace = true, features = ["linux-policy"] }

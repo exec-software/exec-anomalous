@@ -1,0 +1,68 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/anomalous-abi",
+    "crates/anomalous-editor-contract",
+    "crates/anomalous-native-runtime",
+    "crates/anomalous-document-protocol",
+    "crates/anomalous-elf-adapter",
+    "crates/anomalous-veil-protocol",
+    "crates/anomalous-desktop-renderer",
+    "crates/anomalous-desktop-theme",
+    "crates/anomalous-window-surface",
+    "crates/anomalous-desktop-workspace",
+    "crates/anomalous-desktop-compositor",
+    "crates/anomalous-desktop-recovery",
+    "crates/anomalous-desktop-scene",
+    "crates/anomalous-desktop-service",
+    "crates/anomalous-desktop-transport",
+    "crates/anomalous-session",
+    "crates/anomalous-session-router",
+    "kernel",
+    "tools/xtask",
+    "vessels/anomalous-semantic-surface-consumer",
+    "vessels/anomalous-semantic-surface-renderer",
+    "vessels/anomalous-semantic-surface-source",
+    "vessels/anomalous-supervised-renderer",
+    "vessels/anomalous-workspace-service",
+    "vessels/anomalous-native-client",
+    "vessels/anomalous-native-program-client",
+    "vessels/anomalous-native-runtime-client",
+    "vessels/anomalous-native-document-client",
+    "vessels/anomalous-native-relaunch-client",
+    "vessels/anomalous-native-durable-client",
+    "vessels/anomalous-elf-loader",
+    "vessels/anomalous-linux-client",
+    "vessels/anomalous-linux-veil",
+]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/exec-software/exec-anomalous"
+rust-version = "1.88"
+
+[workspace.dependencies]
+anomalous-document-protocol = { path = "crates/anomalous-document-protocol" }
+anomalous-native-runtime = { path = "crates/anomalous-native-runtime" }
+anomalous-veil-protocol = { path = "crates/anomalous-veil-protocol", default-features = false }
+anomalous-elf-adapter = { path = "crates/anomalous-elf-adapter" }
+anomalous-abi = { path = "crates/anomalous-abi" }
+anomalous-desktop-theme = { path = "crates/anomalous-desktop-theme" }
+anomalous-window-surface = { path = "crates/anomalous-window-surface" }
+anomalous-desktop-workspace = { path = "crates/anomalous-desktop-workspace" }
+anomalous-desktop-compositor = { path = "crates/anomalous-desktop-compositor" }
+anomalous-desktop-scene = { path = "crates/anomalous-desktop-scene" }
+anomalous-desktop-transport = { path = "crates/anomalous-desktop-transport", default-features = false }
+anomalous-session = { path = "crates/anomalous-session" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+codegen-units = 1
+debug = 2
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = "none"

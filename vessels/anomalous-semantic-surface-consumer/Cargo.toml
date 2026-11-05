@@ -1,0 +1,20 @@
+[package]
+name = "anomalous-semantic-surface-consumer"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Fixed ring-3 semantic-surface consumer proof for Anomalous"
+publish = false
+build = "build.rs"
+
+[[bin]]
+name = "anomalous-semantic-surface-consumer"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+anomalous-abi.workspace = true
+anomalous-desktop-transport.workspace = true

@@ -1,0 +1,17 @@
+!!! archon/model/target.mat
+!!! Something Archon scans.
+!!!
+!!! A target has a human label, a kind (source, configuration, permission,
+!!! dependency, runtime, ...) and its content. In this host-side increment the
+!!! content is a text buffer; later units load it from a file or a live
+!!! semantic source without changing the finding model.
+
+book archon.model.target
+
+read everything from ny.lang.core
+
+public scan-target begin record
+    field label as text
+    field kind as text
+    field content as text
+end record

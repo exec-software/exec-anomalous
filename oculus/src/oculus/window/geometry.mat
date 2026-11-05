@@ -1,0 +1,24 @@
+!!! oculus/window-geometry.mat
+!!! Foundational geometry types for the Oculus semantic model.
+!!!
+!!! Defines point and rectangle — kept together because records
+!!! reference each other and must be in the same compilation unit.
+
+book oculus.window.geometry
+
+read everything from ny.lang.core
+
+!!! A position in 2D coordinate space.
+
+public point begin record
+    field x as override long
+    field y as override long
+end record
+
+!!! An axis-aligned rectangle defined by origin and size.
+
+public rectangle begin record
+    field origin as point
+    field width as override long
+    field height as override long
+end record

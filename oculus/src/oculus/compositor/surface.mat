@@ -1,0 +1,19 @@
+!!! oculus/compositor/surface.mat
+!!! Pixel buffer abstraction for the compositor.
+!!!
+!!! A surface is a rectangular region of pixels — the fundamental unit
+!!! of composition. Surfaces can be the framebuffer itself, a window
+!!! backing store, or a cached texture.
+
+book oculus.compositor.surface
+
+read everything from oculus.window.geometry
+read everything from ny.lang.core
+
+!!! A pixel surface with dimensions and format.
+
+public surface begin record
+    field width as override long
+    field height as override long
+    field pixel-format as text
+end record

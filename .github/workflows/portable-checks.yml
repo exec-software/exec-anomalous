@@ -1,0 +1,68 @@
+name: Portable source checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tooling:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.20.0'
+      - name: Test the source-audit boundary
+        run: python3 tools/test_audit_secrets.py
+      - name: Test the independent codec and explicit tool selection
+        working-directory: eidolon
+        run: >-
+          python3 -m unittest -v tests.test_codec
+          tests.test_ny_cli.ny_tool_resolution_tests
+          tests.test_ny_codec.ny_codec_tool_resolution_tests
+      - name: Check shell and reference-harness syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in scripts/*.sh; do bash -n "$script"; done
+          node --check scripts/native-application-reference.cjs
+          node --check scripts/native-document-reference.cjs
+      - name: Check optional tooling refuses implicit source selection
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, subprocess
+          root = pathlib.Path.cwd()
+          for name in ['native-application-reference.cjs', 'native-document-reference.cjs']:
+              result = subprocess.run(['node', str(root / 'scripts' / name)],
+                                      capture_output=True, text=True, timeout=10)
+              assert result.returncode == 1
+              assert 'Pass a trusted Antimatter checkout path explicitly.' in result.stderr
+              assert 'ReferenceError' not in result.stderr
+          environment = {key: value for key, value in os.environ.items() if key != 'NY_REPO_DIR'}
+          result = subprocess.run(['bash', str(root / 'scripts/refresh-ny-runtime.sh')],
+                                  env=environment, capture_output=True, text=True, timeout=10)
+          assert result.returncode == 2 and 'Set NY_REPO_DIR' in result.stderr
+          assert not (root / '.runtime').exists()
+          PY
+      - name: Check generated documentation matches its source
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import ast, pathlib, re
+          root = pathlib.Path.cwd()
+          source = (root / 'crates/anomalous-desktop-theme/examples/export_assets.rs').read_text()
+          match = re.search(r'fn readme\(\) -> &\x27static str \{\s*("(?:[^"\\]|\\.)*")\s*\}', source, re.S)
+          assert match, 'Missing static README generator'
+          assert ast.literal_eval(match[1]) == (root / 'assets/desktop/frames/README.md').read_text()
+          PY
+      # No SDK, compiler build, model, guest VM, or exact-byte host fixture is run.

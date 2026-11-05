@@ -1,0 +1,36 @@
+!!! oculus/session/desktop-context.mat
+!!! Desktop context — the unified state tying all subsystems together.
+!!!
+!!! This is the single source of truth for the desktop. The compositor,
+!!! input router, and window manager all read from and write to this
+!!! context rather than maintaining their own state.
+
+book oculus.session.desktop-context
+
+read everything from oculus.window.viewport
+read everything from oculus.window.record
+read everything from oculus.compositor.compositor
+read everything from oculus.compositor.frame
+read everything from oculus.compositor.surface
+read everything from oculus.compositor.output
+read everything from oculus.compositor.damage
+read everything from oculus.input.routing
+read everything from oculus.input.focus
+read everything from oculus.input.pointer
+read everything from oculus.appearance.theme
+read everything from oculus.appearance.style
+read everything from oculus.appearance.accessibility
+read everything from oculus.appearance.color
+read everything from ny.lang.core
+
+!!! The complete desktop context.
+
+public desktop-context begin record
+    field viewport as viewport
+    field compositor as compositor-state
+    field routing as routing-table
+    field appearance-theme as text
+    field active-window-id as override long
+    field window-count as override long
+    field is-ready as boolean
+end record

@@ -1,0 +1,23 @@
+[package]
+name = "anomalous-desktop-transport"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Allocation-free semantic desktop snapshot transport codec for Anomalous"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = []
+service_adapter = [
+    "dep:anomalous-desktop-scene",
+    "dep:anomalous-desktop-service",
+]
+
+[dependencies]
+anomalous-desktop-scene = { path = "../anomalous-desktop-scene", optional = true }
+anomalous-desktop-service = { path = "../anomalous-desktop-service", optional = true }

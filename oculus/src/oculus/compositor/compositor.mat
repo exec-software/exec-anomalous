@@ -1,0 +1,28 @@
+!!! oculus/compositor/compositor.mat
+!!! The main composition engine.
+!!!
+!!! The compositor takes the semantic scene and produces
+!!! rendered frames. It handles z-order sorting, clipping,
+!!! damage tracking, and output routing.
+
+book oculus.compositor.compositor
+
+read everything from oculus.compositor.surface
+read everything from oculus.compositor.frame
+read everything from oculus.compositor.damage
+read everything from oculus.compositor.clipping
+read everything from oculus.compositor.output
+read everything from oculus.scene.z-order
+read everything from oculus.window.geometry
+read everything from oculus.window.viewport
+read everything from oculus.window.record
+read everything from oculus.scene.manager
+read everything from oculus.scene.builder
+read everything from ny.lang.core
+
+!!! The compositor state — tracks frame revision and dirty state.
+
+public compositor-state begin record
+    field frame-revision as override long
+    field is-dirty as boolean
+end record

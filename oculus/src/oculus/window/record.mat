@@ -1,0 +1,23 @@
+!!! oculus/window/record.mat
+!!! The core window record.
+!!!
+!!! A window carries everything the session manager needs: identity,
+!!! lifecycle state, position/size, workspace assignment, z-order,
+!!! focus state, and a human-readable label.
+
+book oculus.window.record
+
+read everything from ny.lang.core
+read everything from oculus.window.geometry
+read everything from oculus.window.lifecycle
+read everything from oculus.window.workspace
+
+public window begin record
+    field identity as override long
+    field state as window-state
+    field geometry as rectangle
+    field workspace as workspace
+    field z-index as override long
+    field focused as boolean
+    field label as text
+end record

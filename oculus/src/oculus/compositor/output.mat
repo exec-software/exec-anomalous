@@ -1,0 +1,21 @@
+!!! oculus/compositor/output.mat
+!!! Display output routing.
+!!!
+!!! Oculus supports multiple displays. Each output has its own
+!!! surface and needs its own composition.
+
+book oculus.compositor.output
+
+read everything from oculus.window.geometry
+read everything from oculus.compositor.surface
+read everything from ny.lang.core
+
+!!! A display output with its own surface and geometry.
+
+public display-output begin record
+    field id as override long
+    field surface as surface
+    field position as point
+    field label as text
+    field enabled as boolean
+end record

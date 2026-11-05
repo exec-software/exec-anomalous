@@ -1,0 +1,38 @@
+!!! oculus/scene-smoke.mat
+!!! Smoke test for the semantic scene model.
+!!!
+!!! Exercises: creating a scene node, checking geometry, checking focus.
+
+book oculus.scene.smoke
+
+read everything from ny.lang.core
+read everything from oculus.window.geometry
+read everything from oculus.window.role
+read everything from oculus.window.focus
+read everything from oculus.scene.node
+
+main returns number begin paragraph
+    !!! Build a root desktop node.
+    value origin is build point with x being 0, y being 0
+    value root-geom is build rectangle with origin being origin, width being 1024, height being 768
+    
+    value root is build scene-node with identity being 1, role being window-role.Desktop, geometry being root-geom, focus being focus-position.Focused, label being "desktop", parent-identity being 0
+
+    !!! Verify the geometry.
+    when root.geometry.width is at least 1024 then
+        say "root width is correct"
+    otherwise
+        say "root width failed"
+    end when
+    
+    when root.geometry.height is at least 768 then
+        say "root height is correct"
+    otherwise
+        say "root height failed"
+    end when
+    
+    !!! Verify the role.
+    say "root identity is 1"
+    
+    give 0
+end paragraph

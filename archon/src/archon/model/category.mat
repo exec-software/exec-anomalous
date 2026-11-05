@@ -1,0 +1,35 @@
+!!! archon/model/category.mat
+!!! The surface under assessment.
+!!!
+!!! Archon is not only a code scanner. A finding names which surface it was
+!!! observed on, so one report vocabulary covers source code, configuration,
+!!! permissions, dependencies, runtime state and data.
+
+book archon.model.category
+
+read everything from ny.lang.core
+
+public category begin choice
+    when Code
+    when Security
+    when Permission
+    when Configuration
+    when Dependency
+    when Runtime
+    when Data
+end choice
+
+!!! A stable, lower-case name for machine-readable output.
+public category-name receives domain as category returns text begin paragraph
+    value name as text is consider domain
+        when category.Code give "code"
+        when category.Security give "security"
+        when category.Permission give "permission"
+        when category.Configuration give "configuration"
+        when category.Dependency give "dependency"
+        when category.Runtime give "runtime"
+        when category.Data give "data"
+        otherwise give "code"
+    end consider
+    give name
+end paragraph

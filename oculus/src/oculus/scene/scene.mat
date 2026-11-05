@@ -1,0 +1,19 @@
+!!! oculus/scene.mat
+!!! The semantic scene — ordered collection of scene nodes with revision tracking.
+!!!
+!!! A scene is a bounded, revisioned projection of the desktop state.
+!!! It tracks the canonical node list, parentage, and revision identity.
+
+book oculus.scene
+
+read everything from ny.lang.core
+read everything from oculus.window.identity
+read everything from oculus.window.geometry
+read everything from oculus.window.role
+read everything from oculus.window.focus
+read everything from oculus.scene.node
+
+scene begin record
+    field revision as override long
+    field nodes as text
+end record

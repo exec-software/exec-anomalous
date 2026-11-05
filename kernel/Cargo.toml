@@ -1,0 +1,79 @@
+[package]
+name = "kernel"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "anomalous_kernel"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+test = false
+bench = false
+
+[features]
+default = []
+smoke_test = []
+fault_test = ["smoke_test"]
+circle_test = ["smoke_test"]
+control_test = ["smoke_test"]
+rite_test = ["smoke_test"]
+memory_test = ["smoke_test"]
+interrupt_test = ["smoke_test"]
+scheduler_test = ["smoke_test"]
+dispatcher_test = ["scheduler_test"]
+owned_dispatcher_test = ["dispatcher_test"]
+owned_multi_region_test = ["owned_dispatcher_test"]
+owned_source_test = ["owned_multi_region_test"]
+owned_tls_test = ["owned_multi_region_test"]
+application_profile_test = ["owned_dispatcher_test"]
+ny_object_test = ["application_profile_test"]
+native_application_test = ["application_profile_test"]
+native_runtime_test = ["native_application_test", "dep:anomalous-native-runtime"]
+# A program-bearing task: a single task with a 64 KiB arena (ADR 0094).
+native_program_test = ["native_runtime_test"]
+native_durable_test = ["native_document_test"]
+native_repeated_editor_test = ["native_durable_test"]
+native_durable_failure_test = ["native_durable_test"]
+native_interactive_editor_test = ["native_durable_test"]
+native_document_test = ["native_runtime_test", "dep:anomalous-document-protocol"]
+native_relaunch_test = ["native_runtime_test", "dep:anomalous-document-protocol"]
+elf_application_test = ["native_application_test", "dep:anomalous-elf-adapter"]
+elf_document_test = ["native_document_test", "elf_application_test"]
+elf_relaunch_test = ["native_relaunch_test", "elf_application_test"]
+linux_application_test = ["elf_application_test"]
+shared_veil_test = ["veil_application_test"]
+linux_tls_test = ["veil_application_test"]
+linux_loader_entry_test = ["linux_tls_test", "owned_source_test", "anomalous-veil-protocol/source-mapping"]
+veil_application_test = ["linux_application_test", "dep:anomalous-veil-protocol"]
+supervision_test = ["smoke_test"]
+shell_vessel_test = ["smoke_test"]
+input_wait_test = ["smoke_test"]
+display_vessel_test = ["smoke_test"]
+supervised_renderer_test = ["smoke_test"]
+semantic_surface_transport_test = ["smoke_test", "dep:anomalous-desktop-transport"]
+semantic_surface_presentation_test = [
+    "semantic_surface_transport_test",
+    "supervised_renderer_test",
+]
+desktop_dev = ["semantic_surface_presentation_test"]
+workspace_dev = ["scheduler_test"]
+owned_workspace_test = ["workspace_dev"]
+owned_workspace_cpu_test = ["owned_workspace_test"]
+mixed_workspace_test = ["application_profile_test", "owned_workspace_test"]
+native_editor_workspace_test = ["mixed_workspace_test", "dep:anomalous-document-protocol", "anomalous-document-protocol/remote_workspace"]
+
+[dependencies]
+anomalous-document-protocol = { workspace = true, optional = true }
+anomalous-native-runtime = { workspace = true, optional = true }
+anomalous-veil-protocol = { path = "../crates/anomalous-veil-protocol", optional = true, default-features = false }
+anomalous-elf-adapter = { workspace = true, optional = true }
+anomalous-abi.workspace = true
+anomalous-desktop-transport = { workspace = true, optional = true }
+
+[dev-dependencies]
+anomalous-desktop-transport.workspace = true
+anomalous-session = { path = "../crates/anomalous-session", features = ["kernel_conformance_test_support"] }

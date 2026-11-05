@@ -1,0 +1,26 @@
+!!! oculus/appearance/accessibility.mat
+!!! Accessibility requirements and nonvisual state.
+!!!
+!!! Ensures the desktop meets minimum contrast ratios
+!!! and can operate without a visual display.
+
+book oculus.appearance.accessibility
+
+read everything from ny.lang.core
+
+!!! Contrast level for text readability.
+
+public contrast-level begin choice
+    when Normal
+    when Enhanced
+    when Maximum
+end choice
+
+!!! Accessibility configuration.
+
+public accessibility-config begin record
+    field contrast as contrast-level
+    field reduce-motion as boolean
+    field screen-reader-enabled as boolean
+    field min-text-size as override long
+end record

@@ -1,0 +1,16 @@
+!!! oculus/input/focus.mat
+!!! Input focus model.
+!!!
+!!! Focus determines which window receives keyboard events.
+!!! Only one window can have focus at a time.
+
+book oculus.input.focus
+
+read everything from ny.lang.core
+
+!!! The focus state of the desktop.
+
+public input-focus begin record
+    field focused-window-id as override long
+    field has-focus as boolean
+end record

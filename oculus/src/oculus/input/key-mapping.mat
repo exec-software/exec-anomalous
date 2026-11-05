@@ -1,0 +1,73 @@
+!!! oculus/input/key-mapping.mat
+!!! Physical key codes to logical symbols.
+!!!
+!!! The kernel reports physical key codes. This module maps
+!!! them to logical symbols the application understands.
+
+book oculus.input.key-mapping
+
+read everything from ny.lang.core
+
+!!! A physical key code (from the keyboard hardware).
+
+public key-code begin choice
+    when Unmapped
+    when Escape
+    when Return
+    when Space
+    when Tab-key
+    when Backspace
+    when Delete
+    when Up
+    when Down
+    when Left
+    when Right
+    when F1
+    when F2
+    when F3
+    when F4
+    when F5
+    when F6
+    when F7
+    when F8
+    when F9
+    when F10
+    when F11
+    when F12
+    when A
+    when B
+    when C
+    when D
+    when E
+    when F
+    when G
+    when H
+    when I
+    when J
+    when K
+    when L
+    when M
+    when N
+    when O
+    when P
+    when Q
+    when R
+    when S
+    when T
+    when U
+    when V
+    when W
+    when X
+    when Y
+    when Z
+    when Digit0
+    when Digit1
+    when Digit2
+    when Digit3
+    when Digit4
+    when Digit5
+    when Digit6
+    when Digit7
+    when Digit8
+    when Digit9
+end choice

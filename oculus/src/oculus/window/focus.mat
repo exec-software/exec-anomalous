@@ -1,0 +1,15 @@
+!!! oculus/window-focus.mat
+!!! Focus tracking for the scene.
+!!!
+!!! Focus is canonical scene state — where attention currently rests.
+!!! This is not focus discovery or arbitration; it is the recorded
+!!! position of focus in the current revision.
+
+book oculus.window.focus
+
+read everything from ny.lang.core
+
+public focus-position begin choice
+    when Focused
+    when Unfocused
+end choice

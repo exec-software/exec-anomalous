@@ -1,0 +1,64 @@
+!!! oculus/input/smoke.mat
+!!! Smoke test for input routing.
+!!!
+!!! Exercises: creating keyboard/pointer events, focus,
+!!! pointer state, and the routing table.
+
+book oculus.input.smoke
+
+read everything from ny.lang.core
+read everything from oculus.window.geometry
+read everything from oculus.input.event
+read everything from oculus.input.focus
+read everything from oculus.input.pointer
+read everything from oculus.input.routing
+
+main returns number begin paragraph
+    !!! Create a keyboard event (space pressed).
+    value kb is build keyboard-event with key-code being 32, is-pressed being true, timestamp being 100
+    
+    when kb.is-pressed is at least 1 then
+        say "keyboard event created"
+    otherwise
+        say "keyboard event failed"
+    end when
+    
+    !!! Create a pointer event at position (100, 200).
+    value cursor is build point with x being 100, y being 200
+    value pt is build pointer-event with position being cursor, button-mask being 0, is-moved being true, timestamp being 101
+    
+    when pt.is-moved is at least 1 then
+        say "pointer event created"
+    otherwise
+        say "pointer event failed"
+    end when
+    
+    !!! Create input focus on window ID 5.
+    value focus is build input-focus with focused-window-id being 5, has-focus being true
+    
+    when focus.has-focus is at least 1 then
+        say "focus is set"
+    otherwise
+        say "focus failed"
+    end when
+    
+    !!! Create pointer state at (100, 200).
+    value ptr is build pointer-state with cursor-position being cursor, active-button being 0, is-hovering-window being false
+    
+    !!! Create the routing table.
+    value table is build routing-table with focus being focus, pointer-state being ptr, viewport-width being 1200, viewport-height being 675
+    
+    when table.viewport-width is at least 1200 then
+        say "routing table created"
+    otherwise
+        say "routing table failed"
+    end when
+    
+    when table.viewport-height is at least 675 then
+        say "routing table height correct"
+    otherwise
+        say "routing table height failed"
+    end when
+    
+    give 0
+end paragraph

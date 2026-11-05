@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="256" viewBox="0 0 420 256" role="img" aria-labelledby="title">
+<title id="title">Anomalous Dark active frame reference</title>
+<defs>
+<symbol id="minimize" viewBox="0 0 24 24">
+<line x1="7" y1="16" x2="17" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+</symbol>
+<symbol id="maximize" viewBox="0 0 24 24">
+<line x1="7" y1="7" x2="17" y2="7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="17" y1="7" x2="17" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="17" y1="17" x2="7" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="7" y1="17" x2="7" y2="7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+</symbol>
+<symbol id="restore" viewBox="0 0 24 24">
+<line x1="9" y1="6" x2="18" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="18" y1="6" x2="18" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="18" y1="15" x2="17" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="6" y1="9" x2="15" y2="9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="15" y1="9" x2="15" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="15" y1="18" x2="6" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="6" y1="18" x2="6" y2="9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+</symbol>
+<symbol id="close" viewBox="0 0 24 24">
+<line x1="8" y1="8" x2="16" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+<line x1="16" y1="8" x2="8" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+</symbol>
+</defs>
+<rect width="420" height="256" fill="#141414"/>
+<rect x="12" y="18" width="396" height="232" rx="10" fill="#000000" fill-opacity="0.376471"/>
+<defs><clipPath id="frame_clip"><rect x="16" y="16" width="388" height="224" rx="6"/></clipPath></defs>
+<g clip-path="url(#frame_clip)">
+<rect x="16" y="16" width="388" height="224" fill="#1a1a1a"/>
+<rect x="20" y="20" width="380" height="40" fill="#222222"/>
+<rect x="20" y="60" width="380" height="1" fill="#2a2a2a"/>
+<text x="32" y="44" font-family="sans-serif" font-size="12" fill="#ece9e5">Native workspace</text>
+<rect x="261" y="37" width="5" height="5" rx="2" fill="#f2661a"/>
+<text x="272" y="43" font-family="sans-serif" font-size="7" fill="#ece9e5">FOCUS</text>
+<rect x="310" y="26" width="28" height="28" rx="4" fill="#222222"/>
+<use href="#minimize" x="316" y="32" width="16" height="16" color="#ece9e5"/>
+<rect x="340" y="26" width="28" height="28" rx="4" fill="#222222"/>
+<use href="#maximize" x="346" y="32" width="16" height="16" color="#ece9e5"/>
+<rect x="370" y="26" width="28" height="28" rx="4" fill="#222222"/>
+<use href="#close" x="376" y="32" width="16" height="16" color="#ece9e5"/>
+<text x="40" y="104" font-family="sans-serif" font-size="18" fill="#ece9e5">A shared frame language</text>
+<text x="40" y="128" font-family="sans-serif" font-size="12" fill="#9c9893">Anomalous Dark / active</text>
+<rect x="40" y="148" width="110" height="3" fill="#33b7a6"/>
+</g>
+<rect x="17" y="17" width="386" height="222" rx="5" fill="none" stroke="#f2661a" stroke-width="2"/>
+<rect x="18.5" y="18.5" width="383" height="219" rx="3.5" fill="none" stroke="#0f0f0f" stroke-width="1"/>
+</svg>

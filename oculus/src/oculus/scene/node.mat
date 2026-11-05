@@ -1,0 +1,24 @@
+!!! oculus/scene-node.mat
+!!! A single node in the semantic scene.
+!!!
+!!! A scene node is the atomic unit of the desktop model: it carries
+!!! its identity, role, position, size, focus state, label, and parent
+!!! reference. Every window, region, control, heading, status and panel
+!!! in the scene is one of these.
+
+book oculus.scene.node
+
+read everything from ny.lang.core
+read everything from oculus.window.identity
+read everything from oculus.window.role
+read everything from oculus.window.focus
+read everything from oculus.window.geometry
+
+public scene-node begin record
+    field identity as override long
+    field role as window-role
+    field geometry as rectangle
+    field focus as focus-position
+    field label as text
+    field parent-identity as override long
+end record

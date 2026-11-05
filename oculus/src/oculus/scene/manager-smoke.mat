@@ -1,0 +1,76 @@
+!!! oculus/scene/manager-smoke.mat
+!!! Smoke test for window management.
+!!!
+!!! Exercises: creating windows, focusing, raising, minimizing, and closing.
+
+book oculus.scene.manager-smoke
+
+read everything from ny.lang.core
+read everything from oculus.window.geometry
+read everything from oculus.window.lifecycle
+read everything from oculus.window.operations
+read everything from oculus.window.record
+read everything from oculus.window.viewport
+read everything from oculus.window.workspace
+read everything from oculus.scene.manager
+
+main returns number begin paragraph
+    !!! Create a viewport with scaling.
+    value vp is build viewport with physical-width being 1920, physical-height being 1080, logical-width being 1200, logical-height being 675, scale-x being 1.6, scale-y being 1.6
+    
+    !!! Create the scene manager.
+    value sm is build scene-manager with revision being 0, viewport being vp, window-count being 0, max-windows being 64
+    
+    !!! Create the first window.
+    value win-a is create-window with position-x being 10, position-y being 10, width being 800, height being 600, label being "Editor", window-id being 1
+    
+    !!! Verify window A geometry.
+    when win-a.geometry.width is at least 800 then
+        say "window A width correct"
+    otherwise
+        say "window A width failed"
+    end when
+    
+    !!! Create a second window.
+    value win-b is create-window with position-x being 820, position-y being 10, width being 370, height being 600, label being "Terminal", window-id being 2
+    
+    !!! Focus window A.
+    value win-a-focused is focus-window with window-obj being win-a, should-focus being true
+    when win-a-focused.focused is at least 1 then
+        say "window A focused"
+    otherwise
+        say "window A focus failed"
+    end when
+    
+    !!! Raise window B.
+    value win-b-raised is raise-window with window-obj being win-b, new-z-index being 10
+    when win-b-raised.z-index is at least 10 then
+        say "window B raised"
+    otherwise
+        say "window B raise failed"
+    end when
+    
+    !!! Minimize window A.
+    value win-a-min is minimize-window with window-obj being win-a-focused
+    
+    !!! Verify window A is minimized using pattern matching.
+    consider win-a-min.state
+        when window-state.Minimized then
+            say "window A minimized"
+        otherwise
+            say "window A minimize failed"
+    end consider
+    
+    !!! Close window B.
+    value win-b-closed is close-window with window-obj being win-b-raised
+    
+    !!! Verify window B is closed using pattern matching.
+    consider win-b-closed.state
+        when window-state.Closed then
+            say "window B closed"
+        otherwise
+            say "window B close failed"
+    end consider
+    
+    give 0
+end paragraph

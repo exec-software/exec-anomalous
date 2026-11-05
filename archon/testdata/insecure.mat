@@ -1,0 +1,20 @@
+book sample.insecure
+
+read everything from ny.lang.core
+read everything from ny.lang.text
+
+unsafe_swap receives word as number returns number begin paragraph
+    variable result as number is 0
+    assembly for x86_64 is "movq $1, $0; bswapq $0" using word giving result
+    give result
+end paragraph
+
+main returns number begin paragraph
+    value greeting as text is begin text
+        password
+    end text
+    repeat forever
+        say greeting
+    end repeat
+    give 0
+end paragraph

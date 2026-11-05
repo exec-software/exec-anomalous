@@ -1,0 +1,17 @@
+!!! oculus/window/lifecycle.mat
+!!! Window lifecycle state machine.
+!!!
+!!! A window moves through: Created → Visible → Minimized → Closed.
+!!! The compositor consumes this state to decide whether a window
+!!! occupies screen space.
+
+book oculus.window.lifecycle
+
+read everything from ny.lang.core
+
+public window-state begin choice
+    when Created
+    when Visible
+    when Minimized
+    when Closed
+end choice

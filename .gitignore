@@ -1,0 +1,19 @@
+/build/
+/target/
+*.log
+*.pid
+*.swp
+.DS_Store
+.idea/
+.vscode/
+/runtime/
+/.runtime/
+/eidolon/build/
+/eidolon/.pytest_cache/
+/oculus/build/
+/archon/build/
+__pycache__/
+*.py[cod]
+
+# Interrupted optional SDK staging is generated and may contain local provenance.
+/runtime.next.*/

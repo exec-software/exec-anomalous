@@ -1,0 +1,27 @@
+!!! archon/engine/rules.mat
+!!! Applying a knowledge rule to a scanned line.
+!!!
+!!! The first analyzer is literal pattern matching. A rule matches a line when
+!!! the line contains the rule's needle; matching produces a finding that
+!!! inherits the rule's severity, confidence and category.
+
+book archon.engine.rules
+
+read everything from ny.lang.core
+read everything from archon.model.severity
+read everything from archon.model.confidence
+read everything from archon.model.category
+read everything from archon.model.location
+read everything from archon.model.finding
+read everything from archon.model.rule
+read everything from archon.engine.patterns
+
+!!! True when the rule's needle appears in the line.
+public rule-matches receives rule as knowledge-rule, line as text returns boolean begin paragraph
+    give line-contains with line being line, needle being rule.needle
+end paragraph
+
+!!! Build the finding a matched rule produces at a given location.
+public finding-from-rule receives rule as knowledge-rule, place as location, identity-value as number returns finding begin paragraph
+    give build finding with identity being identity-value, rule-id being rule.identity, title being rule.title, detail being "matched rule " plus rule.identity, level being rule.level, certainty being rule.certainty, domain being rule.domain, place being place, guidance being rule.guidance
+end paragraph

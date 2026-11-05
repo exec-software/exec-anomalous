@@ -1,0 +1,21 @@
+!!! oculus/appearance/appearance.mat
+!!! The appearance layer — ties theme, style, and accessibility together.
+!!!
+!!! This is the top-level abstraction that the compositor uses
+!!! to determine how to render the scene.
+
+book oculus.appearance.appearance
+
+read everything from oculus.appearance.theme
+read everything from oculus.appearance.style
+read everything from oculus.appearance.accessibility
+read everything from ny.lang.core
+
+!!! The complete appearance configuration.
+
+public appearance-config begin record
+    field theme as text
+    field style as style-rules
+    field accessibility as accessibility-config
+    field is-ready as boolean
+end record

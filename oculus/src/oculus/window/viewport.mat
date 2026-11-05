@@ -1,0 +1,19 @@
+!!! oculus/window/viewport.mat
+!!! Configurable viewport with scaling support.
+!!!
+!!! The viewport defines the active rendering area in both logical and
+!!! physical dimensions. Scaling is the ratio between logical and physical
+!!! units, enabling HiDPI/Retina displays without changing scene logic.
+
+book oculus.window.viewport
+
+read everything from ny.lang.core
+
+public viewport begin record
+    field physical-width as override long
+    field physical-height as override long
+    field logical-width as override long
+    field logical-height as override long
+    field scale-x as floating
+    field scale-y as floating
+end record

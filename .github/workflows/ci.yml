@@ -1,0 +1,51 @@
+name: foundations
+
+# This full matrix requires the exact-byte Linux host fixtures admitted by the
+# loader proofs. An arbitrary hosted image is not a qualified fixture source.
+# Keep every runtime gate intact; trigger only after its documented prerequisites
+# have been provisioned. Portable source checks run separately on pushes and PRs.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check_and_boot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes binutils qemu-system-x86
+
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Check source
+        run: make check
+
+      - name: Boot smoke test
+        run: make smoke
+
+      - name: Diagnostic fault smoke test
+        run: make fault-smoke
+
+      - name: Fixed circle isolation smoke test
+        run: make circle-smoke
+
+      - name: Bounded vessel supervision smoke test
+        run: make supervision-smoke
+
+      - name: Bootstrap memory ownership smoke test
+        run: make memory-smoke
+
+      - name: Bootstrap shell smoke test
+        run: make shell-smoke

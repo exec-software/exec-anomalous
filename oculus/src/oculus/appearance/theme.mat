@@ -1,0 +1,21 @@
+!!! oculus/appearance/theme.mat
+!!! Theme configuration — the active style set.
+!!!
+!!! A theme bundles together colors, typography hints, and
+!!! elevation settings into one coherent look.
+
+book oculus.appearance.theme
+
+read everything from oculus.appearance.color
+read everything from ny.lang.core
+
+!!! A complete theme for the desktop.
+
+public theme begin record
+    field name as text
+    field background as color-value
+    field surface as color-value
+    field text-primary as color-value
+    field text-secondary as color-value
+    field accent as color-value
+end record

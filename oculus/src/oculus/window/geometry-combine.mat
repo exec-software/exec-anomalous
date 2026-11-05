@@ -1,0 +1,19 @@
+!!! oculus/window-geometry-combine.mat
+!!! Bounding-box operations over rectangles.
+
+book oculus.window.geometry.combine
+
+read everything from ny.lang.core
+read everything from oculus.window.geometry
+
+combine-rects receives first as rectangle, second as rectangle returns rectangle begin paragraph
+    value min-x as override long is when first.origin.x is at most second.origin.x give first.origin.x otherwise give second.origin.x end when
+    value min-y as override long is when first.origin.y is at most second.origin.y give first.origin.y otherwise give second.origin.y end when
+    value max-x as override long is (first.origin.x plus first.width)
+    value max-y as override long is (first.origin.y plus first.height)
+    value second-max-x as override long is (second.origin.x plus second.width)
+    value second-max-y as override long is (second.origin.y plus second.height)
+    value bound-x as override long is when max-x is at least second-max-x give max-x otherwise give second-max-x end when
+    value bound-y as override long is when max-y is at least second-max-y give max-y otherwise give second-max-y end when
+    give build rectangle with origin being build point with x being min-x, y being min-y, width being (bound-x minus min-x), height being (bound-y minus min-y)
+end paragraph

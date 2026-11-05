@@ -1,0 +1,27 @@
+!!! oculus/input/event.mat
+!!! Input event primitives.
+!!!
+!!! All input arrives as typed events. These are the atomic
+!!! primitives the compositor receives from the kernel.
+
+book oculus.input.event
+
+read everything from oculus.window.geometry
+read everything from ny.lang.core
+
+!!! A keyboard input event.
+
+public keyboard-event begin record
+    field key-code as override long
+    field is-pressed as boolean
+    field timestamp as override long
+end record
+
+!!! A pointer input event.
+
+public pointer-event begin record
+    field position as point
+    field button-mask as override long
+    field is-moved as boolean
+    field timestamp as override long
+end record

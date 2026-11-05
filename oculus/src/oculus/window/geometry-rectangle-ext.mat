@@ -1,0 +1,19 @@
+!!! oculus/window-geometry-rectangle-ext.mat
+!!! Rectangle extension: check if a rectangle is empty.
+
+book oculus.window.geometry.rectangle-ext
+
+read everything from ny.lang.core
+read everything from oculus.window.geometry
+
+rectangle begin extension
+    is-empty returns boolean begin paragraph
+        when my.width is at most 0 then
+            give true
+        otherwise when my.height is at most 0 then
+            give true
+        otherwise
+            give false
+        end when
+    end paragraph
+end extension

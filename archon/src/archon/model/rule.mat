@@ -1,0 +1,24 @@
+!!! archon/model/rule.mat
+!!! A knowledge rule: one thing Archon knows how to look for.
+!!!
+!!! A rule carries its own severity, confidence and category so a finding
+!!! inherits a complete assessment from the rule that produced it. `needle` is
+!!! the literal the first analyzer looks for; later analyzers interpret rules
+!!! with structure rather than a substring.
+
+book archon.model.rule
+
+read everything from ny.lang.core
+read everything from archon.model.severity
+read everything from archon.model.confidence
+read everything from archon.model.category
+
+public knowledge-rule begin record
+    field identity as text
+    field title as text
+    field needle as text
+    field guidance as text
+    field level as severity
+    field certainty as confidence
+    field domain as category
+end record

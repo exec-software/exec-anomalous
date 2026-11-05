@@ -1,0 +1,30 @@
+!!! archon/rules/generic.mat
+!!! Language-agnostic code and security rules.
+!!!
+!!! These rules describe issues that are not specific to Matrix: they apply to
+!!! any source text Archon scans (C, C++, shell, configuration, and Matrix
+!!! alike). They are literal patterns in this increment; later analyzers add
+!!! structure and data flow without changing the finding model.
+
+book archon.rules.generic
+
+read everything from ny.lang.core
+read everything from archon.model.severity
+read everything from archon.model.confidence
+read everything from archon.model.category
+read everything from archon.model.rule
+
+!!! The generic rule set, in stable order.
+public generic-rules returns array of knowledge-rule begin paragraph
+    variable rules as array of knowledge-rule is []
+
+    append (build knowledge-rule with identity being "code.unsafe-copy", title being "Unbounded string copy", needle being "strcpy(", guidance being "Use a copy that respects the destination size.", level being severity.High, certainty being confidence.Likely, domain being category.Code) to rules
+    append (build knowledge-rule with identity being "code.unbounded-read", title being "Unbounded input read", needle being "gets(", guidance being "Read input with an explicit bound.", level being severity.Critical, certainty being confidence.Likely, domain being category.Code) to rules
+    append (build knowledge-rule with identity being "sec.hardcoded-secret", title being "Hard-coded secret", needle being "password", guidance being "Move secrets out of source into a secret store.", level being severity.Critical, certainty being confidence.Speculative, domain being category.Security) to rules
+    append (build knowledge-rule with identity being "sec.hardcoded-key", title being "Hard-coded key", needle being "api_key", guidance being "Load keys from the environment or a secret store.", level being severity.High, certainty being confidence.Speculative, domain being category.Security) to rules
+    append (build knowledge-rule with identity being "sec.weak-hash", title being "Weak hash", needle being "md5(", guidance being "Use a modern hash for security purposes.", level being severity.Medium, certainty being confidence.Likely, domain being category.Security) to rules
+    append (build knowledge-rule with identity being "sec.command-exec", title being "Command execution", needle being "system(", guidance being "Avoid shelling out; if required, pass fixed arguments and validate input.", level being severity.High, certainty being confidence.Speculative, domain being category.Security) to rules
+    append (build knowledge-rule with identity being "perm.world-writable", title being "World-writable path", needle being "chmod 777", guidance being "Grant the narrowest permission that works.", level being severity.High, certainty being confidence.Likely, domain being category.Permission) to rules
+
+    give rules
+end paragraph

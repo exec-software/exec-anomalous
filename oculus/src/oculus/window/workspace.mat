@@ -1,0 +1,15 @@
+!!! oculus/window/workspace.mat
+!!! Workspace (virtual desktop) model.
+!!!
+!!! A scene can have multiple workspaces. Each window is assigned to
+!!! exactly one workspace. The active workspace determines which
+!!! windows are presented.
+
+book oculus.window.workspace
+
+read everything from ny.lang.core
+
+public workspace begin record
+    field index as override long
+    field label as text
+end record

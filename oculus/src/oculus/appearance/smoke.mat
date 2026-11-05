@@ -1,0 +1,63 @@
+!!! oculus/appearance/smoke.mat
+!!! Smoke test for the appearance system.
+!!!
+!!! Exercises: creating colors, themes, style rules, accessibility
+!!! configuration, and the full appearance layer.
+
+book oculus.appearance.smoke
+
+read everything from ny.lang.core
+read everything from oculus.appearance.color
+read everything from oculus.appearance.theme
+read everything from oculus.appearance.style
+read everything from oculus.appearance.accessibility
+read everything from oculus.appearance.appearance
+
+main returns number begin paragraph
+    !!! Create a background color (dark gray).
+    value bg is build color-value with red being 30, green being 30, blue being 30, alpha being 255
+    
+    when bg.red is at least 30 then
+        say "color created"
+    otherwise
+        say "color failed"
+    end when
+    
+    !!! Create a dark theme.
+    value surface-color is build color-value with red being 40, green being 40, blue being 40, alpha being 255
+    value text-color is build color-value with red being 240, green being 240, blue being 240, alpha being 255
+    value accent is build color-value with red being 80, green being 160, blue being 255, alpha being 255
+    value theme is build theme with name being "Dark", background being bg, surface being surface-color, text-primary being text-color, text-secondary being text-color, accent being accent
+    
+    !!! Verify theme has a name.
+    say "theme created"
+    
+    !!! Create style rules (medium elevation, 8px radius).
+    value style-rules is build style-rules with corner-radius being 8, elevation being elevation.Medium, has-shadow being true, border-width being 1
+    
+    when style-rules.corner-radius is at least 8 then
+        say "style rules created"
+    otherwise
+        say "style rules failed"
+    end when
+    
+    !!! Create accessibility config (enhanced contrast).
+    value a11y is build accessibility-config with contrast being contrast-level.Enhanced, reduce-motion being false, screen-reader-enabled being true, min-text-size being 14
+    
+    when a11y.min-text-size is at least 14 then
+        say "accessibility config created"
+    otherwise
+        say "accessibility config failed"
+    end when
+    
+    !!! Create the full appearance configuration.
+    value appearance is build appearance-config with theme being "Dark", style being style-rules, accessibility being a11y, is-ready being true
+    
+    when appearance.is-ready is at least 1 then
+        say "appearance is ready"
+    otherwise
+        say "appearance failed"
+    end when
+    
+    give 0
+end paragraph

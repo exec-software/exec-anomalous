@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "id": "anomalous-native-frames",
+  "role": "compiled-recipe-reference-export",
+  "generator": "cargo run -p anomalous-desktop-theme --example export_assets --target x86_64-unknown-linux-gnu",
+  "source": "crates/anomalous-desktop-theme/src/assets.rs",
+  "source_view_box": [0, 0, 24, 24],
+  "raster_size": {"minimum": 8, "maximum": 32, "samples_per_pixel": 16},
+  "control_ids": ["minimize", "maximize", "restore", "close"],
+  "control_states": ["normal", "hover", "pressed", "inactive", "disabled"],
+  "frame_states": ["active", "inactive", "maximized", "tiled"],
+  "runtime_external_asset_loading": false,
+  "themes": [
+    {"id": "dark", "name": "Anomalous Dark", "theme_schema": 1, "primary": "#f2661a", "accent": "#33b7a6", "surface": "#1a1a1a", "radius": 6, "border_width": 1, "title_separator": 1, "control_radius": 4, "shadow_spread": 8, "shadow_opacity": 96},
+    {"id": "light", "name": "Anomalous Light", "theme_schema": 1, "primary": "#a63b08", "accent": "#11695f", "surface": "#faf7f2", "radius": 6, "border_width": 1, "title_separator": 1, "control_radius": 4, "shadow_spread": 8, "shadow_opacity": 96},
+    {"id": "high-contrast", "name": "Anomalous High Contrast", "theme_schema": 1, "primary": "#ffff00", "accent": "#ffff00", "surface": "#000000", "radius": 0, "border_width": 1, "title_separator": 1, "control_radius": 0, "shadow_spread": 0, "shadow_opacity": 0}
+  ]
+}

@@ -1,0 +1,41 @@
+!!! archon/engine/patterns.mat
+!!! Text primitives shared by the scanning engine.
+!!!
+!!! `split-lines` is implemented here in Matrix rather than delegating to
+!!! `ny.lang.text::split_lines`, because that Ny function returns a
+!!! `ny::lang::collections::vec<text>`, which a Matrix page cannot consume as an
+!!! `array of text`. The tier-one helpers `char_at` and `substring` are enough.
+
+book archon.engine.patterns
+
+read everything from ny.lang.core
+read everything from ny.lang.text
+
+!!! Split a text buffer into lines. The result always holds at least one
+!!! element; a trailing newline yields a final empty element.
+public split-lines receives content as text returns array of text begin paragraph
+    variable lines as array of text is []
+    value total as number is the length of content
+    variable start as number is 0
+    variable cursor as number is 0
+    repeat while cursor is less than total
+        value ch is ny.lang.text::char_at with s being content, index being cursor
+        when ch equals newline then
+            append (ny.lang.text::substring with s being content, start being start, length being (cursor minus start)) to lines
+            set start to cursor plus 1
+        end when
+        set cursor to cursor plus 1
+    end repeat
+    append (ny.lang.text::substring with s being content, start being start, length being (total minus start)) to lines
+    give lines
+end paragraph
+
+!!! True when the line contains the needle as a literal substring.
+public line-contains receives line as text, needle as text returns boolean begin paragraph
+    give ny.lang.text::contains with s being line, needle being needle
+end paragraph
+
+!!! How many times the needle occurs in the line.
+public needle-count receives line as text, needle as text returns number begin paragraph
+    give ny.lang.text::count with s being line, needle being needle
+end paragraph

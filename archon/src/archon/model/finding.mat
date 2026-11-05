@@ -1,0 +1,36 @@
+!!! archon/model/finding.mat
+!!! The atomic unit of an Archon scan.
+!!!
+!!! A finding is the whole record of one observed issue: what rule found it,
+!!! how serious and how certain it is, which surface it is on, exactly where it
+!!! was observed, and what to do about it. It is data first: a human interface,
+!!! an agent and a policy decision all read this one shape.
+
+book archon.model.finding
+
+read everything from ny.lang.core
+read everything from archon.model.severity
+read everything from archon.model.confidence
+read everything from archon.model.category
+read everything from archon.model.location
+
+public finding begin record
+    field identity as number
+    field rule-id as text
+    field title as text
+    field detail as text
+    field level as severity
+    field certainty as confidence
+    field domain as category
+    field place as location
+    field guidance as text
+end record
+
+!!! A one-line human summary.
+public finding-summary receives item as finding returns text begin paragraph
+    give (severity-name with level being item.level)
+        plus ": "
+        plus item.title
+        plus " at "
+        plus (location-summary with place being item.place)
+end paragraph

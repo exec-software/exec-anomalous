@@ -1,0 +1,14 @@
+!!! oculus/hello.mat
+!!! The smallest runnable Oculus page.
+!!!
+!!! This page exists only to prove the build and run contract for the Oculus
+!!! desktop system: it compiles as a Matrix book against Anomalous's shared Ny
+!!! runtime and runs on nyinterpreter. The session shell, compositor, window
+!!! manager and appearance layer arrive in later units (see roadmap.md).
+
+book oculus.hello
+
+main returns number begin paragraph
+    say "Oculus: hello from the shared Anomalous runtime"
+    give 0
+end paragraph

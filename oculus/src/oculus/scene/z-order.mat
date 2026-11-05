@@ -1,0 +1,8 @@
+!!! oculus/scene/z-order.mat
+!!! Z-order management for the scene.
+!!!
+!!! Windows are sorted by z-index to produce a deterministic render order.
+
+book oculus.scene.z-order
+
+read everything from oculus.window.record

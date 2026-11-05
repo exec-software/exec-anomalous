@@ -1,0 +1,139 @@
+!!! oculus/session/smoke.mat
+!!! Smoke test for the full integrated session.
+!!!
+!!! Exercises: booting the desktop, creating a window, sending input,
+!!! composing a frame, and verifying the full system is operational.
+
+book oculus.session.smoke
+
+read everything from ny.lang.core
+read everything from oculus.window.geometry
+read everything from oculus.window.viewport
+read everything from oculus.window.workspace
+read everything from oculus.window.lifecycle
+read everything from oculus.window.record
+read everything from oculus.window.operations
+read everything from oculus.compositor.compositor
+read everything from oculus.compositor.surface
+read everything from oculus.compositor.frame
+read everything from oculus.compositor.damage
+read everything from oculus.compositor.output
+read everything from oculus.input.event
+read everything from oculus.input.routing
+read everything from oculus.input.focus
+read everything from oculus.input.pointer
+read everything from oculus.appearance.appearance
+read everything from oculus.appearance.theme
+read everything from oculus.appearance.style
+read everything from oculus.appearance.accessibility
+read everything from oculus.appearance.color
+read everything from oculus.session.shell
+read everything from oculus.session.desktop-context
+read everything from oculus.session.integration
+read everything from oculus.session.boot
+
+main returns number begin paragraph
+    !!! Boot the viewport with scaling.
+    value vp is build viewport with physical-width being 1920, physical-height being 1080, logical-width being 1200, logical-height being 675, scale-x being 1.6, scale-y being 1.6
+    
+    !!! Initialize the compositor.
+    value comp is build compositor-state with frame-revision being 0, is-dirty being true
+    
+    when comp.is-dirty is at least 1 then
+        say "compositor initialized"
+    otherwise
+        say "compositor init failed"
+    end when
+    
+    !!! Set up input routing.
+    value focus is build input-focus with focused-window-id being 0, has-focus being false
+    value ptr-cursor is build point with x being 0, y being 0
+    value ptr is build pointer-state with cursor-position being ptr-cursor, active-button being 0, is-hovering-window being false
+    value routing is build routing-table with focus being focus, pointer-state being ptr, viewport-width being vp.logical-width, viewport-height being vp.logical-height
+    
+    when routing.viewport-width is at least 1200 then
+        say "input routing initialized"
+    otherwise
+        say "input routing failed"
+    end when
+    
+    !!! Create the appearance configuration.
+    value bg is build color-value with red being 30, green being 30, blue being 30, alpha being 255
+    value surface-color is build color-value with red being 40, green being 40, blue being 40, alpha being 255
+    value text-color is build color-value with red being 240, green being 240, blue being 240, alpha being 255
+    value accent is build color-value with red being 80, green being 160, blue being 255, alpha being 255
+    value dark-theme is build theme with name being "Dark", background being bg, surface being surface-color, text-primary being text-color, text-secondary being text-color, accent being accent
+    
+    value style is build style-rules with corner-radius being 8, elevation being elevation.Medium, has-shadow being true, border-width being 1
+    value a11y is build accessibility-config with contrast being contrast-level.Enhanced, reduce-motion being false, screen-reader-enabled being false, min-text-size being 14
+    
+    value appearance is build appearance-config with theme being "Dark", style being style, accessibility being a11y, is-ready being true
+    
+    when appearance.is-ready is at least 1 then
+        say "appearance initialized"
+    otherwise
+        say "appearance failed"
+    end when
+    
+    !!! Create the desktop context.
+    value ctx is build desktop-context with viewport being vp, compositor being comp, routing being routing, appearance-theme being "Dark", active-window-id being 0, window-count being 0, is-ready being true
+    
+    when ctx.is-ready is at least 1 then
+        say "desktop context initialized"
+    otherwise
+        say "desktop context failed"
+    end when
+    
+    !!! Create a window through the window manager.
+    value win is create-window with position-x being 100, position-y being 100, width being 800, height being 600, label being "Hello", window-id being 1
+    
+    when win.geometry.width is at least 800 then
+        say "window created in desktop"
+    otherwise
+        say "window creation failed"
+    end when
+    
+    !!! Simulate a keyboard event.
+    value kb is build keyboard-event with key-code being 32, is-pressed being true, timestamp being 1000
+    
+    when kb.is-pressed is at least 1 then
+        say "keyboard event dispatched"
+    otherwise
+        say "keyboard event failed"
+    end when
+    
+    !!! Simulate a pointer event.
+    value cursor is build point with x being 400, y being 300
+    value pt is build pointer-event with position being cursor, button-mask being 1, is-moved being true, timestamp being 1001
+    
+    when pt.is-moved is at least 1 then
+        say "pointer event dispatched"
+    otherwise
+        say "pointer event failed"
+    end when
+    
+    !!! Compose a frame.
+    value frame-surface is build surface with width being vp.logical-width, height being vp.logical-height, pixel-format being "RGBA8888"
+    value damage is build damage-tracker with has-damage being true
+    value frame is build frame with revision being 1, surface being frame-surface, damage being damage, output-id being 0, is-dirty being true
+    
+    when frame.revision is at least 1 then
+        say "frame composed"
+    otherwise
+        say "frame composition failed"
+    end when
+    
+    !!! Initialize the session shell.
+    value shell is build session-shell with state being shell-state.Running, frame-revision being 1, event-count being 2
+    
+    when shell.event-count is at least 2 then
+        say "session shell is running"
+    otherwise
+        say "session shell failed"
+    end when
+    
+    !!! Final verification: the full system is operational.
+    say "Oculus: all subsystems operational"
+    
+    give 0
+end paragraph

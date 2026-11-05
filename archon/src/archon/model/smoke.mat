@@ -1,0 +1,30 @@
+!!! archon/model/smoke.mat
+!!! Smoke test for the finding semantic model.
+!!!
+!!! Exercises: constructing a location and a finding, and rendering the
+!!! severity, category, location and finding summaries.
+
+book archon.model.smoke
+
+read everything from ny.lang.core
+read everything from ny.lang.text
+read everything from archon.model.severity
+read everything from archon.model.confidence
+read everything from archon.model.category
+read everything from archon.model.location
+read everything from archon.model.finding
+
+main returns number begin paragraph
+    value place is build location with target being "engine/sample.c", path being "engine/sample.c", line being 4, column being 5, excerpt being "strcpy(dst, src);"
+    value item is build finding with identity being 1, rule-id being "code.unsafe-copy", title being "Unbounded copy", detail being "A copy without a destination bound", level being severity.High, certainty being confidence.Likely, domain being category.Code, place being place, guidance being "Use a bounded copy."
+
+    say item.title
+    say "kind=" plus item.title
+    say "level=" plus (severity-name with level being item.level)
+    say "domain=" plus (category-name with domain being item.domain)
+    say "where=" plus (location-summary with place being item.place)
+    say (finding-summary with item being item)
+    say "rank=" plus (ny.lang.text::int_to_string_i64 with n being (severity-rank with level being item.level))
+
+    give 0
+end paragraph

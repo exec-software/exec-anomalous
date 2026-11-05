@@ -1,0 +1,116 @@
+# Architecture decisions
+
+Architecture decision records preserve the constraints and reasoning that shape
+Anomalous. [ADR 0000](0000-adr-process.md) defines the process and statuses.
+
+| Record | Status | Decision |
+| --- | --- | --- |
+| [0001](0001-people-and-machines-are-coequal-clients.md) | Accepted | People and machines are coequal clients |
+| [0002](0002-threshold-owned-modular-boot.md) | Accepted | Own a modular boot path with Threshold |
+| [0003](0003-rust-assembly-and-code-style.md) | Accepted; language designation superseded by 0045 | Preserve contained assembly and a uniform style |
+| [0004](0004-capability-oriented-hybrid-kernel.md) | Proposed | Start with a capability-oriented hybrid kernel |
+| [0005](0005-shared-semantic-control-plane.md) | Proposed | Use one typed semantic control plane |
+| [0006](0006-reliquary-and-covenant.md) | Proposed | Make artifacts and environments native concepts |
+| [0007](0007-occult-vocabulary-and-accessible-neumorphism.md) | Accepted | Pair precise vocabulary with accessible neumorphism |
+| [0008](0008-isolate-foreign-platform-compatibility.md) | Proposed | Isolate foreign-platform compatibility |
+| [0009](0009-separate-ai-semantics-from-hardware-mechanisms.md) | Proposed | Separate AI semantics from hardware mechanisms |
+| [0010](0010-canticle-secure-semantic-command-language.md) | Proposed | Make Canticle a typed, capability-explicit command language |
+| [0011](0011-prove-the-first-circle-with-a-fixed-x86-64-prototype.md) | Accepted | Prove a fixed test-only x86-64 circle before generalizing isolation |
+| [0012](0012-prove-bounded-bootstrap-memory-ownership.md) | Accepted | Prove bounded bootstrap frame and address-space ownership |
+| [0013](0013-prove-bounded-interrupt-time-and-input-delivery.md) | Accepted | Prove bounded interrupt, time, and physical-input delivery |
+| [0014](0014-prove-fixed-attributable-sigil-gated-ipc.md) | Accepted | Prove fixed attributable sigil-gated IPC |
+| [0015](0015-prove-bounded-preemption-and-user-fault-containment.md) | Accepted | Prove bounded preemption and user-fault containment |
+| [0016](0016-adopt-ny-as-anomalous-implementation-language.md) | Proposed | Qualify Ny adoption; official language direction accepted in 0045 |
+| [0017](0017-eidolon-lossless-framebuffer-traces.md) | Proposed | Build Eidolon lossless framebuffer traces |
+| [0018](0018-prove-bounded-vessel-supervision-and-restart.md) | Accepted | Prove bounded vessel supervision and restart |
+| [0019](0019-define-first-supervised-vessel-rite-abi.md) | Accepted | Define the first supervised-vessel rite ABI |
+| [0020](0020-compose-a-fixed-supervised-shell-vessel.md) | Accepted | Compose a fixed supervised shell vessel |
+| [0021](0021-prove-bounded-private-shell-session-ingress.md) | Accepted | Prove bounded private shell-session ingress and waiting |
+| [0022](0022-prove-bounded-native-session-input-and-exact-wake.md) | Accepted | Prove bounded native session input and exact wake |
+| [0023](0023-prove-bounded-authenticated-source-session-routing.md) | Accepted | Prove bounded authenticated-source session routing |
+| [0024](0024-prove-bounded-user-space-display-presentation.md) | Accepted | Prove bounded user-space display presentation |
+| [0025](0025-prove-bounded-canonical-semantic-desktop-scene.md) | Accepted | Prove a bounded canonical semantic desktop scene |
+| [0026](0026-compose-a-fixed-supervised-semantic-renderer.md) | Accepted | Compose a fixed supervised semantic renderer |
+| [0027](0027-prove-bounded-transactional-semantic-surface-publication.md) | Accepted | Prove bounded transactional semantic-surface publication |
+| [0028](0028-prove-bounded-native-semantic-surface-transport.md) | Accepted | Prove bounded native semantic-surface transport |
+| [0029](0029-prove-bounded-native-semantic-render-and-present-composition.md) | Accepted | Prove bounded native semantic render-and-present composition |
+| [0030](0030-prove-bounded-presentation-recovery-coordination.md) | Proposed | Prove bounded host presentation recovery before native service deployment |
+| [0031](0031-add-an-interactive-bootstrap-desktop-development-image.md) | Proposed | Add a removable interactive bootstrap desktop development image |
+| [0032](0032-start-a-native-window-workspace-and-compositor-service.md) | Proposed | Start a native window, workspace, and compositor service |
+| [0033](0033-build-the-first-native-themes-and-pointer-window-shell.md) | Proposed | Build the first native themes and pointer window shell |
+| [0034](0034-build-shared-native-frame-assets-and-canonical-control-states.md) | Proposed | Build shared native frame assets and canonical control states |
+| [0035](0035-add-a-built-in-appearance-app-with-shared-choice-state.md) | Proposed | Add a built-in Appearance app with shared choice state |
+| [0036](0036-activate-desktop-controls-on-pointer-release.md) | Proposed | Activate desktop controls on pointer release with canonical cancellation |
+| [0037](0037-batch-ready-desktop-pointer-motion.md) | Proposed | Batch bounded ready pointer motion while preserving every raw sequence and semantic boundary |
+| [0038](0038-add-native-window-content-surfaces.md) | Proposed | Add bounded native window content surfaces with granted ownership and complete-frame publication |
+| [0039](0039-prove-bounded-sustained-native-dispatch.md) | Proposed | Prove sustained private-task dispatch and continued progress with one runnable survivor |
+| [0040](0040-separate-entity-identity-authentication-and-authority.md) | Proposed | Separate entity identity, passwordless authentication, and scoped authority with local biometric verification as a future option |
+| [0041](0041-plan-bounded-user-mappings-and-physical-access.md) | Proposed | Validate bounded user mapping geometry and distinct physical/kernel address plans before owned construction |
+| [0042](0042-prove-inactive-owned-user-mapping-construction.md) | Proposed | Prove retained ownership, temporary privileged physical access, and retryable cleanup for inactive user trees |
+| [0043](0043-prove-resident-mapping-activation.md) | Proposed | Prove bounded resident mapping activation and restoration |
+| [0044](0044-prove-owned-low-address-user-execution.md) | Proposed | Prove owned low-address user execution and lifetime cleanup |
+| [0045](0045-select-native-antimatter-ny-and-hag-direction.md) | Accepted direction; implementation gated | Select Antimatter, Ny, and HAG for the next native userspace milestone |
+| [0046](0046-prove-retained-prepared-launch-ownership.md) | Proposed | Retain prepared launch ownership, publish only at commit, and prove cancellation/cleanup retries |
+| [0047](0047-prove-sustained-dispatch-over-retained-launches.md) | Proposed | Retain prepared launches through sustained dispatch, unstarted admission rollback, and terminal cleanup |
+| [0048](0048-prove-bounded-application-cpu-copy-and-fault-profile.md) | Proposed | Own an internal x87/SSE2 profile, bounded current-task copies, and selected user faults through last-current cleanup; all 28 targets passed |
+| [0049](0049-qualify-a-bounded-freestanding-ny-object.md) | Proposed | Qualify one pinned Ny scalar object and freestanding startup with copied initialized data, generated-code timer returns, failure contrast and retained cleanup; all 30 targets passed |
+
+- [0051: Prove userspace ELF loading against native](0051-prove-userspace-elf-loading-against-native.md) — Proposed; bounded loading comparison qualified, native personality retained.
+- [0052: Prove Linux startup and record-device syscalls](0052-prove-linux-startup-and-record-device-syscalls.md) — Proposed; bounded Linux producer/native service comparison qualified by 37 matrix and two restoration jobs; historical policy-placement gate followed by ADR 0053.
+- [0053: Prove a supervised userspace syscall veil](0053-prove-a-supervised-userspace-syscall-veil.md) — Proposed; independent three-task runtime policy boundary implemented, bounded qualification complete.
+
+- [0054: Prove a shared multi-caller userspace veil](0054-prove-a-shared-multi-caller-userspace-veil.md) — Proposed; fixed two-caller serial service qualified by 41 qualification checks and two restorations.
+
+- [0055: Prove native startup and private userspace arenas](0055-prove-native-startup-and-private-userspace-arenas.md) — Proposed; copied startup and private arena profile implemented, bounded qualification complete.
+
+- [0056: Prove task-bound native document open and save](0056-prove-task-bound-native-document-open-and-save.md) — Proposed; native RAM document service implemented, bounded qualification complete.
+
+- [0057: Prove ELF loading of the native document contract](0057-prove-elf-loading-of-the-native-document-contract.md) — Proposed; bounded ELF/native document comparison with verified zero-tail compaction implemented and qualified.
+
+- [0058: Prove native editor replacement with a retained document service](0058-prove-native-editor-replacement-with-a-retained-document-service.md) — Proposed; bounded native editor replacement qualified through 50 checks and two development-image restorations.
+  ADR 0059 qualifies the corresponding bounded userspace ELF comparison.
+  ADR 0063 subsequently qualifies bounded native disk durability and recovery.
+
+- [0059: Prove ELF editor replacement against the native baseline](0059-prove-elf-editor-replacement-against-the-native-baseline.md) — Proposed; bounded native/ELF editor replacement comparison qualified through 52 checks and two development-image restorations, preserving native personality and known-byte lifecycle expectations.
+
+- [0060: Model bounded durable document recovery](0060-model-bounded-durable-document-recovery.md) — Proposed; portable five-sector recovery model qualified; ADR 0063 subsequently qualifies bounded native device integration.
+- [0061: Select `.re` and avoid fixed native path limits](0061-select-re-extension-and-path-policy.md) — Accepted; naming and path policy only, no stable serialized format.
+- [0062: Design a native object filesystem](0062-design-native-object-filesystem.md) — Accepted architectural direction; stable identity, streamed names, transactions and separate snapshot/replica/backup contracts. Filesystem implementation remains open.
+- [0063: Prove native durable document storage](0063-prove-native-durable-document-storage.md) — Proposed; scoped device transport, full service destruction, cold-VM recovery, failure cuts and repeated editing qualified as bounded native proofs.
+
+- [0064: Add a public keyboard editor workspace](0064-add-a-public-keyboard-editor-workspace.md) — Proposed; public memory-only scratch input, canonical feedback and acknowledged row rendering qualified through physical QEMU input and existing desktop regressions.
+- [0065: Prove an interactive native durable editor](0065-prove-an-interactive-native-durable-editor.md) — Proposed; separate native editor/service pair qualified for physical editing, live presentation, delayed replies, unknown outcomes and cold recovery.
+- [0066: Model an owner-bound editor workspace bridge](0066-model-an-owner-bound-editor-workspace-bridge.md) — Proposed; opt-in portable window/observation/action composition, with native workspace admission and cross-task integration gated separately.
+- [0067: Qualify retained native workspace admission](0067-qualify-retained-native-workspace-admission.md) — Proposed; bounded single-owner workspace admission qualified with larger RX/RW/stack regions, preserved GPR/TS mailbox semantics, complete QEMU traces and isolated VirtualBox initial rendering.
+- [0068: Qualify eager workspace CPU ownership](0068-qualify-eager-workspace-cpu-ownership.md) — Proposed; bounded eager CPU ownership qualified under TCG/KVM; VirtualBox rejects a required missing CPU capability before userspace.
+- [0069: Compose a split editor/workspace coordinator](0069-compose-a-split-editor-workspace-coordinator.md) — Proposed; portable role routing, delayed-action publication fencing and borrowed frame storage qualified; ADR 0070 implements the separate native admission prerequisite, with real payload integration still pending.
+
+- [0070: Qualify mixed native workspace admission](0070-qualify-mixed-native-workspace-admission.md) — Proposed; bounded three-task TCG/KVM admission, retained frame arena, one CPU/dispatch owner and surviving workspace/editor routes qualified; VirtualBox CPU admission refused, real application payloads still pending.
+
+- [0071: Compose a copied remote editor adapter](0071-compose-a-copied-remote-editor-adapter.md) — Proposed; opt-in copied action/result and observation adapter qualified on the host; real three-task payload selection remains separate.
+
+- [0072: Integrate a native editor workspace](0072-integrate-a-native-editor-workspace.md) — Proposed; bounded three-owner native desktop/editor/durable-service integration qualified. This is a reference application, not Antimatter.
+- [0073: Run Linux Antimatter through the Linux veil](0073-run-linux-antimatter-through-the-linux-veil.md) — Accepted product direction; run the existing Linux application through compatibility, with no native frontend rewrite or `.re` conversion prerequisite.
+- [0074: Plan Linux images and initial stacks without execution authority](0074-plan-linux-images-and-initial-stacks.md) — Accepted host-only ELF64 multi-segment/PIE planning and failure-atomic Linux startup construction; no guest Linux execution claim.
+- [0075: Prove owned multi-region launch](0075-prove-owned-multi-region-launch.md) — Proposed; bounded default-off native nine-region ownership and exact executable-interval proof qualified for main/interpreter-shaped layouts; unchanged Linux execution remains separate.
+- [0076: Prove owned loader sources](0076-prove-owned-loader-sources.md) — Accepted bounded proof; copied and sealed native source ownership across producer retirement, qualified under QEMU TCG/KVM and VirtualBox; no unchanged Linux execution claim.
+
+- [0077: Prove task-owned FS bases](0077-prove-task-owned-fs-bases.md) — Accepted bounded native FS ownership proof; qualified under TCG/KVM and VirtualBox, with explicit retirement and all required/affected regressions. ADR 0078 adds the separate supervised Linux FS/eager-CPU composition.
+- [0078: Compose Linux FS and eager CPU ownership](0078-compose-linux-fs-and-eager-cpu-ownership.md) — Accepted for the bounded three-task composition; sealed caller FS effects and eager x87/SSE2 ownership qualified under TCG/KVM and all required/affected regressions. VirtualBox capability refusal is recorded separately; this fixture does not execute unchanged Linux binaries.
+- [0079: Reach an unchanged Linux interpreter service boundary](0079-reach-an-unchanged-linux-interpreter-service-boundary.md) — Accepted bounded proof; separately provisioned source and mixed owned mappings reach the unchanged interpreter's first SYSCALL under TCG/KVM 96/320 MiB runs. Userspace selects unsupported retirement without returning to Linux; no main-entry or `true` completion claim. Provisioning rejection tests passed; VirtualBox's capability refusal and poweroff are recorded separately. All required/affected regressions, a fresh CPU-workspace regression and the final evidence audit passed, with independently reviewed baseline changes and no observed OOM.
+- [0080: Resume an unchanged Linux interpreter after a userspace reply](0080-resume-an-unchanged-linux-interpreter-after-a-userspace-reply.md) — Accepted for the bounded interpreter-reply proof; TCG/KVM 96/320 MiB runs passed one `brk(0)` reply returning `0x40009000`, exact RAX-only saved-frame change, and the unchanged interpreter's next real `access("/etc/ld.so.preload", 4)` boundary. The second call is retired without a Linux return; all three tasks retire and resources are restored. Negative provisioning, all 29 regression targets and the final evidence audit passed; all five baseline images remained identical and no OOM was observed. VirtualBox capability refusal and poweroff are recorded separately. No heap growth, file service, main `true` execution or Antimatter completion claim; ADR 0079 preserves the earlier one-boundary result.
+- [0081: Answer an unchanged loader file probe in userspace](0081-answer-an-unchanged-loader-file-probe-in-userspace.md) — Accepted bounded proof; authenticated native caller-memory copying lets userspace answer the declared-absent preload probe with `-ENOENT`. TCG/KVM 96/320 MiB runs passed two real loader returns, the next `openat` boundary, six rejected copy probes and complete retirement. All 29 regression targets and the final evidence audit passed; five baseline images remained identical and no OOM was observed. VirtualBox capability refusal is separate. No general filesystem, third return, Linux exit or Antimatter launch claim.
+- [0082: Answer the loader cache probe with fresh caller authority](0082-answer-the-loader-cache-probe-with-fresh-caller-authority.md) — Accepted bounded proof; separately authenticated cache-path copying and an explicit userspace absence declaration produce the third Linux return. TCG/KVM 96/320 MiB runs passed four raw calls, three replies, twelve rejected copy probes and complete retirement. All 29 regression targets and the final evidence audit passed; five baseline images remained identical and no OOM was observed. VirtualBox capability refusal and the first presentation failure remain separate. The fourth `openat` points into mutable stack memory; its pathname is not yet copied. No successful open, Linux exit or Antimatter launch claim.
+- [0083: Observe the loader's live pathname before file service](0083-observe-the-loaders-live-pathname-before-file-service.md) — Accepted bounded proof; authenticated copying observes the fourth syscall's live stack pathname with equal complete caller frames, then retires without a fourth return. All four TCG/KVM 96/320 MiB runs copied the 55-byte hwcaps-v2 libc candidate, including NUL. All 29 regression targets, negative provisioning and the final evidence audit passed; five baseline images remained identical and no OOM was observed. VirtualBox capability refusal remains separate. Namespace resolution, successful file services and Antimatter execution remain open.
+- [0084: Model read-only userspace file services](0084-model-read-only-userspace-file-services.md) — Accepted portable host foundation. Two task-incarnation descriptor tables reconstructed the entire pinned libc exactly; hostile tests, strict lint and all 29 regression commands passed. Fresh TCG/KVM proofs and five identical baseline images preserve the prior guest behavior. One pressure-aborted attempt and VirtualBox capability refusal remain explicit; no OOM was observed. The guest retains its three-reply live-path baseline; native held-file sources, chunk-readable backend and atomic caller copyout/reply integration remain separate gates. No fourth guest return, successful guest file open or Antimatter launch is claimed.
+- [0085: Native retained file-source reads](0085-native-retained-file-source-reads.md) — Accepted bounded proof; a separately retained libc source reaches native userspace through authenticated chunk reads. This checkpoint retained the three Linux replies and retired at the fourth request.
+- [0086: Read immutable file sources in bounded chunks](0086-read-immutable-file-sources-in-bounded-chunks.md) — Accepted portable foundation; source-backed reads share descriptor and offset publication with slice-backed reads, require exact delivery and clear caller-owned scratch.
+- [0087: Return native file-service replies to the Linux loader](0087-return-native-file-service-replies-to-the-linux-loader.md) — Accepted bounded integration; the unchanged loader opens libc and reads 832 bytes through native userspace file services, then reaches pread64. TCG/KVM 96/320 MiB qualify normal and fault lifetimes; six provisioning refusals and all 29 regressions pass. VirtualBox capability refusal remains separate; no libc startup, true completion or Antimatter launch is claimed.
+
+- [0088: Read Linux files without advancing descriptor offsets](0088-read-linux-files-without-advancing-descriptor-offsets.md) — Accepted bounded positional-read integration; exact source bytes, preserved sequential offsets and five-lifetime fault qualification.
+- [0089: Publish open-file metadata through the Linux veil](0089-publish-open-file-metadata-through-the-linux-veil.md) — Accepted bounded metadata integration; source-free stat publication, a repeated positional read, four delivery journals and seven-lifetime TCG/KVM qualification reach the real mmap boundary.
+- [0090: Retain runtime mapping transactions](0090-retain-runtime-mapping-transactions.md) — Accepted bounded host mechanism with complete virtual extent, retained backing and explicit publication/withdrawal. Fifteen new tests and all 29 required/affected checks passed; failed attempts remain recorded and no OOM kill was observed. Live caller integration remains separate.
+- [0091: Release allocator borrows before userspace](0091-release-allocator-borrows-before-userspace.md) — Proposed preparation/entry/teardown lifetime split and authenticated service reacquisition proof; physical qualification pending.
+- [0092: Run NIL on Anomalous with a natively compiled interpreter](0092-run-nil-on-anomalous-with-a-native-interpreter.md) — Accepted direction; implementation gated. The NIL interpreter is the near-term execution route for NIL/Matrix programs on Anomalous, built as a bounded native Anomalous task; per-program AOT native compilation is deferred with a follow-up note.
+- [0093: Carry a semantic manifest in the program image](0093-carry-a-semantic-manifest-in-the-program-image.md) — Accepted. An image must state its authored intent and its reachable authority surface, derived from the artifact rather than declared, and the loader runs the intersection of that statement with the ceiling of whatever executes it. The interpreter route of ADR 0092 forces this: a generic image cannot describe the workload it carries.
+- [0094: Map a program arena against a named profile](0094-map-a-program-arena-against-a-named-profile.md) — Proposed. The owned-mapping core admits one arena geometry by literal address, so a program-bearing task cannot be mapped at all: its arena minimum is 64 KiB against the native application's fixed 32 KiB. Geometry becomes a named profile the kernel validates before it maps anything, with the existing numbers held unchanged as one such profile.

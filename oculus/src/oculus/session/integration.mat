@@ -1,0 +1,25 @@
+!!! oculus/session/integration.mat
+!!! Integration layer — wires compositor, input, and window manager together.
+!!!
+!!! This module handles the cross-cutting concerns: when a window is
+!!! created, the compositor needs to know; when input arrives, the
+!!! window manager needs to route it; when a theme changes, the
+!!! compositor needs to recompose.
+
+book oculus.session.integration
+
+read everything from oculus.session.desktop-context
+read everything from oculus.window.geometry
+read everything from oculus.window.record
+read everything from oculus.window.operations
+read everything from oculus.window.viewport
+read everything from oculus.window.workspace
+read everything from oculus.window.lifecycle
+read everything from oculus.compositor.frame
+read everything from oculus.compositor.surface
+read everything from oculus.compositor.output
+read everything from oculus.compositor.damage
+read everything from oculus.compositor.clipping
+read everything from oculus.input.event
+read everything from oculus.input.key-mapping
+read everything from ny.lang.core

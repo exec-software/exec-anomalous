@@ -1,0 +1,24 @@
+!!! oculus/scene/manager.mat
+!!! Scene manager: ordered, revisioned scene with window management ops.
+!!!
+!!! The manager maintains the canonical scene: a deterministic ordered
+!!! list of windows sorted by workspace and z-index. Every mutation
+!!! advances the revision and is atomic — the scene is either old or new.
+
+book oculus.scene.manager
+
+read everything from ny.lang.core
+read everything from oculus.window.geometry
+read everything from oculus.window.identity
+read everything from oculus.window.lifecycle
+read everything from oculus.window.record
+read everything from oculus.window.viewport
+read everything from oculus.window.workspace
+read everything from oculus.scene.node
+
+public scene-manager begin record
+    field revision as override long
+    field viewport as viewport
+    field window-count as override long
+    field max-windows as override long
+end record

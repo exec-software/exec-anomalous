@@ -1,0 +1,10 @@
+!!! oculus/scene/maximize.mat
+!!! Maximize a window to fill the viewport.
+!!!
+!!! A maximized window snaps to the full viewport bounds.
+
+book oculus.scene.maximize
+
+read everything from oculus.window.viewport
+read everything from oculus.window.geometry
+read everything from oculus.window.record

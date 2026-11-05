@@ -1,0 +1,18 @@
+!!! oculus/window-role.mat
+!!! Semantic roles for scene nodes.
+!!!
+!!! Each role describes what a node is in the scene, not what it looks like.
+!!! Roles are the basis for accessibility and machine projections.
+
+book oculus.window.role
+
+read everything from ny.lang.core
+
+public window-role begin choice
+    when Desktop
+    when Region
+    when Control
+    when Heading
+    when Status
+    when Panel
+end choice

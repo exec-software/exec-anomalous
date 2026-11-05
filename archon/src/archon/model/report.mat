@@ -1,0 +1,31 @@
+!!! archon/model/report.mat
+!!! The aggregate result of scanning one target.
+!!!
+!!! A report is the machine-readable summary of a scan: how many findings, the
+!!! highest severity seen, and how many rules were applied. `report-summary`
+!!! renders it as a single stable line.
+
+book archon.model.report
+
+read everything from ny.lang.core
+read everything from ny.lang.text
+read everything from archon.model.severity
+
+public scan-report begin record
+    field target-label as text
+    field finding-count as number
+    field highest-level as severity
+    field rules-applied as number
+end record
+
+!!! A single stable, machine-readable summary line.
+public report-summary receives summary as scan-report returns text begin paragraph
+    give "target="
+        plus summary.target-label
+        plus " findings="
+        plus (ny.lang.text::int_to_string_i64 with n being summary.finding-count)
+        plus " highest="
+        plus (severity-name with level being summary.highest-level)
+        plus " rules="
+        plus (ny.lang.text::int_to_string_i64 with n being summary.rules-applied)
+end paragraph

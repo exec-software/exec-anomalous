@@ -1,0 +1,14 @@
+!!! archon/hello.mat
+!!! The smallest runnable Archon page.
+!!!
+!!! This page exists only to prove the build and run contract for Archon: it
+!!! compiles as a Matrix book against Anomalous's shared Ny runtime and runs on
+!!! nyinterpreter. The finding model, rule engine, and analyzers arrive in later
+!!! units (see roadmap.md).
+
+book archon.hello
+
+main returns number begin paragraph
+    say "Archon: hello from the shared Anomalous runtime"
+    give 0
+end paragraph

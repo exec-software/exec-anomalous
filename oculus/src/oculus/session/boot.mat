@@ -1,0 +1,25 @@
+!!! oculus/session/boot.mat
+!!! Boot sequence — how the system initializes and reaches a running state.
+!!!
+!!! The boot process: create viewport, initialize compositor, set up
+!!! input routing, configure appearance, and mark the system ready.
+
+book oculus.session.boot
+
+read everything from oculus.session.desktop-context
+read everything from oculus.window.geometry
+read everything from oculus.window.viewport
+read everything from oculus.window.workspace
+read everything from oculus.compositor.compositor
+read everything from oculus.compositor.surface
+read everything from oculus.compositor.damage
+read everything from oculus.compositor.output
+read everything from oculus.input.routing
+read everything from oculus.input.focus
+read everything from oculus.input.pointer
+read everything from oculus.appearance.appearance
+read everything from oculus.appearance.theme
+read everything from oculus.appearance.style
+read everything from oculus.appearance.accessibility
+read everything from oculus.appearance.color
+read everything from ny.lang.core

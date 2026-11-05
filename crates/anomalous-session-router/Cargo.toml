@@ -1,0 +1,21 @@
+[package]
+name = "anomalous-session-router"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Allocation-free semantic session routing proof for Anomalous"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+anomalous-session.workspace = true
+
+[dev-dependencies]
+anomalous-session = { workspace = true, features = ["kernel_conformance_test_support"] }
+
+[features]
+default = []

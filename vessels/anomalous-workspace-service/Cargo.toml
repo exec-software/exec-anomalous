@@ -1,0 +1,27 @@
+[package]
+name = "anomalous-workspace-service"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "anomalous-workspace-service"
+path = "src/main.rs"
+test = false
+bench = false
+
+[features]
+default = []
+owned_admission = []
+owned_cpu_probe = ["owned_admission"]
+native_remote = ["owned_admission", "anomalous-desktop-workspace/native_editor_remote", "anomalous-desktop-compositor/native_editor_remote", "dep:anomalous-editor-contract", "dep:anomalous-document-protocol"]
+
+[dependencies]
+anomalous-window-surface.workspace = true
+anomalous-abi.workspace = true
+anomalous-desktop-workspace = { path = "../../crates/anomalous-desktop-workspace" }
+anomalous-desktop-compositor = { path = "../../crates/anomalous-desktop-compositor" }
+anomalous-editor-contract = { path = "../../crates/anomalous-editor-contract", optional = true, features = ["remote_editor"] }
+anomalous-document-protocol = { path = "../../crates/anomalous-document-protocol", optional = true, features = ["remote_workspace"] }
