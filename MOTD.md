@@ -13,4 +13,4 @@ application support and production security remain unfinished.
 
 [Support development](https://www.buymeacoffee.com/execsoftware).
 For enterprise licensing and support, contact
-[nyoung@executesoftware.com](mailto:nyoung@executesoftware.com).
+[admin@executesoftware.com](mailto:admin@executesoftware.com).

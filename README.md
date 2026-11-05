@@ -115,7 +115,7 @@ independent of the repository release number.
 
 Support development through [Buy Me a Coffee](https://www.buymeacoffee.com/execsoftware).
 For enterprise licensing and support, contact
-[nyoung@executesoftware.com](mailto:nyoung@executesoftware.com).
+[admin@executesoftware.com](mailto:admin@executesoftware.com).
 
 Enterprise agreements may cover support, certification, warranties, indemnity,
 managed distribution, and lifecycle commitments. Availability and terms require
