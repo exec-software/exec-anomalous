@@ -113,7 +113,7 @@ independent of the repository release number.
 
 ## Support and enterprise inquiries
 
-Support development through [Buy Me a Coffee](https://www.buymeacoffee.com/execsoftware).
+Support development through [Ko-fi](https://ko-fi.com/execsoftware).
 For enterprise licensing and support, contact
 [admin@executesoftware.com](mailto:admin@executesoftware.com).
 

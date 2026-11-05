@@ -11,6 +11,6 @@ measurements and open research questions live in [notebook/](notebook/README.md)
 This is pre-alpha software. Use an isolated VM with disposable inputs; general
 application support and production security remain unfinished.
 
-[Support development](https://www.buymeacoffee.com/execsoftware).
+[Support development](https://ko-fi.com/execsoftware).
 For enterprise licensing and support, contact
 [admin@executesoftware.com](mailto:admin@executesoftware.com).
