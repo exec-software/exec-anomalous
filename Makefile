@@ -666,3 +666,10 @@ native-editor-workspace-smoke:
 .PHONY: ny-vessel-inspect
 ny-vessel-inspect:
 	cargo xtask ny-vessel-inspect
+
+.PHONY: ny-vessel-image ny-vessel-smoke
+ny-vessel-image:
+	cargo xtask ny-vessel-image
+
+ny-vessel-smoke:
+	cargo xtask ny-vessel-smoke

@@ -6,6 +6,7 @@ use core::ptr;
     feature = "scheduler_test",
     feature = "supervision_test",
     feature = "rite_test",
+    feature = "ny_vessel_test",
     feature = "shell_vessel_test",
     feature = "input_wait_test",
     feature = "display_vessel_test",
@@ -372,7 +373,8 @@ fn resident_range(start: u64, end: u64, base: u64, length: u64) -> bool {
     feature = "input_wait_test",
     feature = "display_vessel_test",
     feature = "supervised_renderer_test",
-    feature = "semantic_surface_transport_test"
+    feature = "semantic_surface_transport_test",
+    feature = "ny_vessel_test"
 ))]
 pub(super) unsafe fn selected_privilege_stack_top() -> u64 {
     // SAFETY: The caller holds the complete privilege-transition exclusion
@@ -440,6 +442,7 @@ pub(super) unsafe fn restore_bootstrap_privilege_stack() -> bool {
     feature = "circle_test",
     feature = "control_test",
     feature = "rite_test",
+    feature = "ny_vessel_test",
     feature = "display_vessel_test",
     feature = "supervised_renderer_test",
     feature = "semantic_surface_transport_test"
@@ -489,6 +492,7 @@ fn privilege_stack_top_is_valid(stack_top: u64) -> bool {
     feature = "scheduler_test",
     feature = "supervision_test",
     feature = "rite_test",
+    feature = "ny_vessel_test",
     feature = "shell_vessel_test",
     feature = "input_wait_test",
     feature = "display_vessel_test",

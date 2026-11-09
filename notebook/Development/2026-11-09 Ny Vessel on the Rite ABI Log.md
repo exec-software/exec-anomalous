@@ -201,9 +201,75 @@ position-independent; `rite_test`'s window at `0x6000_0000_0000` would overflow
 the 32-bit relocations the small code model emits. The mailbox constant in
 `entry.S` moved to `0x802000` for the same reason.
 
+## It boots
+
+`make ny-vessel-smoke`, TCG:
+
+```
+kernel.ny_vessel.ready             vector 243, grant 7, image_bytes 2557
+kernel.ny_vessel.task.entered      mappings 3, user_rx + user_rw_nx, guards absent
+kernel.ny_vessel.console.committed sequence 1, ok, 38 bytes, composed_by ny
+kernel.ny_vessel.exited            sequence 2, ok, code 42, returned_from_ny
+kernel.ny_vessel.released          65116/65116 frames, 0 owned, 0 active
+kernel.ny_vessel.passed            calls 2, commits 2, terminal
+```
+
+A Ny object, entered through `__ny_entry`, linked against the shipped
+freestanding runtime, booted by this kernel, composing its own message into the
+region the kernel installed and sending it through the real rite gate. Recorded
+as [ADR 0099](../../docs/adr/0099-boot-a-ny-vessel-on-the-rite-abi.md).
+
+The kernel also reads the region back after the vessel exits and requires the
+message to be there, NUL-terminated, as the vessel's first allocation -- so the
+bytes the rite carried are the bytes Ny composed, not merely bytes of the right
+length.
+
+## Three things the boot found that reading could not
+
+**The user window is high, and that broke the code model.** `address_space`
+refuses a user mapping whose PML4 index is zero, because the first page-table
+entry is the kernel's own branch. So the vessel cannot live at `0x400000` like
+ADR 0049's probe, which uses the separate `arena_profile` machinery; it has to
+go in the rite fixtures' window above 512 GiB. The Ny object then would not
+link at all:
+
+```
+relocation truncated to fit: R_X86_64_32 against `.rodata.str1.1'
+```
+
+Every address the small code model materializes is a 32-bit absolute. Fixed
+upstream with `nilassembler --code-model large`, which is independent of
+`--freestanding` and `--no-red-zone` because where an object is placed is a
+separate question from how it is entered. Large-model output arrives in
+`.ltext` and `.lrodata`, which the linker script now names --
+`--orphan-handling=error` is what reported that, which is the argument for
+keeping it on.
+
+**A weak declaration cannot be called from high memory.** The runtime archive
+linked high except for one relocation: `R_X86_64_PLT32 against undefined symbol
+__ny_host_fail`. A weak *declaration* leaves an undefined symbol whose call the
+linker resolves to address zero, and that displacement does not fit in 32 bits
+from up there -- the link fails over a symbol nobody intended to use. It is now
+a weak *definition* that does nothing, which a host's strong definition
+replaces as before. The null check went with it, and the archive now imports
+nothing at all.
+
+**Guard pages are the gaps, not the neighbours.** The first boot attempt failed
+`ny_vessel_guard_mapping_present` because two of the addresses I required to be
+absent were the adjacent mappings themselves. The layout's adjacency is now a
+compile-time assertion in the fixture, so the guard list cannot drift away from
+the map it is guarding.
+
 ## Open, in the order they probably matter
 
-1. **The kernel harness.** Design settled, not written:
+1. **Ny cannot issue a rite itself.** The binding runs before and after Ny's
+   `main`, so a vessel cannot do I/O from inside its own control flow. That
+   needs a way for Ny to call a host-provided symbol -- the capability, not the
+   bindings -- and is a toolchain question. It is the obvious next slice.
+2. **The region is never reclaimed inside a context**, so a vessel that
+   concatenates in a loop exhausts it and stops. Correct for this contract,
+   wrong for a long-running vessel, and it wants a real vessel to ask it.
+3. ~~**The kernel harness.**~~ Done. For the record, the design as planned:
    `ny_vessel_test.rs` modelled on `rite_test.rs`, with `ny_vessel_entry.S`
    for the gate entry and the enter/resume pair, mapping the three extents
    above, dispatching two rites through `rite_transport`, and checking the

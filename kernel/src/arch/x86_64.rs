@@ -420,6 +420,9 @@ global_asm!(
 mod memory_test;
 #[cfg(any(test, feature = "owned_multi_region_test"))]
 mod multi_region_plan;
+#[cfg(all(feature = "ny_vessel_test", not(test)))]
+#[path = "x86_64/ny_vessel_test.rs"]
+mod ny_vessel_test;
 mod owned_mapping;
 #[cfg(all(
     feature = "memory_test",
@@ -456,6 +459,7 @@ mod resident_plan;
 mod resident_probe;
 #[cfg(all(
     feature = "rite_test",
+    not(feature = "ny_vessel_test"),
     not(feature = "shell_vessel_test"),
     not(feature = "input_wait_test"),
     not(feature = "supervised_renderer_test"),
@@ -466,6 +470,7 @@ mod rite_test;
 #[cfg(any(
     feature = "workspace_dev",
     feature = "rite_test",
+    feature = "ny_vessel_test",
     feature = "shell_vessel_test",
     feature = "input_wait_test",
     feature = "display_vessel_test",
@@ -473,6 +478,7 @@ mod rite_test;
     feature = "semantic_surface_transport_test"
 ))]
 #[cfg_attr(feature = "workspace_dev", allow(dead_code))]
+#[cfg_attr(feature = "ny_vessel_test", allow(dead_code))]
 mod rite_transport;
 mod runtime_mapping;
 #[cfg(any(test, feature = "linux_loader_entry_test"))]
@@ -625,6 +631,7 @@ global_asm!(
 );
 #[cfg(all(
     feature = "rite_test",
+    not(feature = "ny_vessel_test"),
     not(feature = "shell_vessel_test"),
     not(feature = "input_wait_test"),
     not(feature = "supervised_renderer_test"),
@@ -633,6 +640,11 @@ global_asm!(
 ))]
 global_asm!(
     include_str!("x86_64/rite_test_entry.S"),
+    options(att_syntax)
+);
+#[cfg(all(feature = "ny_vessel_test", not(test)))]
+global_asm!(
+    include_str!("x86_64/ny_vessel_entry.S"),
     options(att_syntax)
 );
 #[cfg(all(
@@ -877,6 +889,7 @@ pub fn run_display_vessel_test(framebuffer: crate::boot_omen::framebuffer_info) 
 
 #[cfg(all(
     feature = "rite_test",
+    not(feature = "ny_vessel_test"),
     not(feature = "shell_vessel_test"),
     not(feature = "input_wait_test"),
     not(feature = "supervised_renderer_test"),
@@ -885,6 +898,11 @@ pub fn run_display_vessel_test(framebuffer: crate::boot_omen::framebuffer_info) 
 ))]
 pub fn run_rite_test(screen: crate::console::screen_console) {
     rite_test::run(screen)
+}
+
+#[cfg(all(feature = "ny_vessel_test", not(test)))]
+pub fn run_ny_vessel_test(screen: crate::console::screen_console) {
+    ny_vessel_test::run(screen)
 }
 
 #[cfg(all(

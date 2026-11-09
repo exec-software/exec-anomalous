@@ -13,15 +13,15 @@ use super::*;
 
 /// The Ny runtime generation this vessel is built from, by manifest hash.
 /// Refresh with `scripts/refresh-ny-runtime.sh` and re-pin deliberately.
-const generation: &str = "dcf07d0caef1c7364a66b69b9b9beea834f0913b7d043dbf7324762b8253f614";
+const generation: &str = "24b0f1a28e5894e5b0ab4151bac8301604a11fb9508017a8dfb6565d40778f90";
 const pinned_tools: [(&str, &str); 3] = [
     (
         "nilcompiler",
-        "0f530ea1ba02c01d27c9b9d0da7c973ddc32f6f19790be5db6c486d36859a116",
+        "3f41654b843b9c6df4b3e810c7d0515f362670fc95be01c161b766aae128c463",
     ),
     (
         "nilassembler",
-        "90828d62cb28b58912347abea7ddfa3b16c4df97f3f7ca146870a0e399c913cc",
+        "e046f1d30ce04c85ba34e3d76250f518fe2629cdc793120523e162272429a8e9",
     ),
     (
         "nilinterpreter",
@@ -32,16 +32,18 @@ const pinned_tools: [(&str, &str); 3] = [
 /// generation that changed only this file is still rejected.
 const pinned_runtime: (&str, &str) = (
     "nillib/native/libnilruntime_freestanding.a",
-    "5963750e2f3506ff136f55e26206c60fc7ece65e92ddc445c8e12cc95cd4b469",
+    "8bbcbd145b65b722d74a42b245b21bbaa35f3fb3e7078b364596b860f8b83e10",
 );
 
-/// The vessel's memory map. Every address is below 4 GiB because the object is
-/// not position-independent: a higher link address would overflow the 32-bit
-/// relocations the small code model emits.
-pub(super) const image_base: u64 = 0x40_0000;
-pub(super) const state_base: u64 = 0x80_0000;
-pub(super) const arena_base: u64 = 0x80_1000;
-pub(super) const mailbox_base: u64 = 0x80_2000;
+/// The vessel's memory map, in the user window the kernel maps it into. It is
+/// above the 512 GiB boundary because the first page-table entry is the
+/// kernel's own branch and a user mapping there is refused, which is why the
+/// object is emitted for the large code model below.
+pub(super) const user_window: u64 = 0x0000_6000_0000_0000;
+pub(super) const image_base: u64 = user_window + 0x1000;
+pub(super) const state_base: u64 = user_window + 0x2000;
+pub(super) const arena_base: u64 = user_window + 0x3000;
+pub(super) const mailbox_base: u64 = user_window + 0x4000;
 pub(super) const page_size: u64 = 0x1000;
 
 /// What the vessel is expected to produce, measured by running the sequence
@@ -62,6 +64,12 @@ const expected_object_imports: [&str; 8] = [
     "nyrt_profile_site",
     "nyrt_str_length",
 ];
+
+/// Identifies the header the kernel parses, so a payload from some other
+/// stage cannot be mistaken for this one.
+pub(super) const header_magic: u64 = 0x4e59_5f56_4553_5331;
+/// magic, image length, entry, console return, exit return, failure.
+pub(super) const header_bytes: usize = 6 * 8;
 
 pub(super) struct artifact {
     /// The relocation-free wrapper the kernel link consumes.
@@ -105,9 +113,12 @@ pub(super) fn package_image(root: &Path, build: &Path) -> Result<artifact, Strin
         0,
         120,
     )?;
-    // --freestanding emits __ny_entry and no C main; --no-red-zone is separate
+    // --freestanding emits __ny_entry and no C main. --no-red-zone is separate
     // and is required here because this kernel's interrupt entry does not
-    // switch stacks for the vessel's own frames.
+    // switch stacks for the vessel's own frames. --code-model large is what
+    // lets the object be linked into the user window at all: the small model
+    // materializes every address as a 32-bit absolute and the link fails on
+    // the vessel's own string constants.
     run_stage(
         root,
         &sdk.join("nilassembler"),
@@ -115,6 +126,8 @@ pub(super) fn package_image(root: &Path, build: &Path) -> Result<artifact, Strin
             "--unmanaged".into(),
             "--freestanding".into(),
             "--no-red-zone".into(),
+            "--code-model".into(),
+            "large".into(),
             "--output".into(),
             vessel_object.as_os_str().into(),
             nil.as_os_str().into(),
@@ -286,10 +299,7 @@ fn image_bytes(root: &Path, elf: &Path) -> Result<Vec<u8>, String> {
     let text = String::from_utf8(run_output_checked(
         root,
         "readelf",
-        [
-            "-lW".into(),
-            elf.as_os_str().to_owned(),
-        ],
+        ["-lW".into(), elf.as_os_str().to_owned()],
     )?)
     .map_err(|_| "Ny vessel segment listing is not UTF-8")?;
     let loads: Vec<Vec<String>> = text
@@ -332,18 +342,47 @@ fn image_bytes(root: &Path, elf: &Path) -> Result<Vec<u8>, String> {
 fn write_wrapper(root: &Path, output: &Path, artifact: &artifact) -> Result<(), String> {
     fs::write(output.join("vessel_rx.bin"), &artifact.image)
         .map_err(|e| format!("write Ny vessel image: {e}"))?;
-    // An opaque carrier: the kernel link gains bytes and two symbols, not a
+    // An opaque carrier: the kernel link gains bytes and a few symbols, not a
     // second loader. Nothing here is executed in kernel context.
+    //
+    // The header states the addresses the kernel cannot derive for itself. For
+    // a fixture assembled into the kernel these come from linker symbols, but
+    // a Ny vessel's code is produced by the toolchain, so the addresses the
+    // dispatcher validates each gate return against have to travel with the
+    // bytes. The kernel checks the magic and bounds every one of them.
+    let header = format!(
+        ".section .rodata.ny_vessel_header,\"a\",@progbits\n\
+         .balign 16\n\
+         .global x86_64_ny_vessel_header_start\n\
+         .global x86_64_ny_vessel_header_end\n\
+         x86_64_ny_vessel_header_start:\n\
+         .quad {magic}\n\
+         .quad {length}\n\
+         .quad {entry}\n\
+         .quad {console}\n\
+         .quad {exit}\n\
+         .quad {failed}\n\
+         x86_64_ny_vessel_header_end:\n",
+        magic = header_magic,
+        length = artifact.image.len(),
+        entry = artifact.entry,
+        console = artifact.console_return,
+        exit = artifact.exit_return,
+        failed = artifact.failed,
+    );
     fs::write(
         output.join("payload.S"),
-        ".section .rodata.ny_vessel,\"a\",@progbits\n\
-         .balign 16\n\
-         .global x86_64_ny_vessel_payload_start\n\
-         .global x86_64_ny_vessel_payload_end\n\
-         x86_64_ny_vessel_payload_start:\n\
-         .incbin \"vessel_rx.bin\"\n\
-         x86_64_ny_vessel_payload_end:\n\
-         .section .note.GNU-stack,\"\",@progbits\n",
+        format!(
+            "{header}\
+             .section .rodata.ny_vessel,\"a\",@progbits\n\
+             .balign 16\n\
+             .global x86_64_ny_vessel_payload_start\n\
+             .global x86_64_ny_vessel_payload_end\n\
+             x86_64_ny_vessel_payload_start:\n\
+             .incbin \"vessel_rx.bin\"\n\
+             x86_64_ny_vessel_payload_end:\n\
+             .section .note.GNU-stack,\"\",@progbits\n"
+        ),
     )
     .map_err(|e| format!("write Ny vessel wrapper source: {e}"))?;
     run_stage(
