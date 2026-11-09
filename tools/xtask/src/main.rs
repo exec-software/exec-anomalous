@@ -51,6 +51,7 @@ mod native_runtime_artifact;
 mod native_runtime_smoke;
 mod ny_object_artifact;
 mod ny_object_smoke;
+mod ny_vessel_artifact;
 mod owned_dispatcher_smoke;
 mod owned_multi_region_smoke;
 mod owned_source_smoke;
@@ -2696,6 +2697,11 @@ fn run() -> Result<(), String> {
             reject_extra_arguments(arguments)?;
             let root = repository_root()?;
             ny_object_artifact::package_image(&root, &root.join("build")).map(|_| ())
+        }
+        Some("ny-vessel-inspect") => {
+            reject_extra_arguments(arguments)?;
+            let root = repository_root()?;
+            ny_vessel_artifact::package_image(&root, &root.join("build")).map(|_| ())
         }
         Some("ny-object-image") => {
             reject_extra_arguments(arguments)?;

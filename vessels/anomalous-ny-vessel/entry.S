@@ -19,7 +19,7 @@
 # writable cell instead.
 
 .set vessel_rite_gate_vector, 0xf3
-.set vessel_mailbox_address, 0x0000600000003000
+.set vessel_mailbox_address, 0x0000000000802000
 .set vessel_arena_address, 0x0000000000801000
 .set vessel_arena_size, 0x1000
 
