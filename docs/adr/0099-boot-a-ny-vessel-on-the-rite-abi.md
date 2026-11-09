@@ -33,14 +33,23 @@ vessel boots or completes a rite, which is what this slice is for.
 Add the opt-in `ny_vessel_test` fixture: one Ny vessel, booted by this kernel,
 completing two rites through the ordinary dispatcher.
 
-The vessel is `vessels/anomalous-ny-vessel`. Its Ny half composes a message by
-concatenation rather than naming a constant, because composition is what needs
-the allocator, and returns 42. Its Anomalous half is the whole of the binding
-and is deliberately small: install the region, call `__ny_entry`, take the
-message's length and copy it into the mailbox payload through the runtime
-rather than libc, submit one `console_write`, then `task_exit` carrying what Ny
-returned. Rite bindings stay here, under ADR 0019, because this ABI is ours and
-is explicitly unstable pre-alpha; nothing of it enters the Ny standard library.
+The vessel is `vessels/anomalous-ny-vessel`. **Ny issues the rites itself.**
+The console write is a symbol this vessel's Anomalous half defines and its Ny
+half declares with `@interop("host")`, so it is called from inside Ny's own
+control flow. The vessel composes a message by concatenation rather than naming
+a constant, because composition is what needs the allocator; writes it; reads
+the count the rite returned; and writes a second line only because that count
+was the one it sent. Then it returns 42.
+
+The surrounding entry installs the region, calls `__ny_entry`, and submits
+`task_exit` with what Ny returned. It no longer touches the message at all.
+
+Rite bindings stay here, under ADR 0019, because this ABI is ours and is
+explicitly unstable pre-alpha; nothing of it enters the Ny standard library.
+What the toolchain supplies is the capability to reach a symbol the consumer
+defines -- the declared Ny function *is* an external symbol of that name,
+called with the ordinary C convention -- and nothing about this gate, this
+mailbox or this vector is visible to Ny.
 
 **The region is the channel.** A Ny object publishes `__ny_entry` and nothing
 else: its globals are absent from the symbol table, and its interop surface
@@ -93,8 +102,9 @@ exclude one another.
 
 Qualified on 2026-11-09 under TCG. The vessel entered user mode with three
 mappings and absent guards, committed sequence 1 as 38 bytes of UTF-8 through
-`console_write` with status `ok`, and exited at sequence 2 with status `ok` and
-code 42. Release accounting restored 65,116 of 65,116 free frames with no owned
+`console_write` with status `ok`, committed sequence 2 as a further 23 bytes --
+which it sends only because the first rite returned the count it had passed --
+and exited at sequence 3 with status `ok` and code 42. Release accounting restored 65,116 of 65,116 free frames with no owned
 frames, circles, tasks or mappings left, the channel retired, the region wiped
 and the privilege stack wiped. The transcript oracle requires that exact
 sequence of thirteen records and those exact values; the message's length and
@@ -105,7 +115,8 @@ The kernel additionally reads the region back after the vessel exits and
 requires the message to be there, NUL-terminated, as the vessel's first
 allocation. A vessel that had sent bytes it did not compose fails there.
 
-This establishes one Ny source, object, binding and boot. It does not qualify
+This establishes one Ny source, object, binding and boot, and one rite reached
+from inside Ny. It does not qualify
 the hosted Ny runtime, a general Anomalous compiler target, an SDK release, Ny
 strings beyond one concatenation, TLS, AVX/XSAVE, unwinding, an application
 service ABI, Antimatter, HAG, or privileged Ny migration. Existing verified
@@ -114,14 +125,24 @@ Rust remains authoritative under ADR 0016.
 Three limits are worth stating precisely, because each is a next slice rather
 than an omission:
 
-1. **Ny cannot issue a rite itself.** The binding runs before and after Ny's
-   `main`, so a vessel cannot perform I/O from inside its own control flow.
-   That needs a way for Ny to call a host-provided symbol -- the capability,
-   not the bindings -- which is a toolchain question.
+1. **One rite is reachable from Ny, not the whole ABI.** The vessel declares
+   `console_write`; `input_read`, `display_update` and the scheduler gate are
+   not declared and so are not imported. Each is a line of binding when a
+   vessel needs it, and the import surface states which exist.
 2. **The region is never reclaimed inside a context.** A vessel that
    concatenates in a loop exhausts it and stops. That is correct for this
    contract and wrong for a long-running vessel.
-3. **ADR 0049's fixture is untouched and its own pin is stale** against a
+3. **The interpreter cannot run this vessel.** A host symbol exists only in a
+   native object, so the VM refuses the call by name. The build stage requires
+   that refusal rather than leaving it implied, but it means the independent
+   semantic oracle ADR 0049 had is not available to a vessel that reaches its
+   host.
+4. **Nothing checks the host signature.** The toolchain cannot see the
+   definition, so its type profile is narrow -- `i64`, `f64` and `text`, where
+   `text` is a pointer to NUL-terminated bytes -- and a mismatch between the
+   declaration and this file's stub would not be caught by either side. The
+   stub and the declaration are reviewed together for that reason.
+5. **ADR 0049's fixture is untouched and its own pin is stale** against a
    current SDK. It remains the recorded evidence for its qualification;
    re-pinning it is a separate decision.
 

@@ -13,19 +13,19 @@ use super::*;
 
 /// The Ny runtime generation this vessel is built from, by manifest hash.
 /// Refresh with `scripts/refresh-ny-runtime.sh` and re-pin deliberately.
-const generation: &str = "24b0f1a28e5894e5b0ab4151bac8301604a11fb9508017a8dfb6565d40778f90";
+const generation: &str = "7292b787e330aae54f4fe172f03ea436cfba09f7dae70546545c2d4eb40370ea";
 const pinned_tools: [(&str, &str); 3] = [
     (
         "nilcompiler",
-        "3f41654b843b9c6df4b3e810c7d0515f362670fc95be01c161b766aae128c463",
+        "6764709d059797bce815b51ea73b2adfd8d6404cbcfa0bf21c8b01e9f0a76f26",
     ),
     (
         "nilassembler",
-        "e046f1d30ce04c85ba34e3d76250f518fe2629cdc793120523e162272429a8e9",
+        "df210e55b495fc1d72d4f06c384c504608b4b27561ae5bf890809c91a283929f",
     ),
     (
         "nilinterpreter",
-        "a949a7445cdc5e0a8ec40f852fe72b28dfd0ad52b132dcb6e1f5626526dc6c35",
+        "ac259135567218c601a9751741e5ed5834eb29cf7cc779bdbb1558c38cb33e5d",
     ),
 ];
 /// The archive the vessel links. Pinned separately from the manifest so a
@@ -46,15 +46,20 @@ pub(super) const arena_base: u64 = user_window + 0x3000;
 pub(super) const mailbox_base: u64 = user_window + 0x4000;
 pub(super) const page_size: u64 = 0x1000;
 
-/// What the vessel is expected to produce, measured by running the sequence
-/// before the gate against this object and this archive on the build host.
-pub(super) const expected_message: &[u8] = b"Anomalous vessel speaks through a rite";
+/// What the vessel is expected to produce. The vessel writes twice: once with
+/// the message it composed, and once to say it saw the first rite commit what
+/// it sent, which it only does if the returned count matched.
+pub(super) const expected_first_message: &[u8] = b"Anomalous vessel speaks through a rite";
+pub(super) const expected_second_message: &[u8] = b"ny saw the rite succeed";
 pub(super) const expected_exit_code: i32 = 42;
 
-/// Exactly what a freestanding Ny object is allowed to need. The first five
-/// are the native runtime ABI; the last three appear only because this vessel
-/// allocates, and no libc name may appear beside them.
-const expected_object_imports: [&str; 8] = [
+/// Exactly what this vessel's object is allowed to need: the five native
+/// runtime ABI hooks, three more because it allocates, and the one symbol the
+/// vessel's own Anomalous half defines. No libc name may appear beside them,
+/// and no second host symbol may arrive unnoticed -- the rite surface Ny can
+/// reach is this list.
+const expected_object_imports: [&str; 9] = [
+    "anomalous_rite_console_write",
     "nyrt_abi_version",
     "nyrt_alloc",
     "nyrt_context_begin",
@@ -143,17 +148,28 @@ pub(super) fn package_image(root: &Path, build: &Path) -> Result<artifact, Strin
     // be free of, so it fails the build rather than being stubbed.
     check_object_imports(root, &vessel_object)?;
 
-    // An independent semantic oracle: the same source through the interpreter,
-    // whose exit status is Ny's returned value. This is not native execution.
+    // The interpreter can no longer act as a semantic oracle for this vessel,
+    // because the vessel reaches a symbol only a native object's host can
+    // define. What it can do is state that limit rather than leave it implied:
+    // the VM must refuse the host call by name, and a route that quietly
+    // resolved it to something else would fail here.
     run_stage(
         root,
         &sdk.join("nilinterpreter"),
         &["--no-ai".into(), nil.as_os_str().into()],
         &output,
         "interpreter",
-        expected_exit_code,
+        1,
         300,
     )?;
+    let refusal = fs::read_to_string(output.join("interpreter.stderr"))
+        .map_err(|e| format!("read Ny vessel interpreter diagnostics: {e}"))?;
+    if !refusal.contains("host-supplied symbol") {
+        return Err(format!(
+            "the interpreter must refuse the vessel's host symbol by name; it              said: {}",
+            refusal.trim()
+        ));
+    }
 
     run_stage(
         root,

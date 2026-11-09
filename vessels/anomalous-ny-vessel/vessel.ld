@@ -15,6 +15,7 @@ SECTIONS {
     anomalous_ny_vessel_image_start = .;
     .text : ALIGN(16) {
         KEEP(*(.text.ny_vessel_entry))
+        KEEP(*(.text.ny_vessel_rite))
         . = ALIGN(16);
         anomalous_ny_vessel_compiledcode_start = .;
         *(.text .text.* .ltext .ltext.*)

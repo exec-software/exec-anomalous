@@ -224,7 +224,60 @@ message to be there, NUL-terminated, as the vessel's first allocation -- so the
 bytes the rite carried are the bytes Ny composed, not merely bytes of the right
 length.
 
-## Three things the boot found that reading could not
+## Ny issues the rite itself
+
+The first boot's binding ran before and after Ny's `main`, so the vessel could
+not speak from inside its own control flow. That needed a capability Ny did not
+have: a way to call a symbol the consumer defines. `@interop("host")` is now
+that capability upstream -- the declared Ny function *is* an external symbol of
+exactly that name, called with the ordinary C convention -- and the vessel uses
+it:
+
+```ny
+@interop("host")
+fn anomalous_rite_console_write(message: text) -> i64
+end fn
+```
+
+`anomalous_rite_console_write` is ours, defined in `entry.S`. It takes a
+pointer to NUL-terminated bytes -- which is what a Ny `text` is natively --
+copies them into the mailbox payload through the runtime rather than libc,
+submits one `console_write`, and returns the committed count. Nothing of the
+gate, the mailbox or the vector is visible to Ny, which is the arrangement ADR
+0019 asks for.
+
+The vessel now writes twice, and the second write is the point:
+
+```
+kernel.ny_vessel.console.committed sequence 1, ok, 38 bytes, issued_by ny, from_region
+kernel.ny_vessel.console.committed sequence 2, ok, 23 bytes, issued_by ny
+kernel.ny_vessel.exited            sequence 3, ok, code 42
+kernel.ny_vessel.passed            calls 3, commits 3, console_writes 2, issued_by ny
+```
+
+Ny sends the second line only because the first rite returned the count it had
+passed. So the loop is closed in both directions: Ny → rite → kernel → result
+→ Ny decides → rite again. That is a vessel acting on the ABI rather than
+crossing it.
+
+Two consequences worth recording.
+
+**The stub must preserve what the gate destroys.** The gate requires every GPR
+but R15 to be zero, and the stub is now a System V callee, so it saves and
+restores `rbx`, `rbp` and `r12`-`r15` around the submission -- plus one extra
+qword, because six saved registers leave the stack eight bytes short of the
+16-byte boundary the runtime calls need. The committed length still crosses the
+submission in the vessel's own writable cell, because no register survives one.
+
+**The interpreter is no longer an oracle for this vessel.** A host symbol
+exists only in a native object, so the VM refuses the call. It previously asked
+the dynamic loader for a library called `host`, which failed here but would have
+bound an unrelated symbol on a machine that had one; it now refuses by name.
+The build stage requires that exact refusal, so the limit is stated rather than
+implied -- but it does mean the independent semantic route ADR 0049 had is not
+available to a vessel that reaches its host.
+
+## Three things the first boot found that reading could not
 
 **The user window is high, and that broke the code model.** `address_space`
 refuses a user mapping whose PML4 index is zero, because the first page-table
@@ -262,13 +315,18 @@ the map it is guarding.
 
 ## Open, in the order they probably matter
 
-1. **Ny cannot issue a rite itself.** The binding runs before and after Ny's
-   `main`, so a vessel cannot do I/O from inside its own control flow. That
-   needs a way for Ny to call a host-provided symbol -- the capability, not the
-   bindings -- and is a toolchain question. It is the obvious next slice.
-2. **The region is never reclaimed inside a context**, so a vessel that
+1. ~~**Ny cannot issue a rite itself.**~~ Done, above.
+2. **Only `console_write` is reachable from Ny.** `input_read`,
+   `display_update` and the scheduler gate are not declared and so are not
+   imported. Each is a line of binding when a vessel needs it, and the import
+   surface says which exist. A vessel that wants input is the next natural
+   one, and it would be the first to need a rite that can block.
+3. **The region is never reclaimed inside a context**, so a vessel that
    concatenates in a loop exhausts it and stops. Correct for this contract,
    wrong for a long-running vessel, and it wants a real vessel to ask it.
+4. **Nothing checks the host signature.** The toolchain cannot see the
+   definition, so the declaration in `vessel.ny` and the stub in `entry.S` are
+   reviewed together; a mismatch would be caught by neither side.
 3. ~~**The kernel harness.**~~ Done. For the record, the design as planned:
    `ny_vessel_test.rs` modelled on `rite_test.rs`, with `ny_vessel_entry.S`
    for the gate entry and the enter/resume pair, mapping the three extents

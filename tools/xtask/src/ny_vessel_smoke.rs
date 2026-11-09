@@ -9,12 +9,14 @@ use super::*;
 
 pub(super) const feature: &str = "ny_vessel_test";
 
-/// What the vessel composes, measured by running its pre-gate sequence on the
-/// build host against the same object and archive.
-const expected_console_bytes: u64 = 38;
+/// What the vessel writes. Twice: the message it composed, then a second line
+/// it sends only because the first rite returned the count it expected, which
+/// is the vessel acting on the ABI rather than crossing it again.
+const expected_first_bytes: u64 = 38;
+const expected_second_bytes: u64 = 23;
 const expected_exit_code: u64 = 42;
 
-const expected_events: [&str; 13] = [
+const expected_events: [&str; 14] = [
     "boot.kernel.enter",
     "kernel.fault_path.ready",
     "boot.omen.accepted",
@@ -24,6 +26,7 @@ const expected_events: [&str; 13] = [
     "boot.ready",
     "kernel.ny_vessel.ready",
     "kernel.ny_vessel.task.entered",
+    "kernel.ny_vessel.console.committed",
     "kernel.ny_vessel.console.committed",
     "kernel.ny_vessel.exited",
     "kernel.ny_vessel.released",
@@ -88,8 +91,9 @@ pub(super) fn smoke() -> Result<(), String> {
         verify_records(transcript)
     })?;
     println!(
-        "Ny vessel booted, composed {expected_console_bytes} bytes in the host's region, \
-         committed them through one console_write, and exited {expected_exit_code}"
+        "Ny vessel booted and issued its own rites: {expected_first_bytes} bytes it \
+         composed in the host's region, then {expected_second_bytes} more after reading \
+         the first rite's result, and exited {expected_exit_code}"
     );
     Ok(())
 }
@@ -176,26 +180,34 @@ fn verify_records(transcript: &str) -> Result<(), String> {
     )?;
     require_boolean(entered, expected_events[8], "guards_absent", true)?;
 
-    // The committed console write: Ny composed it, it came out of the region,
-    // and it is exactly the measured length.
-    let console = &records[9];
-    require_number(console, expected_events[9], "sequence", 1)?;
-    require_string(console, expected_events[9], "status", "ok")?;
-    require_number(console, expected_events[9], "bytes", expected_console_bytes)?;
-    require_string(console, expected_events[9], "composed_by", "ny")?;
-    require_boolean(console, expected_events[9], "from_region", true)?;
+    // Two committed console writes, both issued from inside Ny. The first
+    // carries the message Ny composed in the region the kernel installed; the
+    // second is the one Ny only sends because the first returned its count.
+    for (index, bytes, from_region) in [
+        (9usize, expected_first_bytes, true),
+        (10usize, expected_second_bytes, false),
+    ] {
+        let console = &records[index];
+        let event = expected_events[index];
+        require_number(console, event, "sequence", index as u64 - 8)?;
+        require_string(console, event, "status", "ok")?;
+        require_number(console, event, "bytes", bytes)?;
+        require_string(console, event, "composed_by", "ny")?;
+        require_string(console, event, "issued_by", "ny")?;
+        require_boolean(console, event, "from_region", from_region)?;
+    }
 
     // The exit carries what Ny returned, through the vessel's own cell.
-    let exited = &records[10];
-    require_number(exited, expected_events[10], "sequence", 2)?;
-    require_string(exited, expected_events[10], "status", "ok")?;
-    require_number(exited, expected_events[10], "code", expected_exit_code)?;
-    require_boolean(exited, expected_events[10], "returned_from_ny", true)?;
+    let exited = &records[11];
+    require_number(exited, expected_events[11], "sequence", 3)?;
+    require_string(exited, expected_events[11], "status", "ok")?;
+    require_number(exited, expected_events[11], "code", expected_exit_code)?;
+    require_boolean(exited, expected_events[11], "returned_from_ny", true)?;
 
     // Release accounting: every frame returned, nothing of the vessel left.
-    let released = &records[11];
-    let free = required_number(released, expected_events[11], "free_frames")?;
-    let initial = required_number(released, expected_events[11], "initial_free_frames")?;
+    let released = &records[12];
+    let free = required_number(released, expected_events[12], "free_frames")?;
+    let initial = required_number(released, expected_events[12], "initial_free_frames")?;
     if free != initial {
         return Err(format!(
             "Ny vessel did not restore its frames: {free} of {initial}"
@@ -208,15 +220,17 @@ fn verify_records(transcript: &str) -> Result<(), String> {
         "active_tasks",
         "active_mappings",
     ] {
-        require_number(released, expected_events[11], field, 0)?;
+        require_number(released, expected_events[12], field, 0)?;
     }
     for field in ["channel_retired", "region_wiped", "transition_stack_wiped"] {
-        require_boolean(released, expected_events[11], field, true)?;
+        require_boolean(released, expected_events[12], field, true)?;
     }
 
-    let passed = &records[12];
-    require_number(passed, expected_events[12], "calls", 2)?;
-    require_number(passed, expected_events[12], "commits", 2)?;
-    require_boolean(passed, expected_events[12], "terminal", true)?;
+    let passed = &records[13];
+    require_number(passed, expected_events[13], "calls", 3)?;
+    require_number(passed, expected_events[13], "commits", 3)?;
+    require_number(passed, expected_events[13], "console_writes", 2)?;
+    require_string(passed, expected_events[13], "issued_by", "ny")?;
+    require_boolean(passed, expected_events[13], "terminal", true)?;
     Ok(())
 }
