@@ -153,8 +153,13 @@ pub(super) fn package_image(root: &Path, build: &Path) -> Result<artifact, Strin
     // define. What it can do is state that limit rather than leave it implied:
     // the VM must refuse the host call by name, and a route that quietly
     // resolved it to something else would fail here.
+    // Run it from the stage's own directory. The interpreter writes a crash
+    // report beside its working directory when it refuses, and refusing is
+    // what this stage requires, so running it from the repository root left a
+    // stray report there on every build. The report is useful evidence; it
+    // belongs with the other stage logs.
     run_stage(
-        root,
+        &output,
         &sdk.join("nilinterpreter"),
         &["--no-ai".into(), nil.as_os_str().into()],
         &output,
