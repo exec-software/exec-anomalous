@@ -21,6 +21,8 @@ fault_test = ["smoke_test"]
 circle_test = ["smoke_test"]
 control_test = ["smoke_test"]
 rite_test = ["smoke_test"]
+# A Ny vessel on the rite ABI: toolchain-produced code, not assembled here.
+ny_vessel_test = ["smoke_test"]
 memory_test = ["smoke_test"]
 interrupt_test = ["smoke_test"]
 scheduler_test = ["smoke_test"]

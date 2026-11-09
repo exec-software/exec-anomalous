@@ -32,6 +32,7 @@ pub(super) const control_gate_vector: usize = 0xf1;
 #[cfg(all(
     any(
         feature = "rite_test",
+        feature = "ny_vessel_test",
         feature = "shell_vessel_test",
         feature = "input_wait_test",
         feature = "display_vessel_test",
@@ -237,6 +238,7 @@ unsafe extern "C" {
     fn x86_64_control_gate_entry();
     #[cfg(all(
         feature = "rite_test",
+        not(feature = "ny_vessel_test"),
         not(feature = "shell_vessel_test"),
         not(feature = "input_wait_test"),
         not(feature = "supervised_renderer_test"),
@@ -244,6 +246,8 @@ unsafe extern "C" {
         not(test)
     ))]
     fn x86_64_rite_gate_entry();
+    #[cfg(all(feature = "ny_vessel_test", not(test)))]
+    fn x86_64_ny_vessel_gate_entry();
     #[cfg(all(
         feature = "shell_vessel_test",
         not(feature = "input_wait_test"),
@@ -417,6 +421,7 @@ pub fn initialize(code_selector: u16, double_fault_ist: u8, nmi_ist: u8) {
 
     #[cfg(all(
         feature = "rite_test",
+        not(feature = "ny_vessel_test"),
         not(feature = "shell_vessel_test"),
         not(feature = "input_wait_test"),
         not(feature = "supervised_renderer_test"),
@@ -430,6 +435,24 @@ pub fn initialize(code_selector: u16, double_fault_ist: u8, nmi_ist: u8) {
             idt::install_gate(
                 rite_gate_vector,
                 x86_64_rite_gate_entry as *const () as usize as u64,
+                code_selector,
+                0,
+                idt::user_interrupt_gate_attributes,
+            )
+        };
+        debug_assert!(installed);
+    }
+
+    #[cfg(all(feature = "ny_vessel_test", not(test)))]
+    {
+        // SAFETY: The feature-local vector lies outside architectural and PIC
+        // vectors. This fixture owns the vector exclusively -- every other
+        // rite feature is excluded from selection while it is enabled -- and
+        // its entry returns only a validated user frame.
+        let installed = unsafe {
+            idt::install_gate(
+                rite_gate_vector,
+                x86_64_ny_vessel_gate_entry as *const () as usize as u64,
                 code_selector,
                 0,
                 idt::user_interrupt_gate_attributes,

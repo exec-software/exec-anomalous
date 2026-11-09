@@ -46,6 +46,7 @@ pub(super) fn selected(features: &[&str]) -> bool {
                     | "circle_test"
                     | "control_test"
                     | "rite_test"
+                    | "ny_vessel_test"
                     | "memory_test"
                     | "interrupt_test"
                     | "supervision_test"

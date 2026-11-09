@@ -99,14 +99,17 @@ cp -a "${resolved_generation}/." "${next_runtime}/"
 chmod -R go+rX "${next_runtime}"
 
 required_tools=(
-    nycompiler
-    nyinterpreter
-    nyassembler
-    nylinker
-    nylsp
-    nydebugger
-    nyschema
-    nyagent
+    nilcompiler
+    nilinterpreter
+    nilassembler
+    nillinker
+    nillsp
+    nildebugger
+    nilschema
+    nilagent
+    nilbuild
+    aperture
+    niltest
 )
 
 for tool in "${required_tools[@]}"; do
@@ -116,7 +119,7 @@ for tool in "${required_tools[@]}"; do
     fi
 done
 
-for directory in nylib nystd docs; do
+for directory in nillib nilstd docs; do
     if [[ ! -d "${next_runtime}/${directory}" ]]; then
         printf 'Ny runtime directory is missing: %s\n' "${directory}" >&2
         exit 2
@@ -125,6 +128,12 @@ done
 
 if [[ ! -f "${next_runtime}/manifest.json" ]]; then
     printf 'Ny runtime manifest is missing\n' >&2
+    exit 2
+fi
+freestanding_runtime="${next_runtime}/nillib/native/libnilruntime_freestanding.a"
+if [[ ! -f "${freestanding_runtime}" ]]; then
+    printf 'Ny runtime has no freestanding native runtime: %s\n' \
+        "${freestanding_runtime}" >&2
     exit 2
 fi
 if [[ -e "${next_runtime}/bin" ]]; then
@@ -139,13 +148,13 @@ if find -L "${next_runtime}" -type f -name "${retired_runtime_name}*" -print -qu
 fi
 
 while IFS= read -r -d '' source; do
-    relative="${source#"${next_runtime}/nystd/"}"
-    binary="${next_runtime}/nylib/${relative%.ny}.nil"
+    relative="${source#"${next_runtime}/nilstd/"}"
+    binary="${next_runtime}/nillib/${relative%.ny}.nil"
     if [[ ! -f "${binary}" ]]; then
         printf 'Ny runtime has no compiled module for %s\n' "${relative}" >&2
         exit 2
     fi
-done < <(find -L "${next_runtime}/nystd" -type f -name '*.ny' -print0)
+done < <(find -L "${next_runtime}/nilstd" -type f -name '*.ny' -print0)
 
 python3 "${ny_repo_dir}/scripts/validate-sdk.py" \
     "${next_runtime}" \
@@ -169,3 +178,5 @@ next_runtime=""
 
 printf 'Anomalous Ny runtime refreshed at %s\n' "${runtime_dir}"
 printf 'Ny source revision: %s\n' "$(git -C "${ny_repo_dir}" rev-parse --verify HEAD)"
+printf 'Freestanding native runtime: %s\n' \
+    "${runtime_dir}/nillib/native/libnilruntime_freestanding.a"

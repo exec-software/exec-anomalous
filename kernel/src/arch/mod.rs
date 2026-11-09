@@ -49,8 +49,11 @@ pub use x86_64::run_input_wait_test;
     not(test)
 ))]
 pub use x86_64::run_memory_test;
+#[cfg(all(feature = "ny_vessel_test", not(test)))]
+pub use x86_64::run_ny_vessel_test;
 #[cfg(all(
     feature = "rite_test",
+    not(feature = "ny_vessel_test"),
     not(feature = "shell_vessel_test"),
     not(feature = "input_wait_test"),
     not(feature = "supervised_renderer_test"),

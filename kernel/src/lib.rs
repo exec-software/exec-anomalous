@@ -275,6 +275,7 @@ pub unsafe extern "C" fn kernel_main(omen_address: *const boot_omen_record) -> !
         arch::run_control_test();
         #[cfg(all(
             feature = "rite_test",
+            not(feature = "ny_vessel_test"),
             not(feature = "shell_vessel_test"),
             not(feature = "input_wait_test"),
             not(feature = "supervised_renderer_test"),
@@ -290,6 +291,17 @@ pub unsafe extern "C" fn kernel_main(omen_address: *const boot_omen_record) -> !
                 console::screen_console::with_vga_text()
             };
             arch::run_rite_test(screen);
+        }
+        #[cfg(all(feature = "ny_vessel_test", not(test)))]
+        {
+            let screen = if let Some(framebuffer) = framebuffer {
+                // SAFETY: Boot drawing released its temporary canvas, and this
+                // terminal feature takes the only live screen ownership.
+                unsafe { console::screen_console::with_framebuffer(framebuffer) }
+            } else {
+                console::screen_console::with_vga_text()
+            };
+            arch::run_ny_vessel_test(screen);
         }
         #[cfg(all(
             feature = "memory_test",

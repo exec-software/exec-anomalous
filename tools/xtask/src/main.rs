@@ -51,6 +51,8 @@ mod native_runtime_artifact;
 mod native_runtime_smoke;
 mod ny_object_artifact;
 mod ny_object_smoke;
+mod ny_vessel_artifact;
+mod ny_vessel_smoke;
 mod owned_dispatcher_smoke;
 mod owned_multi_region_smoke;
 mod owned_source_smoke;
@@ -2697,6 +2699,28 @@ fn run() -> Result<(), String> {
             let root = repository_root()?;
             ny_object_artifact::package_image(&root, &root.join("build")).map(|_| ())
         }
+        Some("ny-vessel-inspect") => {
+            reject_extra_arguments(arguments)?;
+            let root = repository_root()?;
+            ny_vessel_artifact::package_image(&root, &root.join("build")).map(|_| ())
+        }
+        Some("ny-vessel-image") => {
+            reject_extra_arguments(arguments)?;
+            ny_vessel_smoke::build().map(|_| ())
+        }
+        Some("ny-vessel-smoke") => {
+            reject_extra_arguments(arguments)?;
+            ny_vessel_smoke::smoke()
+        }
+        Some("verify-ny-vessel-transcript") => {
+            let path = arguments
+                .next()
+                .map(PathBuf::from)
+                .ok_or("verify-ny-vessel-transcript requires one log path")?;
+            reject_extra_arguments(arguments)?;
+            let transcript = fs::read_to_string(path).map_err(|error| error.to_string())?;
+            ny_vessel_smoke::verify_transcript(&transcript)
+        }
         Some("ny-object-image") => {
             reject_extra_arguments(arguments)?;
             ny_object_smoke::build().map(|_| ())
@@ -3413,6 +3437,11 @@ fn build_image_with_context(
     } else {
         None
     };
+    let ny_vessel_payload = if ny_vessel_smoke::selected(kernel_features) {
+        Some(ny_vessel_artifact::package_image(&root, &build)?)
+    } else {
+        None
+    };
     build_kernel(&root, kernel_features)?;
     let kernel_elf = link_kernel(
         &root,
@@ -3509,6 +3538,11 @@ fn build_image_with_context(
             })
             .or_else(|| {
                 ny_payload
+                    .as_ref()
+                    .map(|artifact| artifact.object.as_path())
+            })
+            .or_else(|| {
+                ny_vessel_payload
                     .as_ref()
                     .map(|artifact| artifact.object.as_path())
             }),
@@ -3709,6 +3743,8 @@ fn build_image_with_context(
         "native-runtime-test.img"
     } else if native_application_smoke::selected(kernel_features) {
         "native-application-test.img"
+    } else if ny_vessel_smoke::selected(kernel_features) {
+        "ny-vessel-test.img"
     } else if ny_object_smoke::selected(kernel_features) {
         "ny-object-test.img"
     } else if native_editor_workspace::selected(kernel_features) {

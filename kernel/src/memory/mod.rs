@@ -9,6 +9,7 @@ use crate::boot_omen::memory_region;
         feature = "memory_test",
         feature = "control_test",
         feature = "rite_test",
+        feature = "ny_vessel_test",
         feature = "display_vessel_test",
         any(
             feature = "scheduler_test",
@@ -76,6 +77,7 @@ pub(crate) enum memory_error {
                 feature = "memory_test",
                 feature = "control_test",
                 feature = "rite_test",
+                feature = "ny_vessel_test",
                 feature = "display_vessel_test",
                 any(
                     feature = "scheduler_test",
@@ -119,6 +121,7 @@ impl memory_error {
                         feature = "memory_test",
                         feature = "control_test",
                         feature = "rite_test",
+                        feature = "ny_vessel_test",
                         feature = "display_vessel_test",
                         any(
                             feature = "scheduler_test",
@@ -171,6 +174,7 @@ const allocator_ready: u8 = 2;
     feature = "memory_test",
     feature = "control_test",
     feature = "rite_test",
+    feature = "ny_vessel_test",
     feature = "display_vessel_test",
     any(
         feature = "scheduler_test",
@@ -408,7 +412,8 @@ const fn ranges_overlap(left: physical_range, right: physical_range) -> bool {
             feature = "shell_vessel_test",
             feature = "input_wait_test",
             feature = "supervised_renderer_test",
-            feature = "semantic_surface_transport_test"
+            feature = "semantic_surface_transport_test",
+            feature = "ny_vessel_test"
         )
     )
 ))]
@@ -470,7 +475,8 @@ pub(crate) fn with_frame_allocator<R>(
             feature = "shell_vessel_test",
             feature = "input_wait_test",
             feature = "supervised_renderer_test",
-            feature = "semantic_surface_transport_test"
+            feature = "semantic_surface_transport_test",
+            feature = "ny_vessel_test"
         )
     )
 ))]

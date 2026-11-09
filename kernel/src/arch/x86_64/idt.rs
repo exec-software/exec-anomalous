@@ -15,7 +15,8 @@ pub(super) const interrupt_gate_attributes: u8 = 0x8e;
     feature = "supervised_renderer_test",
     feature = "semantic_surface_transport_test",
     feature = "workspace_dev",
-    feature = "dispatcher_test"
+    feature = "dispatcher_test",
+    feature = "ny_vessel_test"
 ))]
 pub(super) const user_interrupt_gate_attributes: u8 = 0xee;
 
