@@ -147,9 +147,73 @@ this checkout, with the gate installed at vector 243, nine calls, a committed
 16-byte `console_write`, and clean release accounting. That is the dispatcher
 this vessel is written against, exercised by a hand-written vessel.
 
+## The payload stage exists
+
+`make ny-vessel-inspect` (`tools/xtask/src/ny_vessel_artifact.rs`) takes the
+vessel from pinned source to a relocation-free carrier the kernel link can
+consume. It is a separate module from `ny_object_artifact` on purpose: that one
+is pinned to ADR 0049's generation and emission shape, and one pin cannot stand
+for two contracts.
+
+It refuses a generation whose manifest or whose `nilcompiler`, `nilassembler`,
+`nilinterpreter` or freestanding archive hash has moved -- the archive
+separately, so a generation that changed only that file is still rejected; an
+object importing anything but the eight runtime-ABI names; a link that acquires
+an undefined symbol or an unplaced section (`--no-undefined` with
+`--orphan-handling=error`, so the linker script names everything it admits);
+and an image that does not start at its page base, does not fit one page,
+places its failure or return labels outside that page, moves its writable
+layout, or lets the region reach the mailbox.
+
+The interpreter runs the same source as an independent semantic oracle and its
+exit status is required to be 42, so the native path is not the only thing
+asserting what the program means. It passes with no output on either stream.
+
+Payload: 2,349 bytes, carried by `x86_64_ny_vessel_payload_start/end`.
+
+## The mapping budget, which shapes the harness
+
+A circle admits `circle_mapping_capacity = 3` mappings, and
+`rite_test` spends exactly that on code, mailbox and stack. A Ny vessel needs
+its own writable data as well, which is a fourth thing, so the obvious layout
+does not fit.
+
+`map_owned_extent` is the way out: a multi-page extent is one mapping, which is
+how `supervised_renderer_test` covers six pages with three. The vessel's
+writable pages are contiguous and share permissions -- state at `0x800000`,
+region at `0x801000`, mailbox at `0x802000`, all RW and NX -- so they map as a
+single three-page extent:
+
+| Mapping | Extent | Permissions |
+| --- | --- | --- |
+| 1 | `0x400000`, one page | user RX |
+| 2 | `0x800000`, three pages: state, region, mailbox | user RW, NX |
+| 3 | stack, kernel-chosen | user RW, NX |
+
+The mailbox sharing an extent with vessel-writable memory is not a weakening:
+the dispatcher already reads it through its own physical alias and copies
+admitted bodies rather than trusting the vessel, and a vessel can write
+anywhere in its own memory in any case. It is also the more honest statement of
+what the pages are -- all of them are the vessel's.
+
+Addresses stay below 4 GiB throughout because the object is not
+position-independent; `rite_test`'s window at `0x6000_0000_0000` would overflow
+the 32-bit relocations the small code model emits. The mailbox constant in
+`entry.S` moved to `0x802000` for the same reason.
+
 ## Open, in the order they probably matter
 
-1. **The kernel harness.** `rite_transport.rs` is already shared by eight
+1. **The kernel harness.** Design settled, not written:
+   `ny_vessel_test.rs` modelled on `rite_test.rs`, with `ny_vessel_entry.S`
+   for the gate entry and the enter/resume pair, mapping the three extents
+   above, dispatching two rites through `rite_transport`, and checking the
+   console bytes, the exit status and release accounting. The payload arrives
+   through the wrapper symbols rather than being assembled into the kernel,
+   because a Ny vessel's code is produced by the toolchain. Wiring: a
+   `ny_vessel_test` cargo feature, `mod`/`global_asm!`/`run_ny_vessel_test` in
+   `x86_64.rs` and additions to the mutual-exclusion lists there,
+   `ny_vessel_smoke.rs` with its QEMU run and transcript oracle, and
+   `ny-vessel-image`/`ny-vessel-smoke` targets. `rite_transport.rs` is already shared by eight
    vessel fixtures, so a ninth is the ordinary unit of work here: map the RX
    page, the state page and the region, enter the task, dispatch two rites,
    and check the console bytes and exit status against the measured values
