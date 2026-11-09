@@ -1,16 +1,23 @@
 # The Anomalous-owned half of a Ny vessel.
 #
 # Ny supplies a freestanding object that publishes __ny_entry and imports the
-# native runtime hooks the shipped archive satisfies, plus one symbol this file
-# defines. It knows nothing about mailboxes or interrupt vectors, and under ADR
-# 0019 it should not: that ABI is ours and is unstable pre-alpha. This file is
-# the whole of the binding.
+# native runtime hooks the shipped archive satisfies, plus the two symbols this
+# file defines. It knows nothing about mailboxes or interrupt vectors, and under
+# ADR 0019 it should not: that ABI is ours and is unstable pre-alpha. This file
+# is the whole of the binding.
 #
 # What changed from the first vessel: Ny now issues the rite itself. The
 # console write is a symbol Ny declares with @interop("host") and calls from
 # inside its own control flow, so the vessel decides when to speak and can read
 # the result back and act on it. The surrounding entry installs the region,
 # runs Ny, and exits with what Ny returned.
+#
+# What changed again: a second operation. The input read is the first rite
+# whose reply carries a payload, and the first to bring Ny data the vessel
+# could not have contained -- Ny asks for a line, is given one, composes an
+# answer around it in the region, and speaks that. Of the three writes, two
+# carry bytes Ny built in the region and one carries a constant from its own
+# image, which is what the fixture's region checks distinguish.
 #
 # Register discipline: the gate requires every GPR but R15 to be zero, so the
 # stub saves the System V callee-saved registers before zeroing them and
@@ -45,21 +52,53 @@
 
 .set rite_operation_console_write, 1
 .set rite_operation_task_exit, 3
+.set rite_operation_session_input_read, 6
 
 .set rite_payload_none, 0
 .set rite_payload_utf8_text, 1
 .set rite_payload_exit_status, 4
+.set rite_payload_session_input_request, 6
+.set rite_payload_session_input_delivery, 7
 
 .set rite_right_console_write, 0x01
 .set rite_right_task_exit, 0x04
+.set rite_right_session_input_read, 0x20
 
 .set rite_status_ok, 0
+
+# The session-input request and delivery bodies, version 1. Their field
+# offsets are stated here rather than derived, because this file is the only
+# place in the vessel that knows the ABI has a shape at all.
+.set vessel_input_version_1, 1
+.set vessel_input_wait_if_empty, 1
+.set vessel_input_action_insert_text, 1
+.set vessel_input_origin_human_text, 1
+.set vessel_input_text_capacity, 256
+.set vessel_input_request_size, 16
+.set vessel_input_delivery_size, 280
+
+.set vessel_input_request_structure_size, rite_payload + 0
+.set vessel_input_request_version, rite_payload + 2
+.set vessel_input_request_flags, rite_payload + 4
+.set vessel_input_request_reply_capacity, rite_payload + 8
+.set vessel_input_request_reserved, rite_payload + 12
+
+.set vessel_input_delivery_structure_size, rite_payload + 0
+.set vessel_input_delivery_version, rite_payload + 2
+.set vessel_input_delivery_action, rite_payload + 4
+.set vessel_input_delivery_origin, rite_payload + 6
+.set vessel_input_delivery_text_size, rite_payload + 8
+.set vessel_input_delivery_erase_count, rite_payload + 10
+.set vessel_input_delivery_reserved, rite_payload + 12
+.set vessel_input_delivery_sequence, rite_payload + 16
+.set vessel_input_delivery_text, rite_payload + 24
 
 .set rite_transport_payload_limit, 4056
 .set rite_sanitized_flags, 0x02
 
 .set vessel_console_trace, 0x4e59564553534c31
 .set vessel_exit_trace, 0x4e59564553534c32
+.set vessel_input_trace, 0x4e59564553534c33
 
 # Every GPR but R15 is zero at the gate, so the dispatcher validates a
 # complete frame rather than trusting ambient register state.
@@ -175,6 +214,118 @@ anomalous_ny_vessel_console_return:
     retq
 .size anomalous_rite_console_write, . - anomalous_rite_console_write
 
+# const char *anomalous_rite_input_read(void)
+#
+# The second symbol Ny declares with @interop("host"), and the first rite whose
+# reply carries a payload. It submits one session_input_read with wait_if_empty
+# set -- this vessel has nothing to do until it is answered, and polling would
+# burn a quantum to learn nothing -- validates the delivery, copies the private
+# text into the vessel's own cell, terminates it, and returns a pointer to that
+# cell, which is what a Ny `text` is natively.
+#
+# Ny never sees the mailbox. The bytes are copied out of it before the pointer
+# Ny receives exists, so the delivery can be answered and the mailbox reused
+# without anything Ny holds becoming stale.
+.global anomalous_rite_input_read
+.type anomalous_rite_input_read, @function
+anomalous_rite_input_read:
+    pushq %rbx
+    pushq %rbp
+    pushq %r12
+    pushq %r13
+    pushq %r14
+    pushq %r15
+    # One more qword so the stack is 16-byte aligned at the call below; the
+    # entry offset plus six saved registers leaves it eight short.
+    pushq %rax
+
+    movabsq $vessel_mailbox_address, %r15
+    movw $rite_call_size, rite_call_header_size(%r15)
+    movw $rite_operation_session_input_read, rite_call_operation(%r15)
+    movw $rite_payload_session_input_request, rite_call_payload_kind(%r15)
+    movw $0, rite_call_reserved(%r15)
+    movq $rite_right_session_input_read, rite_call_rights_present(%r15)
+    movl $vessel_input_request_size, rite_call_payload_size(%r15)
+    movl $vessel_input_request_size, rite_call_payload_limit(%r15)
+    movabsq $vessel_input_trace, %rax
+    movq %rax, rite_call_trace_id(%r15)
+    movq %rax, rite_call_trace_id + 8(%r15)
+    movw $vessel_input_request_size, vessel_input_request_structure_size(%r15)
+    movw $vessel_input_version_1, vessel_input_request_version(%r15)
+    movl $vessel_input_wait_if_empty, vessel_input_request_flags(%r15)
+    movl $vessel_input_delivery_size, vessel_input_request_reply_capacity(%r15)
+    movl $0, vessel_input_request_reserved(%r15)
+    vessel_submit
+.global anomalous_ny_vessel_input_return
+anomalous_ny_vessel_input_return:
+    # The reply envelope. A console write is acknowledged with no payload; this
+    # one must carry a delivery, so the payload-free shape is a failure here.
+    cmpw $rite_reply_size, rite_reply_header_size(%r15)
+    jne .Lvessel_invalid
+    cmpw $rite_status_ok, rite_reply_status(%r15)
+    jne .Lvessel_invalid
+    cmpw $rite_payload_session_input_delivery, rite_reply_payload_kind(%r15)
+    jne .Lvessel_invalid
+    cmpw $0, rite_reply_reserved(%r15)
+    jne .Lvessel_invalid
+    cmpl $vessel_input_delivery_size, rite_reply_payload_size(%r15)
+    jne .Lvessel_invalid
+    cmpl $0, rite_reply_reserved_2(%r15)
+    jne .Lvessel_invalid
+    movabsq $vessel_input_trace, %rax
+    cmpq %rax, rite_reply_trace_id(%r15)
+    jne .Lvessel_invalid
+    cmpq %rax, rite_reply_trace_id + 8(%r15)
+    jne .Lvessel_invalid
+
+    # The delivery body. This vessel understands inserted text from a human
+    # session and nothing else; every other action, origin or version is a
+    # reply it was not written to read, not a reply it should guess at.
+    cmpw $vessel_input_delivery_size, vessel_input_delivery_structure_size(%r15)
+    jne .Lvessel_invalid
+    cmpw $vessel_input_version_1, vessel_input_delivery_version(%r15)
+    jne .Lvessel_invalid
+    cmpw $vessel_input_action_insert_text, vessel_input_delivery_action(%r15)
+    jne .Lvessel_invalid
+    cmpw $vessel_input_origin_human_text, vessel_input_delivery_origin(%r15)
+    jne .Lvessel_invalid
+    cmpw $0, vessel_input_delivery_erase_count(%r15)
+    jne .Lvessel_invalid
+    cmpl $0, vessel_input_delivery_reserved(%r15)
+    jne .Lvessel_invalid
+    cmpq $0, vessel_input_delivery_sequence(%r15)
+    je .Lvessel_invalid
+
+    # The delivery states a length; a Ny text is terminated. The copy and the
+    # terminator are what turn one into the other.
+    movzwl vessel_input_delivery_text_size(%r15), %ecx
+    testl %ecx, %ecx
+    jz .Lvessel_invalid
+    cmpl $vessel_input_text_capacity, %ecx
+    ja .Lvessel_invalid
+    movq %rcx, anomalous_ny_vessel_line_length(%rip)
+    leaq anomalous_ny_vessel_line(%rip), %rdi
+    leaq vessel_input_delivery_text(%r15), %rsi
+    movq %rcx, %rdx
+    callq nyrt_mem_copy
+    # The length comes back from the vessel's own cell: nyrt_mem_copy is free
+    # to clobber every caller-saved register, RCX among them.
+    movq anomalous_ny_vessel_line_length(%rip), %rcx
+    leaq anomalous_ny_vessel_line(%rip), %rax
+    movb $0, (%rax, %rcx)
+
+    popq %rcx
+    popq %r15
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %rbp
+    popq %rbx
+    # Computed after the restores so no saved register has to carry it.
+    leaq anomalous_ny_vessel_line(%rip), %rax
+    retq
+.size anomalous_rite_input_read, . - anomalous_rite_input_read
+
 .section .text.ny_vessel_entry,"ax",@progbits
 .p2align 4
 .global anomalous_ny_vessel_entry
@@ -235,5 +386,14 @@ anomalous_ny_vessel_status:
 .global anomalous_ny_vessel_length
 anomalous_ny_vessel_length:
     .zero 8
+.global anomalous_ny_vessel_line_length
+anomalous_ny_vessel_line_length:
+    .zero 8
+# The delivered line, and room for the terminator the delivery does not carry.
+# It is the vessel's own storage rather than the mailbox, so what Ny holds
+# stays valid after the mailbox is answered again.
+.global anomalous_ny_vessel_line
+anomalous_ny_vessel_line:
+    .zero vessel_input_text_capacity + 1
 
 .section .note.GNU-stack,"",@progbits

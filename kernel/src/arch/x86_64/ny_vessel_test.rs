@@ -14,11 +14,22 @@
 //! what Ny returned. A Ny object publishes `__ny_entry` and nothing else, so
 //! the region is the only channel it has, and it is enough.
 //!
+//! The traffic now runs both ways. Ny asks for a line through a
+//! `session_input_read`, this fixture answers with one, and Ny composes a
+//! third message around text it could not have contained and speaks that. The
+//! region checks tell the two kinds of message apart: the composed ones are
+//! found in the region, the quoted one is not there to find.
+//!
 //! What this proves is that a Ny vessel boots and completes rites under the
-//! ordinary dispatcher. It is not a general Ny runtime, a loader for arbitrary
-//! objects, or a claim about any Ny feature the vessel does not use.
+//! ordinary dispatcher, in both directions. It is not a general Ny runtime, a
+//! loader for arbitrary objects, or a claim about any Ny feature the vessel
+//! does not use. In particular the vessel's request asks to wait rather than
+//! poll, but nothing here parks: this fixture is the only source of input and
+//! its line is ready before the vessel asks. A rite that actually blocks needs
+//! a second task, and that is a separate slice.
 use anomalous_abi::{
-    id_128, rite_call, rite_operation, rite_payload_kind, rite_reply, rite_rights, rite_status,
+    id_128, rite_call, rite_operation, rite_payload_kind, rite_reply, rite_rights,
+    rite_session_input_delivery_v1, rite_session_input_origin, rite_status,
 };
 use core::arch::asm;
 use core::fmt::Write;
@@ -28,8 +39,10 @@ use core::sync::atomic::{AtomicBool, AtomicPtr, Ordering, compiler_fence};
 
 use super::address_space::{address_space, mapping_evidence};
 use super::rite_transport::{
-    call_size, clear_and_verify_bytes, copy_admitted_body, decode_exit_payload, read_call,
-    reply_size, rite_scratch, scratch_is_zero, transport_payload_limit, write_reply,
+    call_size, clear_and_verify_bytes, copy_admitted_body, decode_exit_payload,
+    decode_session_input_request, prepare_session_input_delivery_reply, read_call, reply_size,
+    rite_scratch, scratch_is_zero, session_input_delivery_size, session_input_request_size,
+    transport_payload_limit, write_reply,
 };
 use super::{descriptors, paging};
 use crate::circle::{circle_child_kind, circle_mapping_capacity, circle_table};
@@ -63,29 +76,46 @@ const rite_gate_vector: u64 = 0xf3;
 const sanitized_flags: u64 = 0x2;
 const cr0_task_switched: u64 = 1 << 3;
 const status_completed: u64 = 0x40;
-const call_count: usize = 3;
+const call_count: usize = 5;
 
-/// What the vessel composes and sends. The vessel writes twice: once with the
-/// message it composed, and once to say it saw the first rite commit what it
-/// sent -- which it only does if the count the rite returned matched, so the
-/// second write is the vessel acting on the ABI rather than crossing it again.
-/// Both are asserted here, so a change in what Ny produces fails rather than
-/// being reported as whatever arrived.
+/// What this vessel's grant has to cover: the shell minimum it already used,
+/// plus the semantic-session read the input rite needs. Stated here so the
+/// grant in the transcript is the one the vessel's operations require and no
+/// wider.
+const vessel_grant: u64 = rite_rights::shell_minimum | rite_rights::session_input_read;
+
+/// What the vessel composes and sends. The vessel writes three times: once
+/// with the message it composed, once to say it saw the first rite commit what
+/// it sent -- which it only does if the count the rite returned matched, so
+/// the second write is the vessel acting on the ABI rather than crossing it
+/// again -- and once with an answer built around the line this fixture
+/// delivered. All three are asserted here, so a change in what Ny produces
+/// fails rather than being reported as whatever arrived.
 const expected_first_text: &[u8] = b"Anomalous vessel speaks through a rite";
 const expected_second_text: &[u8] = b"ny saw the rite succeed";
+const expected_third_text: &[u8] = b"ny heard: say it back";
+/// The line this fixture puts into the vessel's hands, and the words Ny wraps
+/// around it. Ny cannot have contained the line, so finding it inside the
+/// third message is the evidence that the delivery reached Ny's own code.
+const expected_delivered_text: &[u8] = b"say it back";
+const input_preface: &[u8] = b"ny heard: ";
+const delivery_sequence: u64 = 1;
 const console_capacity: usize = expected_first_text.len();
 const expected_exit_code: i32 = 42;
 const console_trace_word: u64 = 0x4e59_5645_5353_4c31;
 const exit_trace_word: u64 = 0x4e59_5645_5353_4c32;
+const input_trace_word: u64 = 0x4e59_5645_5353_4c33;
 
 /// The payload header the build stage writes ahead of the image.
 const header_magic: u64 = 0x4e59_5f56_4553_5331;
-const header_words: usize = 6;
+const header_words: usize = 7;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum gate_phase {
     first_console_write,
     second_console_write,
+    input_read,
+    third_console_write,
     task_exit,
     idle,
 }
@@ -95,7 +125,9 @@ impl gate_phase {
         match self {
             Self::first_console_write => Some(0),
             Self::second_console_write => Some(1),
-            Self::task_exit => Some(2),
+            Self::input_read => Some(2),
+            Self::third_console_write => Some(3),
+            Self::task_exit => Some(4),
             Self::idle => None,
         }
     }
@@ -103,7 +135,9 @@ impl gate_phase {
     const fn next(self) -> Option<Self> {
         match self {
             Self::first_console_write => Some(Self::second_console_write),
-            Self::second_console_write => Some(Self::task_exit),
+            Self::second_console_write => Some(Self::input_read),
+            Self::input_read => Some(Self::third_console_write),
+            Self::third_console_write => Some(Self::task_exit),
             Self::task_exit => Some(Self::idle),
             Self::idle => None,
         }
@@ -113,16 +147,21 @@ impl gate_phase {
         match self {
             Self::first_console_write => Some(1),
             Self::second_console_write => Some(2),
-            Self::task_exit => Some(3),
+            Self::input_read => Some(3),
+            Self::third_console_write => Some(4),
+            Self::task_exit => Some(5),
             Self::idle => None,
         }
     }
 
     const fn trace_word(self) -> Option<u64> {
         match self {
-            // Both writes come from the same stub, so they carry the same
+            // All three writes come from the same stub, so they carry the same
             // trace; the sequence the kernel assigns distinguishes them.
-            Self::first_console_write | Self::second_console_write => Some(console_trace_word),
+            Self::first_console_write | Self::second_console_write | Self::third_console_write => {
+                Some(console_trace_word)
+            }
+            Self::input_read => Some(input_trace_word),
             Self::task_exit => Some(exit_trace_word),
             Self::idle => None,
         }
@@ -130,20 +169,37 @@ impl gate_phase {
 
     const fn operation(self) -> Option<rite_operation> {
         match self {
-            Self::first_console_write | Self::second_console_write => {
+            Self::first_console_write | Self::second_console_write | Self::third_console_write => {
                 Some(rite_operation::console_write)
             }
+            Self::input_read => Some(rite_operation::session_input_read),
             Self::task_exit => Some(rite_operation::task_exit),
             Self::idle => None,
         }
     }
 
-    /// The bytes this phase must carry, or none for the terminal exit.
+    /// Whether the bytes this phase carries were built in the region. A
+    /// concatenation allocates; a literal is quoted straight out of the
+    /// vessel's own image and never touches the region at all. The fixture
+    /// checks the region for both answers rather than taking this on trust.
+    const fn composed_in_region(self) -> bool {
+        matches!(self, Self::first_console_write | Self::third_console_write)
+    }
+
+    /// Whether the bytes this phase carries came from a delivery. Only the
+    /// third write can say so: its text is the line this fixture handed over.
+    const fn carries_delivery(self) -> bool {
+        matches!(self, Self::third_console_write)
+    }
+
+    /// The bytes this phase must carry, or none for the read and the exit,
+    /// whose payloads are not console text.
     const fn text(self) -> Option<&'static [u8]> {
         match self {
             Self::first_console_write => Some(expected_first_text),
             Self::second_console_write => Some(expected_second_text),
-            Self::task_exit | Self::idle => None,
+            Self::third_console_write => Some(expected_third_text),
+            Self::input_read | Self::task_exit | Self::idle => None,
         }
     }
 }
@@ -152,7 +208,9 @@ const fn phase_from_index(index: usize) -> Option<gate_phase> {
     match index {
         0 => Some(gate_phase::first_console_write),
         1 => Some(gate_phase::second_console_write),
-        2 => Some(gate_phase::task_exit),
+        2 => Some(gate_phase::input_read),
+        3 => Some(gate_phase::third_console_write),
+        4 => Some(gate_phase::task_exit),
         _ => None,
     }
 }
@@ -165,10 +223,12 @@ struct vessel_header {
     image_length: u64,
     entry: u64,
     console_return: u64,
+    input_return: u64,
     exit_return: u64,
     failed: u64,
 }
 
+#[derive(Clone, Copy)]
 struct vessel_observation {
     sequence: u64,
     status: rite_status,
@@ -199,6 +259,7 @@ struct vessel_context {
     console_copy_length: usize,
     observations: [vessel_observation; call_count],
     observation_count: usize,
+    deliveries_published: usize,
     body_copy_count: usize,
     body_bytes_copied: usize,
     reply_copy_count: usize,
@@ -266,6 +327,26 @@ const _: () = {
     assert!(mailbox_address == writable_address + 2 * page_size);
     assert!(expected_first_text.len() < transport_payload_limit as usize);
     assert!(expected_second_text.len() <= console_capacity);
+    assert!(expected_third_text.len() <= console_capacity);
+    assert!(session_input_request_size == 16);
+    assert!(session_input_delivery_size == 280);
+};
+
+/// The third message is the preface and the delivered line, in that order.
+/// Stating it as one literal keeps the transcript readable; tying it to its
+/// two halves here keeps it honest, so a delivery changed without changing
+/// what the vessel is expected to say fails to compile.
+const _: () = {
+    assert!(expected_third_text.len() == input_preface.len() + expected_delivered_text.len());
+    let mut index = 0;
+    while index < input_preface.len() {
+        assert!(expected_third_text[index] == input_preface[index]);
+        index += 1;
+    }
+    while index < expected_third_text.len() {
+        assert!(expected_third_text[index] == expected_delivered_text[index - input_preface.len()]);
+        index += 1;
+    }
 };
 
 static active_context: AtomicPtr<vessel_context> = AtomicPtr::new(ptr::null_mut());
@@ -318,7 +399,7 @@ pub(super) fn run(mut screen: screen_console) -> ! {
     serial.initialize();
     let _ = writeln!(
         serial,
-        r#"{{"schema":1,"event":"kernel.ny_vessel.passed","level":"info","calls":3,"commits":3,"console_writes":2,"issued_by":"ny","terminal":true}}"#
+        r#"{{"schema":1,"event":"kernel.ny_vessel.passed","level":"info","calls":5,"commits":5,"console_writes":3,"deliveries":1,"issued_by":"ny","terminal":true}}"#
     );
     super::qemu_exit_success();
     super::halt_forever()
@@ -351,10 +432,8 @@ fn run_with_allocator(
     serial.initialize();
     let _ = writeln!(
         serial,
-        r#"{{"schema":1,"event":"kernel.ny_vessel.ready","level":"info","arch":"x86_64","vector":243,"grant":{},"image_bytes":{},"entry":{},"region_pages":1}}"#,
-        rite_rights::shell_minimum,
-        header.image_length,
-        header.entry
+        r#"{{"schema":1,"event":"kernel.ny_vessel.ready","level":"info","arch":"x86_64","vector":243,"grant":{},"image_bytes":{},"entry":{},"region_pages":1,"operations":2}}"#,
+        vessel_grant, header.image_length, header.entry
     );
 
     let mut circles = circle_table::new();
@@ -365,8 +444,8 @@ fn run_with_allocator(
     let mut space = prepare_task_space(allocator, kernel_cr3, &header)?;
     attach_task_space(&mut circles, circle)?;
     let task = create_task(&mut circles, &mut tasks, circle, space.payload_length)?;
-    let channel = rite_channel::try_new(task, rite_rights::shell_minimum)
-        .map_err(|_| "ny_vessel_channel_create_failed")?;
+    let channel =
+        rite_channel::try_new(task, vessel_grant).map_err(|_| "ny_vessel_channel_create_failed")?;
 
     let task_snapshot = tasks
         .snapshot(task)
@@ -406,12 +485,9 @@ fn run_with_allocator(
         scratch: [0; page_size as usize],
         console_copy: [0; console_capacity],
         console_copy_length: 0,
-        observations: [
-            vessel_observation::empty(),
-            vessel_observation::empty(),
-            vessel_observation::empty(),
-        ],
+        observations: [vessel_observation::empty(); call_count],
         observation_count: 0,
+        deliveries_published: 0,
         body_copy_count: 0,
         body_bytes_copied: 0,
         reply_copy_count: 0,
@@ -427,10 +503,15 @@ fn run_with_allocator(
         .tasks
         .snapshot(task)
         .map_err(|_| "ny_vessel_task_final_snapshot_failed")?;
-    // Each body is copied once: the two messages and the exit payload.
-    let expected_body_bytes =
-        expected_first_text.len() + expected_second_text.len() + mem::size_of::<u64>();
-    let expected_console_bytes = expected_first_text.len() + expected_second_text.len();
+    // Each body is copied once: the three messages, the input request, and
+    // the exit payload.
+    let expected_body_bytes = expected_first_text.len()
+        + expected_second_text.len()
+        + session_input_request_size
+        + expected_third_text.len()
+        + mem::size_of::<u64>();
+    let expected_console_bytes =
+        expected_first_text.len() + expected_second_text.len() + expected_third_text.len();
     if exited.state() != task_state::exited
         || context.phase != gate_phase::idle
         || context.observation_count != call_count
@@ -438,8 +519,9 @@ fn run_with_allocator(
         || context.body_bytes_copied != expected_body_bytes
         || context.reply_copy_count != call_count - 1
         || context.console_bytes_committed != expected_console_bytes
-        || context.console_copy_length != expected_second_text.len()
-        || context.console_copy[..context.console_copy_length] != *expected_second_text
+        || context.deliveries_published != 1
+        || context.console_copy_length != expected_third_text.len()
+        || context.console_copy[..context.console_copy_length] != *expected_third_text
         || context.exit_code != Some(expected_exit_code)
         || context.terminal_reply_copied
         || !scratch_is_zero(&context.scratch)
@@ -453,6 +535,19 @@ fn run_with_allocator(
     // A vessel that had sent something it did not compose fails here.
     if !region_holds_message(arena_alias) {
         return Err("ny_vessel_region_message_absent");
+    }
+    // The answer is in the region too, and it contains the line this fixture
+    // delivered -- which the vessel's image does not and cannot contain. That
+    // is the whole claim of this slice, stated as bytes in a page rather than
+    // as a count the vessel reported.
+    if !region_contains(arena_alias, expected_third_text) {
+        return Err("ny_vessel_region_answer_absent");
+    }
+    // And the quoted message is not there. A literal needs no allocation, so
+    // finding it in the region would mean the vessel is composing where it was
+    // expected to quote, and `from_region` in the transcript would be wrong.
+    if region_contains(arena_alias, expected_second_text) {
+        return Err("ny_vessel_region_quoted_text_present");
     }
 
     context
@@ -514,28 +609,51 @@ fn emit_outcomes(serial: &mut serial_port, context: &vessel_context) -> Result<(
     // echoed: the vessel's text already reached the console through the
     // ordinary commit path. `issued_by` is the point of this vessel -- the
     // rite came from inside Ny's own control flow, not from the entry around
-    // it.
-    for index in 0..2 {
+    // it -- and `from_region` separates what Ny composed from what it quoted.
+    for index in 0..call_count {
         let observation = &context.observations[index];
         let phase = phase_from_index(index).ok_or("ny_vessel_observation_index_invalid")?;
-        let text = phase.text().ok_or("ny_vessel_phase_has_no_text")?;
-        let _ = writeln!(
-            serial,
-            r#"{{"schema":1,"event":"kernel.ny_vessel.console.committed","level":"info","sequence":{},"status":"{}","bytes":{},"composed_by":"ny","issued_by":"ny","from_region":{}}}"#,
-            observation.sequence,
-            status_label(observation.status)?,
-            text.len(),
-            index == 0
-        );
+        let status = status_label(observation.status)?;
+        match phase {
+            gate_phase::first_console_write
+            | gate_phase::second_console_write
+            | gate_phase::third_console_write => {
+                let _ = writeln!(
+                    serial,
+                    r#"{{"schema":1,"event":"kernel.ny_vessel.console.committed","level":"info","sequence":{},"status":"{}","bytes":{},"composed_by":"ny","issued_by":"ny","from_region":{},"carries_delivery":{}}}"#,
+                    observation.sequence,
+                    status,
+                    phase.text().ok_or("ny_vessel_phase_has_no_text")?.len(),
+                    phase.composed_in_region(),
+                    phase.carries_delivery()
+                );
+            }
+            // `waited` is false deliberately. The vessel asked to wait, and
+            // this fixture had the line ready, so no wait was installed. A
+            // transcript that claimed otherwise would be claiming a blocking
+            // path nothing here exercises.
+            gate_phase::input_read => {
+                let _ = writeln!(
+                    serial,
+                    r#"{{"schema":1,"event":"kernel.ny_vessel.input.delivered","level":"info","sequence":{},"status":"{}","bytes":{},"origin":"human_text","delivery_sequence":{},"waited":false,"read_by":"ny"}}"#,
+                    observation.sequence,
+                    status,
+                    expected_delivered_text.len(),
+                    delivery_sequence
+                );
+            }
+            gate_phase::task_exit => {
+                let _ = writeln!(
+                    serial,
+                    r#"{{"schema":1,"event":"kernel.ny_vessel.exited","level":"info","sequence":{},"status":"{}","code":{},"returned_from_ny":true}}"#,
+                    observation.sequence,
+                    status,
+                    context.exit_code.ok_or("ny_vessel_exit_code_missing")?
+                );
+            }
+            gate_phase::idle => return Err("ny_vessel_idle_observation"),
+        }
     }
-    let exit = &context.observations[2];
-    let _ = writeln!(
-        serial,
-        r#"{{"schema":1,"event":"kernel.ny_vessel.exited","level":"info","sequence":{},"status":"{}","code":{},"returned_from_ny":true}}"#,
-        exit.sequence,
-        status_label(exit.status)?,
-        context.exit_code.ok_or("ny_vessel_exit_code_missing")?
-    );
     Ok(())
 }
 
@@ -595,8 +713,9 @@ fn read_header() -> Result<vessel_header, &'static str> {
         image_length: words[1],
         entry: words[2],
         console_return: words[3],
-        exit_return: words[4],
-        failed: words[5],
+        input_return: words[4],
+        exit_return: words[5],
+        failed: words[6],
     };
     let payload_start = ptr::addr_of!(x86_64_ny_vessel_payload_start);
     let payload_end = ptr::addr_of!(x86_64_ny_vessel_payload_end);
@@ -610,9 +729,14 @@ fn read_header() -> Result<vessel_header, &'static str> {
         || header.image_length > page_size
         || carried as u64 != header.image_length
         || header.entry != code_address
-        || ![header.console_return, header.exit_return, header.failed]
-            .iter()
-            .all(|address| (code_address..code_end).contains(address))
+        || ![
+            header.console_return,
+            header.input_return,
+            header.exit_return,
+            header.failed,
+        ]
+        .iter()
+        .all(|address| (code_address..code_end).contains(address))
     {
         return Err("ny_vessel_header_addresses_invalid");
     }
@@ -870,6 +994,41 @@ fn region_holds_message(arena_alias: u64) -> bool {
     unsafe { ptr::read_volatile((base as *const u8).add(expected_first_text.len())) == 0 }
 }
 
+/// Looks for a NUL-terminated run of `text` anywhere in the region. The first
+/// message is at the base because it is the first allocation, but a later
+/// composition lands wherever the bump pointer had reached by then, so finding
+/// it is a search rather than an offset. Used in both directions: the composed
+/// messages must be present and the quoted one must be absent.
+fn region_contains(arena_alias: u64, text: &[u8]) -> bool {
+    let Ok(base) = usize::try_from(arena_alias) else {
+        return false;
+    };
+    let page = page_size as usize;
+    if text.is_empty() || text.len() >= page {
+        return false;
+    }
+    for start in 0..page - text.len() {
+        let mut matched = true;
+        for (offset, expected) in text.iter().enumerate() {
+            // SAFETY: The region page is identity mapped and this fixture
+            // retains its exclusive lease until release.
+            let actual = unsafe { ptr::read_volatile((base as *const u8).add(start + offset)) };
+            if actual != *expected {
+                matched = false;
+                break;
+            }
+        }
+        // SAFETY: `start + text.len()` is below the page end, inside the same
+        // exclusively held page.
+        if matched
+            && unsafe { ptr::read_volatile((base as *const u8).add(start + text.len())) } == 0
+        {
+            return true;
+        }
+    }
+    false
+}
+
 fn validate_mapping(
     evidence: mapping_evidence,
     physical_address: u64,
@@ -1080,6 +1239,13 @@ unsafe extern "C" fn x86_64_ny_vessel_gate_dispatch(frame: *mut rite_gate_frame)
             compiler_fence(Ordering::SeqCst);
             gate_active.store(false, Ordering::Release);
         }
+        Ok(gate_action::return_published) => {
+            if context.reply_copy_count != reply_copies_before + 1 {
+                fail("ny_vessel_published_reply_not_counted");
+            }
+            compiler_fence(Ordering::SeqCst);
+            gate_active.store(false, Ordering::Release);
+        }
         Ok(gate_action::complete) => {
             context.terminal_reply_copied = context.reply_copy_count != reply_copies_before;
             if context.terminal_reply_copied {
@@ -1113,7 +1279,19 @@ unsafe extern "C" fn x86_64_ny_vessel_gate_dispatch(frame: *mut rite_gate_frame)
 
 enum gate_action {
     return_to_user(rite_reply),
+    /// The reply is already in the mailbox. A delivery is staged and published
+    /// where it is built, because its body has to be in place before the rite
+    /// is settled and its validity marker after; writing a second reply over
+    /// it here would destroy both.
+    return_published,
     complete,
+}
+
+/// What `complete_admitted` did with the reply it is handing back.
+enum rite_outcome {
+    reply,
+    published_reply,
+    terminal,
 }
 
 fn valid_gate_frame(context: &vessel_context, frame: &rite_gate_frame) -> bool {
@@ -1174,11 +1352,13 @@ fn valid_gate_frame(context: &vessel_context, frame: &rite_gate_frame) -> bool {
 /// that is not doing what was inspected.
 fn expected_gate_instruction_pointer(context: &vessel_context) -> Option<u64> {
     match context.phase {
-        // Both writes come from the one stub, so both resume at its single
-        // return address; the entry's own exit resumes at the other.
-        gate_phase::first_console_write | gate_phase::second_console_write => {
-            Some(context.header.console_return)
-        }
+        // All three writes come from the one stub, so they resume at its
+        // single return address; the read has its own stub and the entry's
+        // own exit resumes at a third address.
+        gate_phase::first_console_write
+        | gate_phase::second_console_write
+        | gate_phase::third_console_write => Some(context.header.console_return),
+        gate_phase::input_read => Some(context.header.input_return),
         gate_phase::task_exit => Some(context.header.exit_return),
         gate_phase::idle => None,
     }
@@ -1225,11 +1405,12 @@ fn dispatch_gate(context: &mut vessel_context) -> Result<gate_action, &'static s
                 &mut context.body_copy_count,
                 &mut context.body_bytes_copied,
                 &mut context.console_bytes_committed,
+                &mut context.deliveries_published,
                 &mut context.exit_code,
             )?,
         }
     };
-    let (reply, terminal) = completion;
+    let (reply, outcome) = completion;
     if context.body_copy_count != index + 1
         || context.body_copy_count < before_copies
         || !scratch_is_zero(&context.scratch)
@@ -1244,7 +1425,7 @@ fn dispatch_gate(context: &mut vessel_context) -> Result<gate_action, &'static s
     };
     context.observation_count += 1;
 
-    if terminal {
+    if let rite_outcome::terminal = outcome {
         if phase != gate_phase::task_exit
             || context
                 .tasks
@@ -1256,12 +1437,18 @@ fn dispatch_gate(context: &mut vessel_context) -> Result<gate_action, &'static s
             return Err("ny_vessel_terminal_state_invalid");
         }
         context.phase = gate_phase::idle;
-        Ok(gate_action::complete)
-    } else {
-        context.phase = phase
-            .next()
-            .ok_or("ny_vessel_phase_advanced_past_terminal")?;
-        Ok(gate_action::return_to_user(reply))
+        return Ok(gate_action::complete);
+    }
+    context.phase = phase
+        .next()
+        .ok_or("ny_vessel_phase_advanced_past_terminal")?;
+    match outcome {
+        rite_outcome::reply => Ok(gate_action::return_to_user(reply)),
+        rite_outcome::published_reply => {
+            context.reply_copy_count += 1;
+            Ok(gate_action::return_published)
+        }
+        rite_outcome::terminal => Err("ny_vessel_terminal_outcome_unreachable"),
     }
 }
 
@@ -1278,12 +1465,15 @@ fn complete_admitted(
     body_copy_count: &mut usize,
     body_bytes_copied: &mut usize,
     console_bytes_committed: &mut usize,
+    deliveries_published: &mut usize,
     exit_code: &mut Option<i32>,
-) -> Result<(rite_reply, bool), &'static str> {
+) -> Result<(rite_reply, rite_outcome), &'static str> {
     let vessel = admission.vessel();
     match phase {
         gate_phase::idle => Err("ny_vessel_unexpected_admission"),
-        gate_phase::first_console_write | gate_phase::second_console_write => {
+        gate_phase::first_console_write
+        | gate_phase::second_console_write
+        | gate_phase::third_console_write => {
             // SAFETY: `mailbox` is the active task space's exclusively owned,
             // identity-mapped alias for the vessel's mailbox page.
             unsafe {
@@ -1325,7 +1515,65 @@ fn complete_admitted(
             if !clear_and_verify_bytes(scratch) {
                 return Err("ny_vessel_console_scratch_clear_failed");
             }
-            Ok((reply, false))
+            Ok((reply, rite_outcome::reply))
+        }
+        // The one rite here whose reply carries a payload. Its body has to be
+        // in the mailbox before the rite is settled and its validity marker
+        // after, so the staging happens here rather than in the gate: the
+        // ordering is part of the delivery, not a detail of returning.
+        gate_phase::input_read => {
+            // SAFETY: `mailbox` is the active task space's exclusively owned,
+            // identity-mapped alias for the vessel's mailbox page.
+            unsafe {
+                copy_admitted_body(
+                    mailbox,
+                    mailbox_address,
+                    admission.payload_size(),
+                    scratch,
+                    body_copy_count,
+                    body_bytes_copied,
+                )
+            }?;
+            // The vessel asked to wait rather than poll. Nothing parks here,
+            // because this fixture is the only source of input and its line is
+            // ready before the vessel asks; but the request is still the one a
+            // vessel would send, and a request that asked to poll, or that
+            // sized its reply for something else, is not what was inspected.
+            let request = decode_session_input_request(scratch);
+            if !request.has_supported_body()
+                || !request.wait_if_empty()
+                || request.reply_capacity() as usize != session_input_delivery_size
+            {
+                return Err("ny_vessel_input_request_invalid");
+            }
+            if !clear_and_verify_bytes(scratch) {
+                return Err("ny_vessel_input_scratch_clear_failed");
+            }
+            let delivery = rite_session_input_delivery_v1::try_insert_text(
+                rite_session_input_origin::human_text,
+                delivery_sequence,
+                expected_delivered_text,
+            )
+            .ok_or("ny_vessel_input_delivery_invalid")?;
+            let reply = admission
+                .session_input_delivery_reply()
+                .map_err(|_| "ny_vessel_input_reply_prepare_failed")?;
+            let prepared = prepare_session_input_delivery_reply(reply, &delivery)?;
+            // SAFETY: Every fallible check is complete, and `mailbox` is the
+            // live, page-aligned, exclusively held alias of this vessel's one
+            // mailbox page.
+            let staged = unsafe { prepared.stage(mailbox) }?;
+            let settled = admission
+                .finish_session_input_delivery(tasks, || {})
+                .map_err(|_| "ny_vessel_input_completion_failed")?;
+            if settled != reply {
+                return Err("ny_vessel_input_reply_changed");
+            }
+            // SAFETY: The rite is settled and its body is already in place, so
+            // the validity marker is the last store this delivery needs.
+            unsafe { staged.publish() };
+            *deliveries_published += 1;
+            Ok((reply, rite_outcome::published_reply))
         }
         gate_phase::task_exit => {
             // SAFETY: `mailbox` is the active task space's exclusively owned,
@@ -1357,7 +1605,7 @@ fn complete_admitted(
             if !clear_and_verify_bytes(scratch) {
                 return Err("ny_vessel_terminal_scratch_clear_failed");
             }
-            Ok((reply, true))
+            Ok((reply, rite_outcome::terminal))
         }
     }
 }
@@ -1368,16 +1616,20 @@ fn validate_vessel_call(phase: gate_phase, call: &rite_call) -> Result<(), &'sta
     expected[..8].copy_from_slice(&trace.to_le_bytes());
     expected[8..].copy_from_slice(&trace.to_le_bytes());
     let expected_kind = match phase {
-        gate_phase::first_console_write | gate_phase::second_console_write => {
-            rite_payload_kind::utf8_text
-        }
+        gate_phase::first_console_write
+        | gate_phase::second_console_write
+        | gate_phase::third_console_write => rite_payload_kind::utf8_text,
+        gate_phase::input_read => rite_payload_kind::session_input_request,
         gate_phase::task_exit => rite_payload_kind::exit_status,
         gate_phase::idle => return Err("ny_vessel_idle_call"),
     };
     let expected_size = match phase {
-        gate_phase::first_console_write | gate_phase::second_console_write => {
+        gate_phase::first_console_write
+        | gate_phase::second_console_write
+        | gate_phase::third_console_write => {
             phase.text().ok_or("ny_vessel_phase_has_no_text")?.len() as u32
         }
+        gate_phase::input_read => session_input_request_size as u32,
         gate_phase::task_exit => mem::size_of::<u64>() as u32,
         gate_phase::idle => return Err("ny_vessel_idle_call"),
     };
@@ -1399,11 +1651,24 @@ fn validate_reply(phase: gate_phase, reply: rite_reply) -> Result<(), &'static s
     let mut expected = [0u8; 16];
     expected[..8].copy_from_slice(&trace.to_le_bytes());
     expected[8..].copy_from_slice(&trace.to_le_bytes());
+    // Only the read is answered with a payload; everything else this vessel
+    // sends is acknowledged with a bare header.
+    let (expected_kind, expected_payload_size) = match phase {
+        gate_phase::input_read => (
+            rite_payload_kind::session_input_delivery,
+            session_input_delivery_size as u32,
+        ),
+        gate_phase::first_console_write
+        | gate_phase::second_console_write
+        | gate_phase::third_console_write
+        | gate_phase::task_exit => (rite_payload_kind::none, 0),
+        gate_phase::idle => return Err("ny_vessel_idle_reply"),
+    };
     if !reply.has_supported_header()
         || reply.header_size as usize != reply_size
         || reply.status != rite_status::ok
-        || reply.payload_kind != rite_payload_kind::none
-        || reply.payload_size != 0
+        || reply.payload_kind != expected_kind
+        || reply.payload_size != expected_payload_size
         || reply.reserved != 0
         || reply.reserved_2 != 0
         || reply.sequence != phase.sequence().ok_or("ny_vessel_sequence_missing")?

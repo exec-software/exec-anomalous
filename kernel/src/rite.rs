@@ -734,7 +734,7 @@ impl<'a> rite_admission<'a> {
 
     /// Construct the exact nonempty reply prefix before the caller's complete
     /// body-copy/source-consume transaction.
-    #[cfg(any(test, feature = "input_wait_test"))]
+    #[cfg(any(test, feature = "input_wait_test", feature = "ny_vessel_test"))]
     pub(crate) fn session_input_delivery_reply(&self) -> Result<rite_reply, rite_error> {
         if self.operation != rite_operation::session_input_read {
             return Err(rite_error::invalid_completion);
@@ -810,7 +810,7 @@ impl<'a> rite_admission<'a> {
     /// Settle one synchronous semantic-session delivery after its complete
     /// copy and source commit. The callback is the infallible linearization
     /// point supplied by the serialized endpoint/transport integration.
-    #[cfg(any(test, feature = "input_wait_test"))]
+    #[cfg(any(test, feature = "input_wait_test", feature = "ny_vessel_test"))]
     pub(crate) fn finish_session_input_delivery<F>(
         mut self,
         tasks: &task_table,

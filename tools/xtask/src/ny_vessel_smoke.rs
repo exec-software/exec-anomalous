@@ -5,18 +5,30 @@
 //! and exits with that value. Both are checked here against the values the
 //! build stage measured, so a vessel that sends something else, or exits with
 //! something else, fails rather than being reported as whatever arrived.
+//!
+//! The vessel also reads. It asks for a line, the kernel delivers one, and the
+//! third write is the answer Ny built around it -- so the byte counts here are
+//! what pins that the delivered text reached Ny and came back out, since the
+//! third count is only reachable by a vessel that received those bytes.
 use super::*;
 
 pub(super) const feature: &str = "ny_vessel_test";
 
-/// What the vessel writes. Twice: the message it composed, then a second line
-/// it sends only because the first rite returned the count it expected, which
-/// is the vessel acting on the ABI rather than crossing it again.
-const expected_first_bytes: u64 = 38;
-const expected_second_bytes: u64 = 23;
-const expected_exit_code: u64 = 42;
+/// What the vessel writes. Three times: the message it composed, a second line
+/// it sends only because the first rite returned the count it expected -- which
+/// is the vessel acting on the ABI rather than crossing it again -- and an
+/// answer composed around the line the kernel delivered to it.
+/// Taken from the payload stage's statement of what the vessel says, so the
+/// two cannot disagree.
+const expected_first_bytes: u64 = ny_vessel_artifact::expected_first_message.len() as u64;
+const expected_second_bytes: u64 = ny_vessel_artifact::expected_second_message.len() as u64;
+const expected_third_bytes: u64 = ny_vessel_artifact::expected_third_message.len() as u64;
+/// The line the kernel hands over, as a length. The vessel's image cannot
+/// contain it, so the third write's count is the evidence it arrived.
+const expected_delivered_bytes: u64 = ny_vessel_artifact::expected_delivered_message.len() as u64;
+const expected_exit_code: u64 = ny_vessel_artifact::expected_exit_code as u64;
 
-const expected_events: [&str; 14] = [
+const expected_events: [&str; 16] = [
     "boot.kernel.enter",
     "kernel.fault_path.ready",
     "boot.omen.accepted",
@@ -27,6 +39,8 @@ const expected_events: [&str; 14] = [
     "kernel.ny_vessel.ready",
     "kernel.ny_vessel.task.entered",
     "kernel.ny_vessel.console.committed",
+    "kernel.ny_vessel.console.committed",
+    "kernel.ny_vessel.input.delivered",
     "kernel.ny_vessel.console.committed",
     "kernel.ny_vessel.exited",
     "kernel.ny_vessel.released",
@@ -93,7 +107,9 @@ pub(super) fn smoke() -> Result<(), String> {
     println!(
         "Ny vessel booted and issued its own rites: {expected_first_bytes} bytes it \
          composed in the host's region, then {expected_second_bytes} more after reading \
-         the first rite's result, and exited {expected_exit_code}"
+         the first rite's result, then {expected_delivered_bytes} delivered bytes it had \
+         never contained answered with {expected_third_bytes}, and exited \
+         {expected_exit_code}"
     );
     Ok(())
 }
@@ -153,7 +169,10 @@ fn verify_records(transcript: &str) -> Result<(), String> {
     let ready = &records[7];
     require_string(ready, expected_events[7], "arch", "x86_64")?;
     require_number(ready, expected_events[7], "vector", 243)?;
-    require_number(ready, expected_events[7], "grant", 7)?;
+    // The shell minimum plus the semantic-session read the second operation
+    // needs: 0b100111.
+    require_number(ready, expected_events[7], "grant", 39)?;
+    require_number(ready, expected_events[7], "operations", 2)?;
     require_number(ready, expected_events[7], "entry", 0x0000_6000_0000_1000)?;
     let image_bytes = required_number(ready, expected_events[7], "image_bytes")?;
     if image_bytes == 0 || image_bytes > 4096 {
@@ -180,34 +199,55 @@ fn verify_records(transcript: &str) -> Result<(), String> {
     )?;
     require_boolean(entered, expected_events[8], "guards_absent", true)?;
 
-    // Two committed console writes, both issued from inside Ny. The first
+    // Three committed console writes, all issued from inside Ny. The first
     // carries the message Ny composed in the region the kernel installed; the
-    // second is the one Ny only sends because the first returned its count.
-    for (index, bytes, from_region) in [
-        (9usize, expected_first_bytes, true),
-        (10usize, expected_second_bytes, false),
+    // second is the one Ny only sends because the first returned its count;
+    // the third is the answer it composed around the delivered line, so it is
+    // both in the region and carrying the delivery.
+    for (index, sequence, bytes, from_region, carries_delivery) in [
+        (9usize, 1u64, expected_first_bytes, true, false),
+        (10usize, 2u64, expected_second_bytes, false, false),
+        (12usize, 4u64, expected_third_bytes, true, true),
     ] {
         let console = &records[index];
         let event = expected_events[index];
-        require_number(console, event, "sequence", index as u64 - 8)?;
+        require_number(console, event, "sequence", sequence)?;
         require_string(console, event, "status", "ok")?;
         require_number(console, event, "bytes", bytes)?;
         require_string(console, event, "composed_by", "ny")?;
         require_string(console, event, "issued_by", "ny")?;
         require_boolean(console, event, "from_region", from_region)?;
+        require_boolean(console, event, "carries_delivery", carries_delivery)?;
     }
 
+    // The delivery Ny asked for. `waited` must be false: the vessel's request
+    // asks to wait, and this fixture answers immediately, so a transcript
+    // claiming a wait would be claiming a path nothing here exercises.
+    let delivered = &records[11];
+    require_number(delivered, expected_events[11], "sequence", 3)?;
+    require_string(delivered, expected_events[11], "status", "ok")?;
+    require_number(
+        delivered,
+        expected_events[11],
+        "bytes",
+        expected_delivered_bytes,
+    )?;
+    require_string(delivered, expected_events[11], "origin", "human_text")?;
+    require_number(delivered, expected_events[11], "delivery_sequence", 1)?;
+    require_boolean(delivered, expected_events[11], "waited", false)?;
+    require_string(delivered, expected_events[11], "read_by", "ny")?;
+
     // The exit carries what Ny returned, through the vessel's own cell.
-    let exited = &records[11];
-    require_number(exited, expected_events[11], "sequence", 3)?;
-    require_string(exited, expected_events[11], "status", "ok")?;
-    require_number(exited, expected_events[11], "code", expected_exit_code)?;
-    require_boolean(exited, expected_events[11], "returned_from_ny", true)?;
+    let exited = &records[13];
+    require_number(exited, expected_events[13], "sequence", 5)?;
+    require_string(exited, expected_events[13], "status", "ok")?;
+    require_number(exited, expected_events[13], "code", expected_exit_code)?;
+    require_boolean(exited, expected_events[13], "returned_from_ny", true)?;
 
     // Release accounting: every frame returned, nothing of the vessel left.
-    let released = &records[12];
-    let free = required_number(released, expected_events[12], "free_frames")?;
-    let initial = required_number(released, expected_events[12], "initial_free_frames")?;
+    let released = &records[14];
+    let free = required_number(released, expected_events[14], "free_frames")?;
+    let initial = required_number(released, expected_events[14], "initial_free_frames")?;
     if free != initial {
         return Err(format!(
             "Ny vessel did not restore its frames: {free} of {initial}"
@@ -220,17 +260,18 @@ fn verify_records(transcript: &str) -> Result<(), String> {
         "active_tasks",
         "active_mappings",
     ] {
-        require_number(released, expected_events[12], field, 0)?;
+        require_number(released, expected_events[14], field, 0)?;
     }
     for field in ["channel_retired", "region_wiped", "transition_stack_wiped"] {
-        require_boolean(released, expected_events[12], field, true)?;
+        require_boolean(released, expected_events[14], field, true)?;
     }
 
-    let passed = &records[13];
-    require_number(passed, expected_events[13], "calls", 3)?;
-    require_number(passed, expected_events[13], "commits", 3)?;
-    require_number(passed, expected_events[13], "console_writes", 2)?;
-    require_string(passed, expected_events[13], "issued_by", "ny")?;
-    require_boolean(passed, expected_events[13], "terminal", true)?;
+    let passed = &records[15];
+    require_number(passed, expected_events[15], "calls", 5)?;
+    require_number(passed, expected_events[15], "commits", 5)?;
+    require_number(passed, expected_events[15], "console_writes", 3)?;
+    require_number(passed, expected_events[15], "deliveries", 1)?;
+    require_string(passed, expected_events[15], "issued_by", "ny")?;
+    require_boolean(passed, expected_events[15], "terminal", true)?;
     Ok(())
 }

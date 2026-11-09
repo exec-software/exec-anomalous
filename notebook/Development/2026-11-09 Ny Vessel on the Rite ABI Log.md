@@ -313,18 +313,166 @@ absent were the adjacent mappings themselves. The layout's adjacency is now a
 compile-time assertion in the fixture, so the guard list cannot drift away from
 the map it is guarding.
 
+## The vessel hears something (same day, second slice)
+
+The first slice made the boundary one-way: Ny could speak, and everything it
+spoke it had composed out of its own literals. This one makes it two-way. Ny
+asks for a line, the kernel delivers one, and Ny composes a third message
+around text it could not have contained.
+
+**The toolchain already supported it; the question was whether it worked.**
+`@interop("host")` admits `i64`, `f64` and `text` in both directions, so a
+host symbol returning `text` -- a pointer to NUL-terminated bytes -- is inside
+the profile, and a zero-argument one is too. That is a statement about the
+compiler source, not about the SDK generation this vessel is pinned to, so it
+was measured before anything was designed around it. A probe built with the
+*pinned* tools, linked against the pinned archive and run against a C host:
+
+    returned           29
+    emitted            'ny read: a line from the host'
+    composed_in_region 1
+    heap_used_at_emit  30
+    heap_used_after    0
+
+Ny received the host's text, concatenated it with its own literal, and the
+pointer it handed back was inside the region the host installed -- 30 bytes
+used for 29 of content and its terminator, reset to 0 by the time the context
+ended. Everything after this was built on a measurement rather than on the
+backend's `pushValue(result, "text")`.
+
+**The text path was gated to one fixture, and only two items of it.** The
+operation that actually delivers text is `session_input_read`, and every other
+fixture in this kernel -- `rite_test`, `shell_vessel_test`, the three workspace
+runtimes -- only ever gets `would_block` from `input_read`. The first guess was
+that reaching a real delivery meant widening the ~25 `cfg(any(test, feature =
+"input_wait_test"))` attributes in `rite.rs`, which would have been a sprawling
+change to the rite core for one fixture's benefit. It is not: the call envelope
+validation, the request decoding and the delivery encoder are all
+unconditional. Only `session_input_delivery_reply` and
+`finish_session_input_delivery` are gated, and adding a fixture to a gate's
+list is this codebase's existing idiom. The slice cost two lines there. The
+wait/readiness/pending machinery stays gated where it was, which is the honest
+boundary: this fixture does not park.
+
+**The reply had to be staged where it is built, not where it is returned.** A
+console write is acknowledged with a bare 40-byte header, and the gate's return
+path writes that itself. A delivery is 320 bytes whose body must be in the
+mailbox *before* the rite is settled and whose validity marker must be written
+*after*, so letting the generic path write a header-only reply afterwards would
+have destroyed both halves. The dispatcher gained a third outcome --
+`published_reply` -- meaning the mailbox already holds the answer; it counts the
+copy and returns without writing one.
+
+**What the boot shows.** Five rites, two operations:
+
+    kernel.ny_vessel.ready             grant 39, operations 2, image_bytes 3555
+    kernel.ny_vessel.console.committed sequence 1, 38 bytes, from_region true,  carries_delivery false
+    kernel.ny_vessel.console.committed sequence 2, 23 bytes, from_region false, carries_delivery false
+    kernel.ny_vessel.input.delivered   sequence 3, 11 bytes, human_text, waited false, read_by ny
+    kernel.ny_vessel.console.committed sequence 4, 21 bytes, from_region true,  carries_delivery true
+    kernel.ny_vessel.exited            sequence 5, ok, code 42, returned_from_ny true
+    kernel.ny_vessel.released          65114/65114 frames, 0 owned, 0 active
+    kernel.ny_vessel.passed            calls 5, commits 5, console_writes 3, deliveries 1
+
+The 21 bytes at sequence 4 are `ny heard: say it back`: ten bytes Ny had and
+eleven it was given. The vessel's image cannot contain those eleven, so the
+count alone is evidence they arrived -- but the stronger evidence is in the
+region. After the vessel exits the kernel searches the region page and requires
+three things: the first message at the base, as the first allocation; the third
+message present somewhere, which means the delivered line reached Ny's own
+variables and was composed there; and the second message **absent**, because it
+is a literal quoted straight out of the image and never allocated. That last
+check is what makes `from_region` in the transcript a measurement rather than a
+label, and it distinguishes composing from quoting in both directions.
+
+**`waited` is false and says so.** The vessel's request sets `wait_if_empty`,
+which is the request a real vessel would send, but this fixture is the only
+source of input and its line is ready before the vessel asks, so no wait is
+ever installed. The transcript states that as a required field rather than
+leaving a reader to assume a blocking path was exercised. Nothing here shows
+that a Ny vessel survives being descheduled inside its own control flow; that
+needs a second task to publish the input, which is `input_wait_test`'s
+machinery, and it is the next slice.
+
+**The one-page budget is now a real constraint.** The RX image is 3,555 of
+4,096 bytes. The input stub's envelope and body validation is most of what it
+cost. A third operation will fit; a fourth may not, and the fixture maps
+exactly one code page by design.
+
+**Smaller things worth keeping.** The stub validates the delivery's length
+against the 256-byte capacity rather than against the 11 bytes this fixture
+sends, so it is a binding rather than a transcript transcription -- what is
+pinned to this fixture's exact text is the kernel side. The third message is
+written as one literal in the fixture for readability and tied to its two
+halves by a `const` assertion, so a delivery changed without changing what the
+vessel is expected to say fails to compile rather than failing in QEMU.
+
+## What happens when the region runs out, measured
+
+The first slice's record said a vessel that concatenates in a loop "exhausts
+the region and stops". That was a guess dressed as a statement, so it was
+measured. A Ny program that concatenates two hundred times, linked against the
+pinned archive and run against a C host:
+
+    __ny_host_fail reached: 'NIL native runtime error: allocation failed during string concat'
+    heap_used at failure: 3999
+    exit=17
+
+and the same object with the host's strong definition removed, so the archive's
+weak no-op stands:
+
+    exit=124    (timed out)
+
+So the sequence is: `nyrt_alloc` returns null, the runtime calls `nyrt_fail`,
+`nyrt_fail` calls `__ny_host_fail`, and when that is the archive's weak no-op
+it returns and `nyrt_fail` spins in `for (;;)` forever. In this kernel that is
+a user-mode task looping with no rite ever submitted. The vessel does not
+fault, does not exit, and submits nothing, so the dispatcher sees nothing at
+all; the only thing that would eventually notice is the smoke timeout.
+
+The way out is already there and is the reason `__ny_host_fail` became a weak
+*definition* rather than a weak declaration in the first slice: a strong
+definition in the binding replaces it, is reached with the message, and can
+submit a `console_write` of that message followed by a `task_exit` with a
+status that says Ny failed. Then a vessel's failure is a rite like anything
+else, and the kernel can state it.
+
+Two things make proving it awkward, and both are worth deciding deliberately
+rather than working around:
+
+1. **One run cannot both succeed and fail.** Showing the failure path needs a
+   vessel that fails, and the evidence already banked -- three writes, the
+   delivery, exit 42 from Ny's own return value -- needs one that does not.
+   Either the fixture runs the vessel twice with the mode supplied by the
+   host (which would also show that a Ny object can be entered twice from
+   fresh state, itself worth having), or there is a second payload.
+2. **The failure message is the runtime's, not ours.** It is English prose
+   from NIL with a trailing newline. Writing it to the console as-is is the
+   honest thing, but it means a transcript oracle pinning the bytes pins a
+   string owned upstream. Pinning its length and its first word, or carrying
+   a status code beside it, is probably the right shape.
+
 ## Open, in the order they probably matter
 
 1. ~~**Ny cannot issue a rite itself.**~~ Done, above.
-2. **Only `console_write` is reachable from Ny.** `input_read`,
-   `display_update` and the scheduler gate are not declared and so are not
-   imported. Each is a line of binding when a vessel needs it, and the import
-   surface says which exist. A vessel that wants input is the next natural
-   one, and it would be the first to need a rite that can block.
-3. **The region is never reclaimed inside a context**, so a vessel that
-   concatenates in a loop exhausts it and stops. Correct for this contract,
-   wrong for a long-running vessel, and it wants a real vessel to ask it.
-4. **Nothing checks the host signature.** The toolchain cannot see the
+2. ~~**Only `console_write` is reachable from Ny.**~~ Two operations now are.
+   `display_update` and the scheduler gate are still not declared and so are
+   not imported, and the plain `input_read` operation remains the one no
+   fixture in this kernel has ever seen succeed.
+3. **No rite here can actually block.** The vessel asks to wait and is always
+   answered at once, because this fixture is its only source of input. The
+   open question is whether a Ny vessel survives being descheduled inside
+   `main` -- its stack and the region have to be exactly as it left them when
+   it resumes, and nothing has yet put that to the test. It needs a second
+   task to publish the input, which is `input_wait_test`'s machinery, and it
+   is the most interesting thing left in this direction.
+4. **A vessel that exhausts its region hangs, and nothing here would know.**
+   Measured, not assumed -- see below. The way out exists and this vessel
+   does not take it, which makes this a hole rather than a missing test, and
+   the first thing to fix.
+5. **The one code page is closer to full than the region is.** 3,555 of 4,096
+   bytes. That, not the arena, is what limits the next operation.
+6. **Nothing checks the host signature.** The toolchain cannot see the
    definition, so the declaration in `vessel.ny` and the stub in `entry.S` are
    reviewed together; a mismatch would be caught by neither side.
 3. ~~**The kernel harness.**~~ Done. For the record, the design as planned:
