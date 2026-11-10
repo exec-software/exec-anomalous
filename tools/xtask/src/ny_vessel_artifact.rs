@@ -66,13 +66,14 @@ pub(super) const expected_delivered_message: &[u8] = b"say it back";
 pub(super) const expected_exit_code: i32 = 42;
 
 /// Exactly what this vessel's object is allowed to need: the five native
-/// runtime ABI hooks, three more because it allocates, and the three symbols
+/// runtime ABI hooks, three more because it allocates, and the four symbols
 /// the vessel's own Anomalous half defines. No libc name may appear beside
 /// them, and no further host symbol may arrive unnoticed -- the surface Ny can
-/// reach is this list: two rites and one cell the host wrote.
-const expected_object_imports: [&str; 11] = [
+/// reach is this list: three rites and one cell the host wrote.
+const expected_object_imports: [&str; 12] = [
     "anomalous_rite_console_write",
     "anomalous_rite_input_read",
+    "anomalous_rite_yield",
     "anomalous_vessel_mode",
     "nyrt_abi_version",
     "nyrt_alloc",
@@ -87,9 +88,9 @@ const expected_object_imports: [&str; 11] = [
 /// Identifies the header the kernel parses, so a payload from some other
 /// stage cannot be mistaken for this one.
 pub(super) const header_magic: u64 = 0x4e59_5f56_4553_5331;
-/// magic, image length, entry, console return, input return, exit return,
-/// failure, mode cell.
-pub(super) const header_bytes: usize = 8 * 8;
+/// magic, image length, entry, console return, input return, yield return,
+/// exit return, failure, mode cell.
+pub(super) const header_bytes: usize = 9 * 8;
 
 pub(super) struct artifact {
     /// The relocation-free wrapper the kernel link consumes.
@@ -101,6 +102,7 @@ pub(super) struct artifact {
     pub(super) failed: u64,
     pub(super) console_return: u64,
     pub(super) input_return: u64,
+    pub(super) yield_return: u64,
     pub(super) exit_return: u64,
     /// The cell in the vessel's own state page that the host writes before
     /// entry to choose the run. Not an address in the code page, so it is
@@ -249,6 +251,7 @@ pub(super) fn package_image(root: &Path, build: &Path) -> Result<artifact, Strin
         failed: symbol_u64_from_listing(&symbols, "anomalous_ny_vessel_failed")?,
         console_return: symbol_u64_from_listing(&symbols, "anomalous_ny_vessel_console_return")?,
         input_return: symbol_u64_from_listing(&symbols, "anomalous_ny_vessel_input_return")?,
+        yield_return: symbol_u64_from_listing(&symbols, "anomalous_ny_vessel_yield_return")?,
         exit_return: symbol_u64_from_listing(&symbols, "anomalous_ny_vessel_exit_return")?,
         mode_cell: symbol_u64_from_listing(&symbols, "anomalous_ny_vessel_mode")?,
     };
@@ -318,6 +321,7 @@ fn check_layout(artifact: &artifact, symbols: &str) -> Result<(), String> {
         ("failed", artifact.failed),
         ("console_return", artifact.console_return),
         ("input_return", artifact.input_return),
+        ("yield_return", artifact.yield_return),
         ("exit_return", artifact.exit_return),
     ] {
         if !(image_base..image_base + artifact.image.len() as u64).contains(&address) {
@@ -411,6 +415,7 @@ fn write_wrapper(root: &Path, output: &Path, artifact: &artifact) -> Result<(), 
         artifact.entry,
         artifact.console_return,
         artifact.input_return,
+        artifact.yield_return,
         artifact.exit_return,
         artifact.failed,
         artifact.mode_cell,

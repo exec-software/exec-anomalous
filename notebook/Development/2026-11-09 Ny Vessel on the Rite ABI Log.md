@@ -502,6 +502,65 @@ from a vessel that chose to exit 70. A supervisor deciding whether to restart
 something would want to tell those apart, and a convention held one vessel at
 a time is not where that belongs.
 
+## Leaving the vessel's address space, and what that is worth
+
+The open item said the interesting question was whether a Ny vessel survives
+being descheduled inside `main`. Taking it seriously meant first asking what
+of that was not already shown, and the answer was less than the note implied.
+Every rite this vessel issues already zeroes every general register but R15
+and makes a full round trip through the kernel -- three times per run before
+this slice -- so Ny's locals, its stack and the region already survived
+kernel entry and exit. And the vessel runs GPR-only soft-float with CR0.TS
+set, so there is no x87 or SIMD state to lose, which is normally the
+dangerous part of a deschedule.
+
+What was genuinely untested was narrower: the vessel's *address space* being
+deactivated and reactivated around a rite. That is the part no previous slice
+touched, and it is cheap to test on its own.
+
+So the vessel now submits one `task_yield` between reading the line and
+composing its answer, and the fixture answers it by writing the kernel's own
+root to CR3, checking that it took, and restoring the vessel's root before
+resuming. The ordering is the whole point: `heard` is a pointer the kernel
+filled *before* the yield, and `"ny heard: " + heard` is allocated and
+composed *after* it. The 21 bytes that arrive at sequence 5, and are then
+found in the region, are the evidence -- not a flag the fixture set.
+
+    kernel.ny_vessel.input.delivered   sequence 3, 11 bytes, human_text
+    kernel.ny_vessel.yielded           sequence 4, ok, address_space_round_trips 1,
+                                       resumed_in_ny true, peer_ran false
+    kernel.ny_vessel.console.committed sequence 5, 21 bytes, from_region true,
+                                       carries_delivery true
+
+**The vessel checks it too.** The yield stub returns how many yields have
+completed, from the vessel's own cell, and Ny refuses with its own status if
+that is not one. So the kernel is not the only witness that the rite
+completed; a yield that silently did nothing would be a value Ny rejects.
+
+**`peer_ran` is false, and the transcript says so.** Two limits are easy to
+run together here and the record keeps them apart: the input request asks to
+wait and is never made to wait, and the yield leaves the address space
+without dispatching anything else. Neither is evidence of a scheduler handing
+the processor to another task.
+
+**What the remaining half would cost, measured rather than guessed.** The
+primitives are not the obstacle -- `scheduler::preempt_current` is ungated and
+so is `task_yield`'s completion, which is the ordinary `finish_ok`, and the
+blocking path is the one that is tied to session input (its
+`prepared_scheduler_block` carries wait and readiness identities, so a generic
+park does not exist). What a peer task costs here is the fixture's control
+flow: per-task privilege stacks of four pages each, a `scheduler_frame` at the
+top of each, a gate entry that returns the frame to resume rather than
+iretq-ing from the one it saved, and a scheduler queue. `scheduler_test` is
+2,494 lines and `input_wait_test` 2,356, and neither is a small two-task
+model to copy. The frame layout is at least already compatible: this fixture's
+`rite_gate_frame` is the same 22 qwords in the same order as
+`scheduler_test`'s `scheduler_frame`.
+
+That is a rebuild for an increment that is the kernel scheduler's rather than
+the vessel's, and it is recorded here as a decision rather than taken
+quietly.
+
 ## Open, in the order they probably matter
 
 1. ~~**Ny cannot issue a rite itself.**~~ Done, above.
@@ -509,13 +568,13 @@ a time is not where that belongs.
    `display_update` and the scheduler gate are still not declared and so are
    not imported, and the plain `input_read` operation remains the one no
    fixture in this kernel has ever seen succeed.
-3. **No rite here can actually block.** The vessel asks to wait and is always
-   answered at once, because this fixture is its only source of input. The
-   open question is whether a Ny vessel survives being descheduled inside
-   `main` -- its stack and the region have to be exactly as it left them when
-   it resumes, and nothing has yet put that to the test. It needs a second
-   task to publish the input, which is `input_wait_test`'s machinery, and it
-   is the most interesting thing left in this direction.
+3. **No rite here blocks, and no peer runs.** Partly closed: the vessel now
+   yields and its address space is left and resumed around that rite, which
+   was the part specific to a Ny vessel -- see above. What is left is the
+   kernel's half, a peer task reached through `preempt_current`, and the
+   honest value of it is smaller than this note first claimed. The cost is a
+   rebuild of this fixture's control flow; the primitives are already
+   ungated.
 4. ~~**A vessel that exhausts its region hangs, and nothing here would
    know.**~~ Closed: the binding defines `__ny_host_fail`, and the failing run
    proves it in the running system rather than on a Linux host. What is left

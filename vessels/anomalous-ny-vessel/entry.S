@@ -57,6 +57,7 @@
 .set rite_operation_console_write, 1
 .set rite_operation_task_exit, 3
 .set rite_operation_session_input_read, 6
+.set rite_operation_task_yield, 4
 
 .set rite_payload_none, 0
 .set rite_payload_utf8_text, 1
@@ -67,6 +68,7 @@
 .set rite_right_console_write, 0x01
 .set rite_right_task_exit, 0x04
 .set rite_right_session_input_read, 0x20
+.set rite_right_task_yield, 0x08
 
 .set rite_status_ok, 0
 
@@ -108,6 +110,7 @@
 .set vessel_console_trace, 0x4e59564553534c31
 .set vessel_exit_trace, 0x4e59564553534c32
 .set vessel_input_trace, 0x4e59564553534c33
+.set vessel_yield_trace, 0x4e59564553534c34
 
 # Every GPR but R15 is zero at the gate, so the dispatcher validates a
 # complete frame rather than trusting ambient register state.
@@ -335,6 +338,53 @@ anomalous_ny_vessel_input_return:
     retq
 .size anomalous_rite_input_read, . - anomalous_rite_input_read
 
+# long anomalous_rite_yield(void)
+#
+# Gives up the processor in the middle of Ny's own work and returns how many
+# times this vessel has done so. The kernel may run another task before this
+# returns; nothing here can tell, and nothing here needs to -- what the vessel
+# holds lives in its own pages and its own stack, and the gate restores every
+# register from the frame it saved.
+#
+# No call is made between the saves and the submission, so unlike the two
+# stubs above this one needs no alignment padding.
+.global anomalous_rite_yield
+.type anomalous_rite_yield, @function
+anomalous_rite_yield:
+    pushq %rbx
+    pushq %rbp
+    pushq %r12
+    pushq %r13
+    pushq %r14
+    pushq %r15
+
+    movabsq $vessel_mailbox_address, %r15
+    movw $rite_call_size, rite_call_header_size(%r15)
+    movw $rite_operation_task_yield, rite_call_operation(%r15)
+    movw $rite_payload_none, rite_call_payload_kind(%r15)
+    movw $0, rite_call_reserved(%r15)
+    movq $rite_right_task_yield, rite_call_rights_present(%r15)
+    movl $0, rite_call_payload_size(%r15)
+    movl $0, rite_call_payload_limit(%r15)
+    movabsq $vessel_yield_trace, %rax
+    movq %rax, rite_call_trace_id(%r15)
+    movq %rax, rite_call_trace_id + 8(%r15)
+    vessel_submit
+.global anomalous_ny_vessel_yield_return
+anomalous_ny_vessel_yield_return:
+    vessel_validate_reply rite_status_ok, vessel_yield_trace
+    incq anomalous_ny_vessel_yields(%rip)
+
+    popq %r15
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %rbp
+    popq %rbx
+    movq anomalous_ny_vessel_yields(%rip), %rax
+    retq
+.size anomalous_rite_yield, . - anomalous_rite_yield
+
 # long anomalous_vessel_mode(void)
 #
 # Not a rite. The host writes this cell before the vessel is entered, exactly
@@ -482,6 +532,12 @@ anomalous_ny_vessel_line_length:
 .global anomalous_ny_vessel_line
 anomalous_ny_vessel_line:
     .zero vessel_input_text_capacity + 1
+# How many times the vessel has yielded. Ny checks it, so a yield that did
+# not complete is a value Ny can refuse rather than a silence.
+.p2align 3
+.global anomalous_ny_vessel_yields
+anomalous_ny_vessel_yields:
+    .zero 8
 # The run the host asked for. The host writes it; the vessel only reads it.
 .p2align 3
 .global anomalous_ny_vessel_mode

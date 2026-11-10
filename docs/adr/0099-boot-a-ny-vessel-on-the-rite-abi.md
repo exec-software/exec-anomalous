@@ -31,8 +31,8 @@ vessel boots or completes a rite, which is what this slice is for.
 ## Decision
 
 Add the opt-in `ny_vessel_test` fixture: one Ny vessel, booted by this kernel
-twice from the same image, completing seven rites across two operations
-through the ordinary dispatcher -- five on the run that works, two on the run
+twice from the same image, completing eight rites across three operations
+through the ordinary dispatcher -- six on the run that works, two on the run
 that fails inside Ny on purpose.
 
 The vessel is `vessels/anomalous-ny-vessel`. **Ny issues the rites itself.**
@@ -49,6 +49,16 @@ that. This is the first rite here whose reply carries a payload and the first
 to bring the vessel data it could not have contained, so it is the first thing
 in this profile that makes the boundary two-way: text from the kernel, into
 Ny's own variables, composed in the region, and back out through a write.
+
+It also gives up the processor. Between reading the line and composing its
+answer, Ny submits one `task_yield`, and this fixture answers it by leaving
+the vessel's address space entirely -- writing the kernel's own root to CR3,
+checking that it took, and restoring the vessel's root before resuming. The
+answer is then composed from a pointer Ny was holding before the yield, so
+the bytes found in the region afterwards are what shows that Ny's stack
+frame, the pointer and the bump allocator all survived the round trip. The
+vessel checks it too: the stub returns how many yields have completed and Ny
+refuses with its own status if that is not one.
 
 And it can fail. The shipped runtime defines `__ny_host_fail` as a weak
 no-op and spins in `nyrt_fail` once it returns, so a Ny failure in a vessel is
@@ -124,8 +134,9 @@ extent, puts its mode cell anywhere but its own state page, moves its writable
 layout, or lets the region reach the mailbox. The image occupies 4,113 of its
 8,192 bytes.
 
-The vessel's grant is the shell minimum plus `session_input_read` -- `0b100111`
--- which is what its two operations require and no more. Reaching the delivery
+The vessel's grant is the shell minimum plus `session_input_read` and
+`task_yield` -- `0b101111` -- which is what its three operations require and
+no more. Reaching the delivery
 widened two `cfg` gates in the rite core, `session_input_delivery_reply` and
 `finish_session_input_delivery`, from the one fixture that first needed them to
 include this one. The blocking machinery beside them -- the wait, readiness and
@@ -141,9 +152,10 @@ Qualified on 2026-11-09 under TCG. The vessel entered user mode with three
 mappings and absent guards, committed sequence 1 as 38 bytes of UTF-8 through
 `console_write` with status `ok`, committed sequence 2 as a further 23 bytes --
 which it sends only because the first rite returned the count it had passed --
-was delivered 11 bytes of `human_text` at sequence 3, committed sequence 4 as
-the 21 bytes it composed around them, and exited at sequence 5 with status `ok`
-and code 42.
+was delivered 11 bytes of `human_text` at sequence 3, yielded at sequence 4
+and was resumed after one address-space round trip, committed sequence 5 as
+the 21 bytes it composed around the delivered line *after* that round trip,
+and exited at sequence 6 with status `ok` and code 42.
 
 The same image was then entered a second time with its mode cell set. It
 exhausted its region, the runtime's failure hook reached the binding, and the
@@ -197,14 +209,24 @@ than an omission:
    `display_update` and the scheduler gate are not declared and so are not
    imported. Each is a line of binding when a vessel needs it, and the import
    surface states which exist.
-2. **Nothing blocks.** The vessel's request sets `wait_if_empty`, which is
-   what a vessel should send, but this fixture is the only source of input and
-   its line is ready before the vessel asks, so no wait is ever installed. The
-   transcript says so in as many words -- `waited` is required to be `false`.
-   A rite that actually parks the vessel and resumes it needs a second task to
-   publish the input, which is the `input_wait_test` fixture's machinery and a
-   separate slice. Until that slice exists, nothing here shows that a Ny
-   vessel survives being descheduled inside its own control flow.
+2. **Nothing blocks, and no peer runs.** Two different limits that are easy
+   to confuse. The input request sets `wait_if_empty`, which is what a vessel
+   should send, but this fixture is the only source of input and its line is
+   ready before the vessel asks, so no wait is ever installed -- `waited` is
+   required to be `false`. And the yield leaves and resumes the vessel's
+   address space without dispatching anything else: `peer_ran` is required to
+   be `false`, so a reader cannot take the yield for evidence that a
+   scheduler handed the processor to another task.
+
+   What the yield does establish is the part specific to a Ny vessel: its
+   state survives its address space being deactivated and reactivated
+   mid-`main`. What is left to establish is the kernel's, and
+   `scheduler_test` already proves it for its own task shape -- a peer task
+   reached through `scheduler::preempt_current` needs per-task privilege
+   stacks, a frame-returning gate entry and a scheduler queue here, which is
+   a rebuild of this fixture's control flow rather than an extension of it.
+   The primitives are not the obstacle: `preempt_current` and `task_yield`
+   are both ungated and this vessel already submits the latter.
 3. **The region is never reclaimed inside a context.** A vessel that
    concatenates in a loop runs out, which is correct for this contract and
    wrong for a long-running one. The failing run is that case on purpose, so

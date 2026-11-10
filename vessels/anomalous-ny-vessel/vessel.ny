@@ -33,6 +33,14 @@ end fn
 fn anomalous_rite_input_read() -> text
 end fn
 
+# The vessel gives up the processor in the middle of its own work. Whether
+# anything else ran while it was away is not observable from here, which is
+# the point: everything Ny holds has to be exactly as it left it, and the
+# composition after the call is what shows that it was.
+@interop("host")
+fn anomalous_rite_yield() -> i64
+end fn
+
 # Not a rite: the host writes a cell before the vessel runs and this reads it.
 # It is how one image can be asked for the run that is meant to fail.
 @interop("host")
@@ -71,6 +79,12 @@ fn main() -> i64
         return 8
     end if
     let heard: text = anomalous_rite_input_read()
+    # Yield here, holding a pointer the kernel gave us and nothing else. The
+    # answer below is composed afterwards out of text obtained before.
+    let yields: i64 = anomalous_rite_yield()
+    if yields != 1 then
+        return 6
+    end if
     let preface: text = "ny heard: "
     let answer: text = preface + heard
     let spoken: i64 = anomalous_rite_console_write(answer)
