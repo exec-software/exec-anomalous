@@ -8,14 +8,34 @@ pub(super) const plan_word_count: usize = 74;
 pub(super) const source_limit: usize = 512 * 1024;
 pub(super) const program_bias: u64 = 0x4000_0000;
 pub(super) const interpreter_bias: u64 = 0x6000_0000;
+/// Pages the two installed images and the stack map between them. This one
+/// moves when the host's packages do -- 7 for the main image, 58 for the
+/// loader and 16 for the stack as of the re-pin below -- so it is named here
+/// and used by both the live check and the synthetic fixture, rather than
+/// written twice and discovered to disagree by a failing test.
+pub(super) const mapped_page_total: u64 = 81;
 pub(super) const stack_start: u64 = 0x7fff_0000_0000;
 pub(super) const stack_end: u64 = stack_start + 65536;
-const program_hash: &str = "913a39cd38f353497086bcf317b12f91f93c23b51869cea763b8340b4f84cfd3";
-const interpreter_hash: &str = "bda779ea9e9ad234f60315477d7cfd0bdde861cd8ddd9df8cdaf62f18c4cec14";
+// The two host binaries this proof reads, pinned so a changed input is
+// reviewed rather than absorbed. They are provisioning, not authority: the
+// proof is inert and executes neither file, and the hashes travel into the
+// recorded evidence so a reader can see exactly which bytes were planned
+// against.
+//
+// Re-pinned 2026-11-09 for Ubuntu's coreutils 9.4-3ubuntu6.3 and libc6
+// 2.39-0ubuntu8.9 on this build host, after `dpkg --verify` reported both
+// files identical to their package manifests. The previous pair dated from
+// before those packages were updated, and the fixture refused -- which is
+// what it is for.
+const program_hash: &str = "8a63c98320173f79e263115e10cefc170155e47d1fd4b5a70e4429d2699cae28";
+const interpreter_hash: &str = "c20a2dc8917c755f02b94049356320fe1f62ac7d9f8994731f807d9df39302da";
 pub(super) const file_source_limit: usize = 8 * 1024 * 1024;
 pub(super) const file_source_grant: u64 = 0x4c45_0002;
 pub(super) const file_source_name: &str = "opt/anomalous/linux-loader-file-source";
-const file_source_hash: &str = "85e64f97e348786a8fb4d9f3d52fec289e2fb86bba20f0731dfe61990525e0f7";
+// The configured libc this proof reads as a file source, pinned for the same
+// reason and re-pinned with the two above: libc6 2.39-0ubuntu8.9 on this
+// build host, `dpkg --verify` clean.
+const file_source_hash: &str = "3a15d66867d83762c7f2f1e37359cb8f6c5743edb369c65285cb0b1c4f7498bf";
 const file_binding_offset: usize = 136;
 const file_binding_size: usize = 32;
 const prefix: &str = "x86_64_linux_loader_entry";
@@ -247,6 +267,10 @@ fn process(program: &[u8], interpreter: &[u8], random: &[u8; 16]) -> Result<proc
     let loader = linux_image::image::parse(interpreter, budget)
         .and_then(|image| image.plan(interpreter_bias, linux_image::image_role::executable))
         .map_err(|error| format!("interpreter Linux image: {error:?}"))?;
+    // The shape this proof plans against: two position-independent images, the
+    // main one naming the loader as its interpreter, neither carrying TLS.
+    // These are what make the plan meaningful at all, so a change here is not
+    // a re-pin -- it is a different kind of input.
     if main.elf_type() != linux_image::elf_type::shared
         || loader.elf_type() != linux_image::elf_type::shared
         || main.interp() != Some(b"/lib64/ld-linux-x86-64.so.2".as_slice())
@@ -255,16 +279,50 @@ fn process(program: &[u8], interpreter: &[u8], random: &[u8; 16]) -> Result<proc
         || loader.interp().is_some()
         || main.tls().is_some()
         || loader.tls().is_some()
-        || main.loads().count() != 4
-        || loader.loads().count() != 4
-        || main.mapped_pages() != 9
-        || loader.mapped_pages() != 63
-        || main.entry() != Some(0x4000_2db0)
-        || loader.entry() != Some(0x6002_3340)
-        || main.phdr_address() != Some(0x4000_0040)
-        || main.program_header_count() != 14
     {
-        return Err("installed inputs differ from the pinned two-image entry profile".into());
+        return Err("installed inputs are not the two-image shape this plan assumes".into());
+    }
+    // And the measurements, which do move when the host's packages do. The
+    // mismatch is reported with both numbers: a pin that only says "differs"
+    // makes the reviewer rediscover the installed values before they can
+    // judge whether the change is ordinary, which is the opposite of the
+    // explicit review it is asking for.
+    //
+    // Re-pinned 2026-11-09 with the hashes above, and cross-checked against
+    // `readelf` rather than taken from the parser alone: /usr/bin/true enters
+    // at 0x19f0 with 13 program headers and 4 LOADs, and the loader enters at
+    // 0x1f540 with 4 LOADs, both still position-independent.
+    let measured: [(&str, u64, u64); 7] = [
+        ("main loads", 4, main.loads().count() as u64),
+        ("loader loads", 4, loader.loads().count() as u64),
+        ("main mapped pages", 7, main.mapped_pages()),
+        ("loader mapped pages", 58, loader.mapped_pages()),
+        ("main entry", 0x4000_19f0, main.entry().unwrap_or_default()),
+        (
+            "loader entry",
+            0x6001_f540,
+            loader.entry().unwrap_or_default(),
+        ),
+        (
+            "main program headers",
+            13,
+            main.program_header_count() as u64,
+        ),
+    ];
+    let differing = measured
+        .iter()
+        .filter(|(_, pinned, installed)| pinned != installed)
+        .map(|(name, pinned, installed)| {
+            format!("{name}: pinned {pinned:#x}, installed {installed:#x}")
+        })
+        .collect::<Vec<_>>();
+    if !differing.is_empty() || main.phdr_address() != Some(0x4000_0040) {
+        return Err(format!(
+            "installed inputs differ from the pinned two-image entry profile: {}; main PHDR \
+             pinned 0x40000040, installed {:#x}",
+            differing.join(", "),
+            main.phdr_address().unwrap_or_default()
+        ));
     }
     let auxiliary = [
         (11, 1000),
@@ -435,7 +493,15 @@ fn validate_plan(words: &[u64; plan_word_count], source: &[u8]) -> Result<(), St
         ends.push(end);
         pages = pages.checked_add(region[1]).ok_or_else(fail)?;
     }
-    if pages != 88 || regions[8] != [stack_start, 16, 3] {
+    // Unlike the structural checks around it, the total moves when the host's
+    // packages do, so it reports both numbers rather than only refusing.
+    if pages != mapped_page_total {
+        return Err(format!(
+            "inert native plan maps {pages} pages, not the pinned {mapped_page_total}; the \
+             installed images changed and the profile above needs reviewing with it"
+        ));
+    }
+    if regions[8] != [stack_start, 16, 3] {
         return Err(fail());
     }
     let spans = words[43..70].chunks_exact(3).collect::<Vec<_>>();
@@ -817,13 +883,17 @@ mod tests {
             interpreter_bias,
             0x40009000,
         ]);
+        // Eight regions of fixed size plus one that takes up the remainder of
+        // the pinned total, so this synthetic plan satisfies the page check by
+        // construction and a re-pin does not have to be made twice.
+        let fixed_pages = 2 + 4 + 1 + 2 + 1 + 11 + 4 + 16;
         let regions = [
             [0x40000000, 2, 1],
             [0x40002000, 4, 5],
             [0x40006000, 1, 1],
             [0x40007000, 2, 3],
             [0x60000000, 1, 1],
-            [0x60001000, 47, 5],
+            [0x60001000, mapped_page_total - fixed_pages, 5],
             [0x60030000, 11, 1],
             [0x6003b000, 4, 3],
             [stack_start, 16, 3],

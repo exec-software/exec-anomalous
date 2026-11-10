@@ -1597,12 +1597,34 @@ fn prepare_lifetime(
     let source_pages =
         (plan.source_length.div_ceil(4096) + state.file_binding.length().div_ceil(4096)) as usize;
     let live = allocator.accounting();
-    if live.free.checked_add(152 + source_pages) != Some(initial.free)
-        || live.data_owned != initial.data_owned + 124 + source_pages
+    // What this proof owns while it is live, pinned exactly. The data figure
+    // tracks what the two installed images map, so it moves when the host's
+    // packages do; the rest are structural. The measured values are reported
+    // before failing, because a pin that only refuses makes the next reviewer
+    // rediscover them from a QEMU run before they can judge the change.
+    let expected_free_consumed = 145 + source_pages;
+    let expected_data_owned = initial.data_owned + 117 + source_pages;
+    if live.free.checked_add(expected_free_consumed) != Some(initial.free)
+        || live.data_owned != expected_data_owned
         || live.table_owned != initial.table_owned + 28
         || live.active_leases != initial.active_leases + 23
         || live.bound_leases != initial.bound_leases + 23
     {
+        let _ = writeln!(
+            serial_port::com1(),
+            r#"{{"schema":1,"event":"kernel.linux_loader_entry_test.ownership","level":"error","source_pages":{},"free_consumed":{},"free_consumed_pinned":{},"data_owned":{},"data_owned_pinned":{},"table_owned":{},"table_owned_pinned":{},"active_leases":{},"active_leases_pinned":{},"bound_leases":{},"bound_leases_pinned":{}}}"#,
+            source_pages,
+            initial.free.saturating_sub(live.free),
+            expected_free_consumed,
+            live.data_owned.saturating_sub(initial.data_owned),
+            expected_data_owned.saturating_sub(initial.data_owned),
+            live.table_owned.saturating_sub(initial.table_owned),
+            28,
+            live.active_leases.saturating_sub(initial.active_leases),
+            23,
+            live.bound_leases.saturating_sub(initial.bound_leases),
+            23
+        );
         fail("loader_live_ownership");
     }
     state.allocator_live_accounting = live;
@@ -2420,16 +2442,22 @@ fn emit_observation(plan: &native_plan, qualified: bool) {
     let state = unsafe { &mut *storage.0.get().cast::<runtime>() };
     let scenario = state.scenario;
     let binding = &state.file_binding;
+    // Reported from the plan this proof actually mapped rather than as a
+    // literal. It follows the installed images, so a host whose packages have
+    // moved changes it, and a number written here by hand would have to be
+    // re-pinned in step with the one in the build stage.
+    let user_pages: u64 = plan.regions.iter().map(|region| region.page_count).sum();
     let mut serial = serial_port::com1();
     let _ = writeln!(
         serial,
-        r#"{{"schema":1,"event":"kernel.linux_loader_entry_test.ready","level":"info","scenario":{},"incarnation":{},"caller_task":{},"caller_generation":{},"veil_task":{},"veil_generation":{},"tasks":3,"regions":9,"user_pages":88,"source_bytes":{},"source_fnv64":{},"file_source_bytes":{},"file_source_fnv64":{},"file_source_pages":{},"initial_rip":{},"initial_rsp":{},"main_entry":{},"main_phdr":{},"interpreter_bias":{},"break_start":{},"source_kind":"privileged_fw_cfg","policy":"userspace","cpu":"{}"}}"#,
+        r#"{{"schema":1,"event":"kernel.linux_loader_entry_test.ready","level":"info","scenario":{},"incarnation":{},"caller_task":{},"caller_generation":{},"veil_task":{},"veil_generation":{},"tasks":3,"regions":9,"user_pages":{},"source_bytes":{},"source_fnv64":{},"file_source_bytes":{},"file_source_fnv64":{},"file_source_pages":{},"initial_rip":{},"initial_rsp":{},"main_entry":{},"main_phdr":{},"interpreter_bias":{},"break_start":{},"source_kind":"privileged_fw_cfg","policy":"userspace","cpu":"{}"}}"#,
         scenario,
         state.incarnation,
         state.identities[0].task().slot() + 1,
         state.identities[0].task().generation_value(),
         state.identities[2].task().slot() + 1,
         state.identities[2].task().generation_value(),
+        user_pages,
         plan.source_length,
         plan.source_fnv64,
         binding.length(),
