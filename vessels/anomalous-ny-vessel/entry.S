@@ -76,6 +76,9 @@
 # fails with nothing to say. Neither can collide with a value Ny returns.
 .set vessel_failure_status, 70
 .set vessel_silent_failure_status, 71
+# What the peer exits with, so a transcript cannot confuse its exit with
+# either of the vessel's.
+.set vessel_peer_status, 55
 
 # The session-input request and delivery bodies, version 1. Their field
 # offsets are stated here rather than derived, because this file is the only
@@ -512,6 +515,30 @@ anomalous_ny_vessel_exit_return:
 anomalous_ny_vessel_failed:
     ud2
 .size anomalous_ny_vessel_entry, . - anomalous_ny_vessel_entry
+
+# The door the host enters in a second task, while the vessel is parked at its
+# yield. It is this same image: a second task makes its point by running at
+# all, in its own address space and through its own mailbox, not by running
+# something the vessel does not already contain. So it borrows the console
+# stub and the entry's exit submission, and the only thing it adds is a
+# message of its own and a status nothing else uses.
+.global anomalous_ny_vessel_peer_entry
+.type anomalous_ny_vessel_peer_entry, @function
+anomalous_ny_vessel_peer_entry:
+    cld
+    movq %rsp, %rax
+    andl $15, %eax
+    jnz .Lvessel_invalid
+    leaq anomalous_ny_vessel_peer_message(%rip), %rdi
+    callq anomalous_rite_console_write
+    movq $vessel_peer_status, anomalous_ny_vessel_status(%rip)
+    jmp .Lvessel_exit
+.size anomalous_ny_vessel_peer_entry, . - anomalous_ny_vessel_peer_entry
+
+.section .rodata.ny_vessel_peer,"a",@progbits
+.p2align 4
+anomalous_ny_vessel_peer_message:
+    .asciz "a peer task spoke while ny waited"
 
 # The vessel's own writable state. Nothing survives a submission in a
 # register, so the committed length and the exit status cross in memory.

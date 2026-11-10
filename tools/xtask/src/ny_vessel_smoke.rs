@@ -42,8 +42,12 @@ const expected_failure_exit_code: u64 = 70;
 /// message is a change to what a vessel's failure looks like from outside, and
 /// it should fail here and be looked at rather than pass unnoticed.
 const expected_failure_message_bytes: u64 = 64;
+/// What the second task says, and the status it exits with. Both are the
+/// image's own, stated in the vessel's binding.
+const expected_peer_bytes: u64 = 33;
+const expected_peer_exit_code: u64 = 55;
 
-const expected_events: [&str; 21] = [
+const expected_events: [&str; 23] = [
     "boot.kernel.enter",
     "kernel.fault_path.ready",
     "boot.omen.accepted",
@@ -59,6 +63,11 @@ const expected_events: [&str; 21] = [
     "kernel.ny_vessel.input.delivered",
     "kernel.ny_vessel.yielded",
     "kernel.ny_vessel.console.committed",
+    "kernel.ny_vessel.exited",
+    // The second task, which ran while the vessel above was parked at its
+    // yield. Reported after the run it interrupted, because every run here
+    // reports once it is over.
+    "kernel.ny_vessel.peer.committed",
     "kernel.ny_vessel.exited",
     "kernel.ny_vessel.released",
     // The failing run, from the same image.
@@ -133,7 +142,9 @@ pub(super) fn smoke() -> Result<(), String> {
          never contained answered with {expected_third_bytes}, and exited \
          {expected_exit_code}; then the same image exhausted its region on purpose, \
          spoke the runtime's {expected_failure_message_bytes}-byte failure as a rite, \
-         and exited {expected_failure_exit_code} instead of spinning"
+         and exited {expected_failure_exit_code} instead of spinning; a second task \
+         in its own address space spoke {expected_peer_bytes} bytes and exited \
+         {expected_peer_exit_code} while the vessel was parked"
     );
     Ok(())
 }
@@ -210,7 +221,7 @@ fn verify_records(transcript: &str) -> Result<(), String> {
     // extent, the stack, and absent guards on every side. Three mappings for
     // both runs: the second code page costs none, because the pair is mapped
     // as one extent.
-    for (index, run) in [(8usize, "speaking"), (16usize, "failing")] {
+    for (index, run) in [(8usize, "speaking"), (18usize, "failing")] {
         let entered = &records[index];
         let event = expected_events[index];
         require_string(entered, event, "origin", "user")?;
@@ -270,7 +281,12 @@ fn verify_records(transcript: &str) -> Result<(), String> {
     require_string(yielded, expected_events[12], "status", "ok")?;
     require_number(yielded, expected_events[12], "address_space_round_trips", 1)?;
     require_boolean(yielded, expected_events[12], "resumed_in_ny", true)?;
-    require_boolean(yielded, expected_events[12], "peer_ran", false)?;
+    // A second task did get the processor. It was not the scheduler that gave
+    // it: this fixture entered the peer directly while the vessel was parked,
+    // so `scheduler_preempted` is required to be false and no reader can take
+    // this for evidence of scheduler-driven preemption.
+    require_boolean(yielded, expected_events[12], "peer_ran", true)?;
+    require_boolean(yielded, expected_events[12], "scheduler_preempted", false)?;
 
     // The working run's exit carries what Ny returned, through the vessel's
     // own cell.
@@ -285,39 +301,63 @@ fn verify_records(transcript: &str) -> Result<(), String> {
     // failure hook reached the binding, and the binding spoke the message and
     // exited -- rather than the vessel spinning with nothing submitted, which
     // is what the shipped weak hook would have left it doing.
-    let reported = &records[17];
-    require_number(reported, expected_events[17], "sequence", 1)?;
-    require_string(reported, expected_events[17], "status", "ok")?;
+    // The second task's one write. `entered_ny` is false: this task never
+    // went through `__ny_entry` at all, which is what makes it a peer rather
+    // than a second vessel.
+    let peer = &records[15];
+    require_number(peer, expected_events[15], "sequence", 1)?;
+    require_string(peer, expected_events[15], "status", "ok")?;
+    require_number(peer, expected_events[15], "bytes", expected_peer_bytes)?;
+    require_string(peer, expected_events[15], "composed_by", "image")?;
+    require_string(peer, expected_events[15], "issued_by", "binding")?;
+    require_boolean(peer, expected_events[15], "from_region", false)?;
+    require_boolean(peer, expected_events[15], "entered_ny", false)?;
+
+    let peer_exit = &records[16];
+    require_number(peer_exit, expected_events[16], "sequence", 2)?;
+    require_string(peer_exit, expected_events[16], "status", "ok")?;
+    require_string(peer_exit, expected_events[16], "run", "peering")?;
+    require_number(
+        peer_exit,
+        expected_events[16],
+        "code",
+        expected_peer_exit_code,
+    )?;
+    require_boolean(peer_exit, expected_events[16], "returned_from_ny", false)?;
+
+    let reported = &records[19];
+    require_number(reported, expected_events[19], "sequence", 1)?;
+    require_string(reported, expected_events[19], "status", "ok")?;
     require_number(
         reported,
-        expected_events[17],
+        expected_events[19],
         "bytes",
         expected_failure_message_bytes,
     )?;
-    require_string(reported, expected_events[17], "composed_by", "runtime")?;
-    require_string(reported, expected_events[17], "issued_by", "binding")?;
-    require_boolean(reported, expected_events[17], "from_region", false)?;
-    require_boolean(reported, expected_events[17], "names_the_cause", true)?;
+    require_string(reported, expected_events[19], "composed_by", "runtime")?;
+    require_string(reported, expected_events[19], "issued_by", "binding")?;
+    require_boolean(reported, expected_events[19], "from_region", false)?;
+    require_boolean(reported, expected_events[19], "names_the_cause", true)?;
 
     // Ny never returned on this run, and the transcript says so: the code is
     // the binding's, not a value Ny chose.
-    let failed_exit = &records[18];
-    require_number(failed_exit, expected_events[18], "sequence", 2)?;
-    require_string(failed_exit, expected_events[18], "status", "ok")?;
-    require_string(failed_exit, expected_events[18], "run", "failing")?;
+    let failed_exit = &records[20];
+    require_number(failed_exit, expected_events[20], "sequence", 2)?;
+    require_string(failed_exit, expected_events[20], "status", "ok")?;
+    require_string(failed_exit, expected_events[20], "run", "failing")?;
     require_number(
         failed_exit,
-        expected_events[18],
+        expected_events[20],
         "code",
         expected_failure_exit_code,
     )?;
-    require_boolean(failed_exit, expected_events[18], "returned_from_ny", false)?;
+    require_boolean(failed_exit, expected_events[20], "returned_from_ny", false)?;
 
     // Release accounting, after each run: every frame returned, nothing of the
     // vessel left. The failing run is held to the same standard as the
     // working one -- a vessel that failed inside Ny still owes its frames
     // back, and the region it exhausted still has to be wiped.
-    for index in [15usize, 19usize] {
+    for index in [17usize, 21usize] {
         let released = &records[index];
         let event = expected_events[index];
         let free = required_number(released, event, "free_frames")?;
@@ -341,15 +381,16 @@ fn verify_records(transcript: &str) -> Result<(), String> {
         }
     }
 
-    let passed = &records[20];
-    require_number(passed, expected_events[20], "runs", 2)?;
-    require_number(passed, expected_events[20], "calls", 8)?;
-    require_number(passed, expected_events[20], "commits", 8)?;
-    require_number(passed, expected_events[20], "console_writes", 4)?;
-    require_number(passed, expected_events[20], "deliveries", 1)?;
-    require_number(passed, expected_events[20], "yields", 1)?;
-    require_number(passed, expected_events[20], "ny_failures", 1)?;
-    require_string(passed, expected_events[20], "issued_by", "ny")?;
-    require_boolean(passed, expected_events[20], "terminal", true)?;
+    let passed = &records[22];
+    require_number(passed, expected_events[22], "runs", 2)?;
+    require_number(passed, expected_events[22], "peer_tasks", 1)?;
+    require_number(passed, expected_events[22], "calls", 10)?;
+    require_number(passed, expected_events[22], "commits", 10)?;
+    require_number(passed, expected_events[22], "console_writes", 5)?;
+    require_number(passed, expected_events[22], "deliveries", 1)?;
+    require_number(passed, expected_events[22], "yields", 1)?;
+    require_number(passed, expected_events[22], "ny_failures", 1)?;
+    require_string(passed, expected_events[22], "issued_by", "ny")?;
+    require_boolean(passed, expected_events[22], "terminal", true)?;
     Ok(())
 }
