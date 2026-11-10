@@ -336,7 +336,7 @@ fn verify_ready(
     let numbers = [
         ("tasks", 3),
         ("regions", 9),
-        ("user_pages", 88),
+        ("user_pages", linux_loader_entry_artifact::mapped_page_total),
         ("source_bytes", plan[2]),
         ("source_fnv64", plan[3]),
         ("file_source_bytes", file.len() as u64),
@@ -405,6 +405,14 @@ fn path_shape(boundary: &structured_record) -> Result<bool, String> {
     })
 }
 
+/// The length of the one mmap the guest loader issues for the configured
+/// library: that image's mapped extent. It is the single host-dependent
+/// number in this oracle, so it is named here and used by the live check and
+/// by both synthetic fixtures -- re-pinned with the hashes in
+/// `linux_loader_entry_artifact`, and this value is libc6 2.39-0ubuntu8.9 on
+/// the build host. The page span follows from it.
+const library_mmap_length: u64 = 2_174_352;
+
 fn mapping_boundary(flow: &flow) -> Result<&structured_record, String> {
     flow.boundaries
         .iter()
@@ -417,7 +425,10 @@ fn verify_mapping_return(boundary: &structured_record) -> Result<(), String> {
     require_number(boundary, events[9], "number", 9)?;
     require_number(boundary, events[9], "result_bits", 0x1_0000_0000)?;
     require_bool(boundary, events[9], "returned_to_caller", true)?;
-    for (index, expected) in [0, 2_231_696, 1, 0x802, 3, 0].into_iter().enumerate() {
+    for (index, expected) in [0, library_mmap_length, 1, 0x802, 3, 0]
+        .into_iter()
+        .enumerate()
+    {
         require_number(boundary, events[9], &format!("arg{index}"), expected)?;
     }
     Ok(())
@@ -1189,6 +1200,11 @@ fn verify_passed(
 
 #[cfg(test)]
 mod tests {
+    /// The page span of the library mapping, which only the synthetic
+    /// fixtures below need: the live oracle reads the span from the record it
+    /// is checking.
+    const library_mmap_pages: u64 = super::library_mmap_length.div_ceil(4096);
+
     use super::*;
 
     const faults: [u64; 2] = [0x400500, 0x400502];
@@ -1534,7 +1550,7 @@ mod tests {
                     scenario,
                     11,
                     mapping_number,
-                    [0, 2_231_696, 1, 0x802, 3, 0],
+                    [0, library_mmap_length, 1, 0x802, 3, 0],
                     0x1_0000_0000,
                     true,
                     None,
@@ -1668,20 +1684,21 @@ mod tests {
             let mut mapping = record(mapping_event, scenario);
             // These fixture values do not call the production mapping decoder
             // or oracle. The 8193-byte patterned file occupies three pages;
-            // the observed mmap requests 545 pages and leaves a 542-page tail.
+            // the observed mmap requests the library's page span and leaves
+            // the rest of it as an absent tail.
             for (field, value) in [
                 ("sequence", 11),
                 ("preparations", 1),
                 ("rejections", 9),
                 ("base", 0x1_0000_0000),
-                ("byte_length", 2_231_696),
-                ("virtual_pages", 545),
+                ("byte_length", library_mmap_length),
+                ("virtual_pages", library_mmap_pages),
                 ("source_bytes", 8193),
                 ("source_fnv64", file_hash),
                 ("destination_fnv64", file_hash),
                 ("zero_bytes", 4095),
                 ("populated_pages", 3),
-                ("absent_pages", 542),
+                ("absent_pages", library_mmap_pages - 3),
                 ("table_frames", 4),
                 ("caller_tree_fnv64", 0x1234_5678_90ab_cdef),
                 ("cleanup_retries", 0),
@@ -1704,7 +1721,7 @@ mod tests {
             records.push(mapping);
             let mut mapping_lifetime = record(mapping_lifetime_event, scenario);
             // Independent literal geometry for the same 8193-byte fixture;
-            // the retained tree must preserve the complete 545-page reservation.
+            // the retained tree must preserve the complete reservation.
             for (field, value) in [
                 ("sequence", 11),
                 ("generation", 1),
@@ -1714,15 +1731,15 @@ mod tests {
                 ("releases", 1),
                 ("rejections", 11),
                 ("base", 0x1_0000_0000),
-                ("byte_length", 2_231_696),
-                ("virtual_pages", 545),
+                ("byte_length", library_mmap_length),
+                ("virtual_pages", library_mmap_pages),
                 ("populated_pages", 3),
                 ("table_frames", 4),
                 ("source_bytes", 8193),
                 ("source_fnv64", file_hash),
                 ("destination_fnv64", file_hash),
                 ("zero_bytes", 4095),
-                ("absent_pages", 542),
+                ("absent_pages", library_mmap_pages - 3),
                 ("next_sequence", 12),
                 ("resume_rejections", 7),
             ] {
@@ -2234,7 +2251,10 @@ mod tests {
             copy_bytes: 0,
             scoped_misses: 0,
         };
-        let rounded = 545 * 4096;
+        // A source one byte longer than the mapping's whole extent, so the
+        // hash is required to cover the extent and stop. The extent follows
+        // the library's own page span rather than repeating it.
+        let rounded = library_mmap_pages as usize * 4096;
         let mut file = vec![0x5a; rounded + 1];
         file[rounded] = 0xa5;
         let prefix_hash = linux_loader_entry_artifact::fnv64(&file[..rounded]);
@@ -2243,7 +2263,7 @@ mod tests {
             ("source_fnv64", prefix_hash),
             ("destination_fnv64", prefix_hash),
             ("zero_bytes", 0),
-            ("populated_pages", 545),
+            ("populated_pages", library_mmap_pages),
             ("absent_pages", 0),
             ("table_frames", 5),
         ] {

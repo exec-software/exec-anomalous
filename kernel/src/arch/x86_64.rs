@@ -477,8 +477,15 @@ mod rite_test;
     feature = "supervised_renderer_test",
     feature = "semantic_surface_transport_test"
 ))]
-#[cfg_attr(feature = "workspace_dev", allow(dead_code))]
-#[cfg_attr(feature = "ny_vessel_test", allow(dead_code))]
+// One attribute for both, because two `cfg_attr`s naming the same `allow`
+// apply it twice when both features are on, and clippy rejects that under
+// `-D warnings` in the all-features build. Each of these fixtures uses part
+// of this module and leaves another part unused -- the vessel reads session
+// input but never touches the semantic surface.
+#[cfg_attr(
+    any(feature = "workspace_dev", feature = "ny_vessel_test"),
+    allow(dead_code)
+)]
 mod rite_transport;
 mod runtime_mapping;
 #[cfg(any(test, feature = "linux_loader_entry_test"))]

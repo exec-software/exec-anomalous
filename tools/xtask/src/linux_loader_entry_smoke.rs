@@ -210,7 +210,7 @@ fn verify_source_records(
     let ready_numbers = [
         ("tasks", 3),
         ("regions", 9),
-        ("user_pages", 88),
+        ("user_pages", linux_loader_entry_artifact::mapped_page_total),
         ("source_bytes", plan[2]),
         ("source_fnv64", plan[3]),
         ("file_source_bytes", file_source.len() as u64),
@@ -791,8 +791,9 @@ mod tests {
             r#"{"schema":1,"event":"kernel.interrupts.ready","level":"info","backend":"legacy_pc","vector_base":32,"vector_count":16,"pit_input_hz":1193182,"pit_divisor":11932,"timebase_generation":1,"initial_master_mask":255,"initial_slave_mask":255,"master_mask":252,"slave_mask":255,"input_available":true,"input_source_generation":1,"input_queue_capacity":64,"nmi_masked":true,"if_enabled":true}"#,
         ].join("\n");
         let ready = format!(
-            r#"{{"schema":1,"event":"{}","level":"info","tasks":3,"regions":9,"user_pages":88,"source_bytes":{},"source_fnv64":{},"initial_rip":{},"initial_rsp":{},"main_entry":{},"main_phdr":{},"interpreter_bias":{},"break_start":{},"file_source_bytes":8193,"file_source_fnv64":{},"file_source_pages":3,"source_kind":"privileged_fw_cfg","policy":"userspace","cpu":"GenuineIntel"}}"#,
+            r#"{{"schema":1,"event":"{}","level":"info","tasks":3,"regions":9,"user_pages":{},"source_bytes":{},"source_fnv64":{},"initial_rip":{},"initial_rsp":{},"main_entry":{},"main_phdr":{},"interpreter_bias":{},"break_start":{},"file_source_bytes":8193,"file_source_fnv64":{},"file_source_pages":3,"source_kind":"privileged_fw_cfg","policy":"userspace","cpu":"GenuineIntel"}}"#,
             events[8],
+            linux_loader_entry_artifact::mapped_page_total,
             plan[2],
             plan[3],
             plan[4],
