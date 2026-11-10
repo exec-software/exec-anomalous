@@ -62,7 +62,32 @@ pub(super) const program_arena_bases: [u64; 2] = [0x804000, 0x818000];
 // kind must still exist: it is the geometry the golden tests below pin, and
 // deleting it under a feature would delete the comparison that keeps the two
 // profiles from drifting into each other.
-#[cfg_attr(feature = "native_program_test", allow(dead_code))]
+// Unconstructed in two cases, and dead only in the compiler's sense in both.
+// A program build selects the program kind, so `prepare_native_arenas` is
+// itself unused there and its body does not count as a use. And the
+// controller is compiled at all only under the condition mirrored here from
+// `owned_execution::prepare_native_arenas`; feature combinations outside it
+// -- `native_durable_failure_test,elf_application_test`, for one -- have no
+// controller that names this profile. Neither case means the kind may be
+// deleted: its geometry is what the golden tests below pin, and dropping it
+// under a feature would drop the comparison that keeps the two profiles from
+// drifting into each other.
+#[cfg_attr(
+    any(
+        feature = "native_program_test",
+        not(all(
+            feature = "native_runtime_test",
+            any(
+                not(feature = "elf_application_test"),
+                all(
+                    any(feature = "elf_document_test", feature = "native_relaunch_test"),
+                    not(feature = "linux_application_test")
+                )
+            )
+        ))
+    ),
+    allow(dead_code)
+)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum arena_profile {
     /// A bounded native application: eight RX code pages and a fixed 32 KiB
