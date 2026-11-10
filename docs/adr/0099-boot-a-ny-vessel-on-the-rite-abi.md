@@ -30,8 +30,10 @@ vessel boots or completes a rite, which is what this slice is for.
 
 ## Decision
 
-Add the opt-in `ny_vessel_test` fixture: one Ny vessel, booted by this kernel,
-completing five rites across two operations through the ordinary dispatcher.
+Add the opt-in `ny_vessel_test` fixture: one Ny vessel, booted by this kernel
+twice from the same image, completing seven rites across two operations
+through the ordinary dispatcher -- five on the run that works, two on the run
+that fails inside Ny on purpose.
 
 The vessel is `vessels/anomalous-ny-vessel`. **Ny issues the rites itself.**
 The console write is a symbol this vessel's Anomalous half defines and its Ny
@@ -47,6 +49,24 @@ that. This is the first rite here whose reply carries a payload and the first
 to bring the vessel data it could not have contained, so it is the first thing
 in this profile that makes the boundary two-way: text from the kernel, into
 Ny's own variables, composed in the region, and back out through a write.
+
+And it can fail. The shipped runtime defines `__ny_host_fail` as a weak
+no-op and spins in `nyrt_fail` once it returns, so a Ny failure in a vessel is
+a user task looping with no rite submitted: it does not fault, does not exit,
+and says nothing, and only a timeout would notice. The binding now defines
+that hook, so a failure leaves by the same door as a success -- the runtime's
+message is spoken as a `console_write` and the task exits with a status saying
+Ny failed rather than a value Ny chose. The hook reuses the console stub and
+jumps into the entry's own exit submission, so it adds no third resume address
+and no second copy of the ABI.
+
+Proving it needs a vessel that fails, and the evidence the working run banks
+needs one that does not, so the image is entered twice and the host says which
+run it wants through a cell in the vessel's own state page -- written before
+entry exactly as the region is installed, and read back by a host symbol that
+is not a rite at all. The failing run exhausts the region by concatenating,
+which is the one failure a vessel can reach deliberately. Entering the same
+image twice from fresh state is worth having on its own account.
 
 The surrounding entry installs the region, calls `__ny_entry`, and submits
 `task_exit` with what Ny returned. It no longer touches the messages at all.
@@ -70,8 +90,10 @@ pointer without scrubbing the region, which is what makes the read valid, and
 the shipped runtime states that contract.
 
 **Memory profile.** Three mappings, because a circle admits three: one
-user-RX code page; one user-RW, NX three-page extent holding the vessel's
-state, its region and its mailbox; and one user-RW, NX stack page. The window
+user-RX two-page code extent; one user-RW, NX three-page extent holding the
+vessel's state, its region and its mailbox; and one user-RW, NX stack page.
+The code was one page until the vessel learned to fail, and the second page
+costs no mapping because the pair is mapped as a single extent. The window
 base, the page above the extent and the page above the stack are required
 absent. The mailbox sharing the vessel's own writable extent is not a
 weakening: the dispatcher reads it through the kernel's physical alias and
@@ -95,12 +117,12 @@ each gate return against. It refuses a generation whose manifest, compiler,
 assembler, interpreter or freestanding archive hash differs from the pin -- the
 archive separately, so a generation that changed only that file is still
 rejected; an object importing anything but the eight runtime-ABI names and the
-two symbols the binding defines; a link that acquires an undefined symbol or an
-unplaced section; and an image that does not begin at its page base, does not
-fit one page, places its failure or return labels outside that page, moves its
-writable layout, or lets the region reach the mailbox. The image occupies 3,555
-of its 4,096 bytes, so the one-page budget is a real constraint on what else
-this vessel can be asked to do.
+three symbols the binding defines; a link that acquires an undefined symbol or
+an unplaced section; and an image that does not begin at its page base, does
+not fit its code extent, places its failure or return labels outside that
+extent, puts its mode cell anywhere but its own state page, moves its writable
+layout, or lets the region reach the mailbox. The image occupies 4,113 of its
+8,192 bytes.
 
 The vessel's grant is the shell minimum plus `session_input_read` -- `0b100111`
 -- which is what its two operations require and no more. Reaching the delivery
@@ -121,12 +143,27 @@ mappings and absent guards, committed sequence 1 as 38 bytes of UTF-8 through
 which it sends only because the first rite returned the count it had passed --
 was delivered 11 bytes of `human_text` at sequence 3, committed sequence 4 as
 the 21 bytes it composed around them, and exited at sequence 5 with status `ok`
-and code 42. Release accounting restored 65,114 of 65,114 free frames with no
-owned frames, circles, tasks or mappings left, the channel retired, the region
-wiped and the privilege stack wiped. The transcript oracle requires that exact
-sequence of sixteen records and those exact values; the message lengths and the
-exit code are the ones measured by running the vessel's pre-gate sequence
-against the same object and the same archive on the build host.
+and code 42.
+
+The same image was then entered a second time with its mode cell set. It
+exhausted its region, the runtime's failure hook reached the binding, and the
+binding committed the runtime's 64-byte message at sequence 1 and exited at
+sequence 2 with code 70 -- `returned_from_ny` false, because Ny never
+returned. Release accounting restored 65,114 of 65,114 free frames after each
+run with no owned frames, circles, tasks or mappings left, the channel
+retired, the region wiped and the privilege stack wiped: a vessel that failed
+inside Ny still owes its frames back.
+
+The transcript oracle requires that exact sequence of twenty records and those
+exact values. The vessel's own message lengths and its exit code are the ones
+measured by running the vessel's pre-gate sequence against the same object and
+the same archive on the build host. The failure message's bytes are not
+pinned: they are English prose owned upstream, and this repository is not
+where their wording is decided. What is required of them is that they are
+printable, that they fit the cell the binding copies them into, and that they
+name the cause -- the kernel looks for `allocation failed` and nothing more
+specific. Its length is pinned as a tripwire, so a reworded message fails here
+and is looked at rather than passing unnoticed.
 
 The kernel additionally reads the region back after the vessel exits and makes
 three checks there. The first message must be present, NUL-terminated, as the
@@ -140,14 +177,19 @@ of the transcript would be wrong. The fixture also ties the third message to
 its two halves at compile time, so a delivery changed without changing what the
 vessel is expected to say fails to build.
 
-This establishes one Ny source, object, binding and boot, two operations
-reached from inside Ny, and one reply payload carried into Ny. It does not
+On the failing run the region is read for the opposite reason: it must still
+begin with that run's first two allocations, so a run that failed for some
+other cause could not pass as a region the vessel exhausted by concatenating.
+
+This establishes one Ny source and object, one binding, two entries of that
+image, two operations reached from inside Ny, one reply payload carried into
+Ny, and one Ny failure reaching the kernel as a rite. It does not
 qualify the hosted Ny runtime, a general Anomalous compiler target, an SDK
 release, Ny strings beyond two concatenations, TLS, AVX/XSAVE, unwinding, an
 application service ABI, Antimatter, HAG, or privileged Ny migration. Existing
 verified Rust remains authoritative under ADR 0016.
 
-Six limits are worth stating precisely, because each is a next slice rather
+Seven limits are worth stating precisely, because each is a next slice rather
 than an omission:
 
 1. **Two operations are reachable from Ny, not the whole ABI.** The vessel
@@ -163,17 +205,18 @@ than an omission:
    publish the input, which is the `input_wait_test` fixture's machinery and a
    separate slice. Until that slice exists, nothing here shows that a Ny
    vessel survives being descheduled inside its own control flow.
-3. **The region is never reclaimed inside a context, and exhausting it hangs
-   the vessel.** A vessel that concatenates in a loop runs out, which is
-   correct for this contract and wrong for a long-running one. What happens
-   then was measured rather than assumed: `nyrt_alloc` returns null at 3,999
-   of 4,096 bytes used, the runtime calls `nyrt_fail` with `allocation failed
-   during string concat`, and because the shipped archive defines
-   `__ny_host_fail` as a weak no-op, `nyrt_fail` then spins forever in user
-   mode. This kernel would learn nothing; only the smoke timeout would. A
-   strong `__ny_host_fail` defined by the binding is reached cleanly, so the
-   way out exists and this vessel does not yet take it. That is a hole rather
-   than a missing test, and closing it is the next slice.
+3. **The region is never reclaimed inside a context.** A vessel that
+   concatenates in a loop runs out, which is correct for this contract and
+   wrong for a long-running one. The failing run is that case on purpose, so
+   what it does is now measured rather than assumed: `nyrt_alloc` returns null
+   at 3,999 of 4,096 bytes used and the runtime calls `nyrt_fail`. What is no
+   longer true is that this hangs the vessel -- the binding's own
+   `__ny_host_fail` turns it into two rites. Without that definition the
+   archive's weak no-op returns and `nyrt_fail` spins in `for (;;)` forever,
+   which is what a consumer who does not define the hook will get. The
+   remaining limit is the one a long-running vessel will actually hit: there
+   is no way to reclaim the region short of ending the context, and a vessel
+   that wants to keep allocating has nowhere to go.
 4. **The interpreter cannot run this vessel.** A host symbol exists only in a
    native object, so the VM refuses the call by name. The build stage requires
    that refusal rather than leaving it implied, but it means the independent
@@ -184,7 +227,14 @@ than an omission:
    `text` is a pointer to NUL-terminated bytes -- and a mismatch between the
    declaration and this file's stub would not be caught by either side. The
    stub and the declaration are reviewed together for that reason.
-6. **ADR 0049's fixture is untouched and its own pin is stale** against a
+6. **A Ny failure is an exit code, not a status.** The rite ABI has no way to
+   say that the language runtime failed. The binding picks 70 and this kernel
+   believes it, so nothing in the reply, the exit payload or the task's final
+   state distinguishes a vessel whose runtime gave up from a vessel that chose
+   to exit 70. A supervisor deciding whether to restart something would want
+   to tell those apart. If that distinction matters it belongs in the ABI
+   rather than in a convention held one vessel at a time.
+7. **ADR 0049's fixture is untouched and its own pin is stale** against a
    current SDK. It remains the recorded evidence for its qualification;
    re-pinning it is a separate decision.
 

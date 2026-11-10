@@ -19,14 +19,18 @@
 # carry bytes Ny built in the region and one carries a constant from its own
 # image, which is what the fixture's region checks distinguish.
 #
+# And again: Ny can now fail. `__ny_host_fail` here replaces the archive's
+# weak no-op, so an allocation this vessel cannot satisfy leaves as a rite
+# rather than as a user task spinning where nothing can see it.
+#
 # Register discipline: the gate requires every GPR but R15 to be zero, so the
 # stub saves the System V callee-saved registers before zeroing them and
 # restores them afterwards. Nothing survives a submission in a register, so
 # anything needed across one lives in the vessel's own writable cell.
 
 .set vessel_rite_gate_vector, 0xf3
-.set vessel_mailbox_address, 0x0000600000004000
-.set vessel_arena_address, 0x0000600000003000
+.set vessel_mailbox_address, 0x0000600000005000
+.set vessel_arena_address, 0x0000600000004000
 .set vessel_arena_size, 0x1000
 
 .set rite_call_header_size, 0
@@ -65,6 +69,11 @@
 .set rite_right_session_input_read, 0x20
 
 .set rite_status_ok, 0
+
+# The status this vessel exits with when Ny fails inside it, and when it
+# fails with nothing to say. Neither can collide with a value Ny returns.
+.set vessel_failure_status, 70
+.set vessel_silent_failure_status, 71
 
 # The session-input request and delivery bodies, version 1. Their field
 # offsets are stated here rather than derived, because this file is the only
@@ -326,6 +335,83 @@ anomalous_ny_vessel_input_return:
     retq
 .size anomalous_rite_input_read, . - anomalous_rite_input_read
 
+# long anomalous_vessel_mode(void)
+#
+# Not a rite. The host writes this cell before the vessel is entered, exactly
+# as it installs the region, and this reads it back. It is how one image can
+# be asked for the run that is meant to fail, so the failure path can be
+# proved without a second vessel and without losing the evidence the ordinary
+# run already banks.
+.global anomalous_vessel_mode
+.type anomalous_vessel_mode, @function
+anomalous_vessel_mode:
+    movq anomalous_ny_vessel_mode(%rip), %rax
+    retq
+.size anomalous_vessel_mode, . - anomalous_vessel_mode
+
+# void __ny_host_fail(const char *message)
+#
+# The shipped runtime defines this as a weak no-op, and `nyrt_fail` spins
+# forever once it returns. In a vessel that means a user task looping with no
+# rite ever submitted: it does not fault, does not exit, and says nothing, so
+# the dispatcher sees nothing at all and only a timeout would notice. This
+# strong definition replaces it, so a Ny failure leaves by the same door as a
+# success -- the message is spoken as a console_write, and the task exits with
+# a status that says Ny failed rather than a value Ny chose.
+#
+# The message belongs to the runtime. It is read-only here and arrives with a
+# trailing newline the console does not admit, so it is copied into the
+# vessel's own cell and trimmed there rather than edited where it lies.
+#
+# This function never returns, so the System V callee-saved contract has no
+# observer: the saves below are what keeps the stack aligned for the calls,
+# and the matching restores would be unreachable.
+.global __ny_host_fail
+.type __ny_host_fail, @function
+__ny_host_fail:
+    pushq %rbx
+    pushq %r12
+    pushq %rax
+
+    testq %rdi, %rdi
+    jz .Lvessel_fail_unspoken
+    movq %rdi, %r12
+    callq nyrt_str_length
+    testq %rax, %rax
+    jz .Lvessel_fail_unspoken
+    cmpq $vessel_input_text_capacity, %rax
+    jbe .Lvessel_fail_bounded
+    movq $vessel_input_text_capacity, %rax
+.Lvessel_fail_bounded:
+    movq %rax, %rbx
+    leaq anomalous_ny_vessel_line(%rip), %rdi
+    movq %r12, %rsi
+    movq %rbx, %rdx
+    callq nyrt_mem_copy
+
+    # Trim the runtime's framing. The console admits printable bytes only, and
+    # a message that is nothing but framing is one the vessel cannot speak.
+    leaq anomalous_ny_vessel_line(%rip), %rax
+    movq %rbx, %rcx
+.Lvessel_fail_trim:
+    testq %rcx, %rcx
+    jz .Lvessel_fail_unspoken
+    cmpb $0x20, -1(%rax, %rcx)
+    ja .Lvessel_fail_trimmed
+    decq %rcx
+    jmp .Lvessel_fail_trim
+.Lvessel_fail_trimmed:
+    movb $0, (%rax, %rcx)
+    movq %rcx, anomalous_ny_vessel_line_length(%rip)
+    leaq anomalous_ny_vessel_line(%rip), %rdi
+    callq anomalous_rite_console_write
+    movq $vessel_failure_status, anomalous_ny_vessel_status(%rip)
+    jmp .Lvessel_exit
+.Lvessel_fail_unspoken:
+    movq $vessel_silent_failure_status, anomalous_ny_vessel_status(%rip)
+    jmp .Lvessel_exit
+.size __ny_host_fail, . - __ny_host_fail
+
 .section .text.ny_vessel_entry,"ax",@progbits
 .p2align 4
 .global anomalous_ny_vessel_entry
@@ -351,6 +437,7 @@ anomalous_ny_vessel_entry:
     movl %eax, %eax
     movq %rax, anomalous_ny_vessel_status(%rip)
 
+.Lvessel_exit:
     movabsq $vessel_mailbox_address, %r15
     movq anomalous_ny_vessel_status(%rip), %rax
     movl %eax, rite_payload(%r15)
@@ -395,5 +482,10 @@ anomalous_ny_vessel_line_length:
 .global anomalous_ny_vessel_line
 anomalous_ny_vessel_line:
     .zero vessel_input_text_capacity + 1
+# The run the host asked for. The host writes it; the vessel only reads it.
+.p2align 3
+.global anomalous_ny_vessel_mode
+anomalous_ny_vessel_mode:
+    .zero 8
 
 .section .note.GNU-stack,"",@progbits

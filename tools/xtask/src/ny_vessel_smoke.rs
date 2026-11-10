@@ -10,6 +10,13 @@
 //! third write is the answer Ny built around it -- so the byte counts here are
 //! what pins that the delivered text reached Ny and came back out, since the
 //! third count is only reachable by a vessel that received those bytes.
+//!
+//! And it fails. The same image is entered twice: once to do its work, once to
+//! exhaust the region on purpose, because one run cannot be both and the first
+//! run's evidence must not be given up to see the second. The failing run is
+//! what shows that a Ny failure arrives as a rite at all -- without the
+//! binding's own `__ny_host_fail` the vessel would spin in user mode with
+//! nothing submitted, and only a timeout would notice.
 use super::*;
 
 pub(super) const feature: &str = "ny_vessel_test";
@@ -27,8 +34,16 @@ const expected_third_bytes: u64 = ny_vessel_artifact::expected_third_message.len
 /// contain it, so the third write's count is the evidence it arrived.
 const expected_delivered_bytes: u64 = ny_vessel_artifact::expected_delivered_message.len() as u64;
 const expected_exit_code: u64 = ny_vessel_artifact::expected_exit_code as u64;
+/// What the binding exits with when Ny fails inside it, stated in the
+/// vessel's `entry.S` and outside the range of values Ny itself returns.
+const expected_failure_exit_code: u64 = 70;
+/// The runtime's failure message, as a length. Its bytes are upstream's prose
+/// and this oracle does not pin them, but the length is a tripwire: a reworded
+/// message is a change to what a vessel's failure looks like from outside, and
+/// it should fail here and be looked at rather than pass unnoticed.
+const expected_failure_message_bytes: u64 = 64;
 
-const expected_events: [&str; 16] = [
+const expected_events: [&str; 20] = [
     "boot.kernel.enter",
     "kernel.fault_path.ready",
     "boot.omen.accepted",
@@ -37,11 +52,17 @@ const expected_events: [&str; 16] = [
     "boot.display.ready",
     "boot.ready",
     "kernel.ny_vessel.ready",
+    // The working run.
     "kernel.ny_vessel.task.entered",
     "kernel.ny_vessel.console.committed",
     "kernel.ny_vessel.console.committed",
     "kernel.ny_vessel.input.delivered",
     "kernel.ny_vessel.console.committed",
+    "kernel.ny_vessel.exited",
+    "kernel.ny_vessel.released",
+    // The failing run, from the same image.
+    "kernel.ny_vessel.task.entered",
+    "kernel.ny_vessel.failure.reported",
     "kernel.ny_vessel.exited",
     "kernel.ny_vessel.released",
     "kernel.ny_vessel.passed",
@@ -109,7 +130,9 @@ pub(super) fn smoke() -> Result<(), String> {
          composed in the host's region, then {expected_second_bytes} more after reading \
          the first rite's result, then {expected_delivered_bytes} delivered bytes it had \
          never contained answered with {expected_third_bytes}, and exited \
-         {expected_exit_code}"
+         {expected_exit_code}; then the same image exhausted its region on purpose, \
+         spoke the runtime's {expected_failure_message_bytes}-byte failure as a rite, \
+         and exited {expected_failure_exit_code} instead of spinning"
     );
     Ok(())
 }
@@ -175,29 +198,27 @@ fn verify_records(transcript: &str) -> Result<(), String> {
     require_number(ready, expected_events[7], "operations", 2)?;
     require_number(ready, expected_events[7], "entry", 0x0000_6000_0000_1000)?;
     let image_bytes = required_number(ready, expected_events[7], "image_bytes")?;
-    if image_bytes == 0 || image_bytes > 4096 {
-        return Err("Ny vessel image must occupy part of one page".into());
+    if image_bytes == 0
+        || image_bytes > ny_vessel_artifact::image_pages * ny_vessel_artifact::page_size
+    {
+        return Err("Ny vessel image must fit its code extent".into());
     }
 
-    // Entry states the mapped profile: one RX page, the writable extent, the
-    // stack, and absent guards on every side.
-    let entered = &records[8];
-    require_string(entered, expected_events[8], "origin", "user")?;
-    require_number(entered, expected_events[8], "mappings", 3)?;
-    require_string(entered, expected_events[8], "code_permissions", "user_rx")?;
-    require_string(
-        entered,
-        expected_events[8],
-        "writable_permissions",
-        "user_rw_nx",
-    )?;
-    require_string(
-        entered,
-        expected_events[8],
-        "stack_permissions",
-        "user_rw_nx",
-    )?;
-    require_boolean(entered, expected_events[8], "guards_absent", true)?;
+    // Each run states the mapped profile: the RX code extent, the writable
+    // extent, the stack, and absent guards on every side. Three mappings for
+    // both runs: the second code page costs none, because the pair is mapped
+    // as one extent.
+    for (index, run) in [(8usize, "speaking"), (15usize, "failing")] {
+        let entered = &records[index];
+        let event = expected_events[index];
+        require_string(entered, event, "origin", "user")?;
+        require_string(entered, event, "run", run)?;
+        require_number(entered, event, "mappings", 3)?;
+        require_string(entered, event, "code_permissions", "user_rx")?;
+        require_string(entered, event, "writable_permissions", "user_rw_nx")?;
+        require_string(entered, event, "stack_permissions", "user_rw_nx")?;
+        require_boolean(entered, event, "guards_absent", true)?;
+    }
 
     // Three committed console writes, all issued from inside Ny. The first
     // carries the message Ny composed in the region the kernel installed; the
@@ -237,41 +258,83 @@ fn verify_records(transcript: &str) -> Result<(), String> {
     require_boolean(delivered, expected_events[11], "waited", false)?;
     require_string(delivered, expected_events[11], "read_by", "ny")?;
 
-    // The exit carries what Ny returned, through the vessel's own cell.
+    // The working run's exit carries what Ny returned, through the vessel's
+    // own cell.
     let exited = &records[13];
     require_number(exited, expected_events[13], "sequence", 5)?;
     require_string(exited, expected_events[13], "status", "ok")?;
+    require_string(exited, expected_events[13], "run", "speaking")?;
     require_number(exited, expected_events[13], "code", expected_exit_code)?;
     require_boolean(exited, expected_events[13], "returned_from_ny", true)?;
 
-    // Release accounting: every frame returned, nothing of the vessel left.
-    let released = &records[14];
-    let free = required_number(released, expected_events[14], "free_frames")?;
-    let initial = required_number(released, expected_events[14], "initial_free_frames")?;
-    if free != initial {
-        return Err(format!(
-            "Ny vessel did not restore its frames: {free} of {initial}"
-        ));
-    }
-    for field in [
-        "data_owned_frames",
-        "table_owned_frames",
-        "active_circles",
-        "active_tasks",
-        "active_mappings",
-    ] {
-        require_number(released, expected_events[14], field, 0)?;
-    }
-    for field in ["channel_retired", "region_wiped", "transition_stack_wiped"] {
-        require_boolean(released, expected_events[14], field, true)?;
+    // The failing run. Ny exhausted the region deliberately, the runtime's
+    // failure hook reached the binding, and the binding spoke the message and
+    // exited -- rather than the vessel spinning with nothing submitted, which
+    // is what the shipped weak hook would have left it doing.
+    let reported = &records[16];
+    require_number(reported, expected_events[16], "sequence", 1)?;
+    require_string(reported, expected_events[16], "status", "ok")?;
+    require_number(
+        reported,
+        expected_events[16],
+        "bytes",
+        expected_failure_message_bytes,
+    )?;
+    require_string(reported, expected_events[16], "composed_by", "runtime")?;
+    require_string(reported, expected_events[16], "issued_by", "binding")?;
+    require_boolean(reported, expected_events[16], "from_region", false)?;
+    require_boolean(reported, expected_events[16], "names_the_cause", true)?;
+
+    // Ny never returned on this run, and the transcript says so: the code is
+    // the binding's, not a value Ny chose.
+    let failed_exit = &records[17];
+    require_number(failed_exit, expected_events[17], "sequence", 2)?;
+    require_string(failed_exit, expected_events[17], "status", "ok")?;
+    require_string(failed_exit, expected_events[17], "run", "failing")?;
+    require_number(
+        failed_exit,
+        expected_events[17],
+        "code",
+        expected_failure_exit_code,
+    )?;
+    require_boolean(failed_exit, expected_events[17], "returned_from_ny", false)?;
+
+    // Release accounting, after each run: every frame returned, nothing of the
+    // vessel left. The failing run is held to the same standard as the
+    // working one -- a vessel that failed inside Ny still owes its frames
+    // back, and the region it exhausted still has to be wiped.
+    for index in [14usize, 18usize] {
+        let released = &records[index];
+        let event = expected_events[index];
+        let free = required_number(released, event, "free_frames")?;
+        let initial = required_number(released, event, "initial_free_frames")?;
+        if free != initial {
+            return Err(format!(
+                "Ny vessel did not restore its frames after {event}: {free} of {initial}"
+            ));
+        }
+        for field in [
+            "data_owned_frames",
+            "table_owned_frames",
+            "active_circles",
+            "active_tasks",
+            "active_mappings",
+        ] {
+            require_number(released, event, field, 0)?;
+        }
+        for field in ["channel_retired", "region_wiped", "transition_stack_wiped"] {
+            require_boolean(released, event, field, true)?;
+        }
     }
 
-    let passed = &records[15];
-    require_number(passed, expected_events[15], "calls", 5)?;
-    require_number(passed, expected_events[15], "commits", 5)?;
-    require_number(passed, expected_events[15], "console_writes", 3)?;
-    require_number(passed, expected_events[15], "deliveries", 1)?;
-    require_string(passed, expected_events[15], "issued_by", "ny")?;
-    require_boolean(passed, expected_events[15], "terminal", true)?;
+    let passed = &records[19];
+    require_number(passed, expected_events[19], "runs", 2)?;
+    require_number(passed, expected_events[19], "calls", 7)?;
+    require_number(passed, expected_events[19], "commits", 7)?;
+    require_number(passed, expected_events[19], "console_writes", 4)?;
+    require_number(passed, expected_events[19], "deliveries", 1)?;
+    require_number(passed, expected_events[19], "ny_failures", 1)?;
+    require_string(passed, expected_events[19], "issued_by", "ny")?;
+    require_boolean(passed, expected_events[19], "terminal", true)?;
     Ok(())
 }

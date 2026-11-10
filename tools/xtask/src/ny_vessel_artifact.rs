@@ -41,9 +41,13 @@ const pinned_runtime: (&str, &str) = (
 /// object is emitted for the large code model below.
 pub(super) const user_window: u64 = 0x0000_6000_0000_0000;
 pub(super) const image_base: u64 = user_window + 0x1000;
-pub(super) const state_base: u64 = user_window + 0x2000;
-pub(super) const arena_base: u64 = user_window + 0x3000;
-pub(super) const mailbox_base: u64 = user_window + 0x4000;
+/// The code occupies two pages. One sufficed until the vessel gained a
+/// failure path; the kernel maps the pair as one extent, so this costs no
+/// mapping against the three a circle admits.
+pub(super) const image_pages: u64 = 2;
+pub(super) const state_base: u64 = user_window + 0x3000;
+pub(super) const arena_base: u64 = user_window + 0x4000;
+pub(super) const mailbox_base: u64 = user_window + 0x5000;
 pub(super) const page_size: u64 = 0x1000;
 
 /// What the vessel is expected to produce, stated once. The vessel writes
@@ -62,13 +66,14 @@ pub(super) const expected_delivered_message: &[u8] = b"say it back";
 pub(super) const expected_exit_code: i32 = 42;
 
 /// Exactly what this vessel's object is allowed to need: the five native
-/// runtime ABI hooks, three more because it allocates, and the two symbols the
-/// vessel's own Anomalous half defines. No libc name may appear beside them,
-/// and no further host symbol may arrive unnoticed -- the rite surface Ny can
-/// reach is this list, and it is two operations wide.
-const expected_object_imports: [&str; 10] = [
+/// runtime ABI hooks, three more because it allocates, and the three symbols
+/// the vessel's own Anomalous half defines. No libc name may appear beside
+/// them, and no further host symbol may arrive unnoticed -- the surface Ny can
+/// reach is this list: two rites and one cell the host wrote.
+const expected_object_imports: [&str; 11] = [
     "anomalous_rite_console_write",
     "anomalous_rite_input_read",
+    "anomalous_vessel_mode",
     "nyrt_abi_version",
     "nyrt_alloc",
     "nyrt_context_begin",
@@ -83,8 +88,8 @@ const expected_object_imports: [&str; 10] = [
 /// stage cannot be mistaken for this one.
 pub(super) const header_magic: u64 = 0x4e59_5f56_4553_5331;
 /// magic, image length, entry, console return, input return, exit return,
-/// failure.
-pub(super) const header_bytes: usize = 7 * 8;
+/// failure, mode cell.
+pub(super) const header_bytes: usize = 8 * 8;
 
 pub(super) struct artifact {
     /// The relocation-free wrapper the kernel link consumes.
@@ -97,6 +102,10 @@ pub(super) struct artifact {
     pub(super) console_return: u64,
     pub(super) input_return: u64,
     pub(super) exit_return: u64,
+    /// The cell in the vessel's own state page that the host writes before
+    /// entry to choose the run. Not an address in the code page, so it is
+    /// bounds-checked against the writable profile instead.
+    pub(super) mode_cell: u64,
 }
 
 pub(super) fn package_image(root: &Path, build: &Path) -> Result<artifact, String> {
@@ -241,6 +250,7 @@ pub(super) fn package_image(root: &Path, build: &Path) -> Result<artifact, Strin
         console_return: symbol_u64_from_listing(&symbols, "anomalous_ny_vessel_console_return")?,
         input_return: symbol_u64_from_listing(&symbols, "anomalous_ny_vessel_input_return")?,
         exit_return: symbol_u64_from_listing(&symbols, "anomalous_ny_vessel_exit_return")?,
+        mode_cell: symbol_u64_from_listing(&symbols, "anomalous_ny_vessel_mode")?,
     };
     check_layout(&artifact, &symbols)?;
     write_wrapper(root, &output, &artifact)?;
@@ -301,8 +311,8 @@ fn check_layout(artifact: &artifact, symbols: &str) -> Result<(), String> {
     if artifact.entry != image_base {
         return Err("Ny vessel entry is not at the base of its code page".into());
     }
-    if artifact.image.is_empty() || artifact.image.len() as u64 > page_size {
-        return Err("Ny vessel RX image does not fit one page".into());
+    if artifact.image.is_empty() || artifact.image.len() as u64 > image_pages * page_size {
+        return Err("Ny vessel RX image does not fit its code extent".into());
     }
     for (name, address) in [
         ("failed", artifact.failed),
@@ -313,6 +323,14 @@ fn check_layout(artifact: &artifact, symbols: &str) -> Result<(), String> {
         if !(image_base..image_base + artifact.image.len() as u64).contains(&address) {
             return Err(format!("Ny vessel {name} lies outside its code page"));
         }
+    }
+    // The mode cell is the one header address that is not code. It has to be
+    // inside the vessel's own state page, because the host writes it and must
+    // not be able to reach the region or the mailbox through this header.
+    if !(state_base..state_base + page_size).contains(&artifact.mode_cell)
+        || !artifact.mode_cell.is_multiple_of(8)
+    {
+        return Err("Ny vessel mode cell lies outside its state page".into());
     }
     let state = symbol_u64_from_listing(symbols, "anomalous_ny_vessel_state_start")?;
     let arena = symbol_u64_from_listing(symbols, "anomalous_ny_vessel_arena_start")?;
@@ -395,6 +413,7 @@ fn write_wrapper(root: &Path, output: &Path, artifact: &artifact) -> Result<(), 
         artifact.input_return,
         artifact.exit_return,
         artifact.failed,
+        artifact.mode_cell,
     ];
     let mut header = String::from(
         ".section .rodata.ny_vessel_header,\"a\",@progbits\n\
