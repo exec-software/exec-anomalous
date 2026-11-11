@@ -1,25 +1,9 @@
 //! A program-bearing launch: one task, one RX page, a 64 KiB arena (ADR 0094).
 //!
-//! What this proves is the launch contract, not an interpreter. There is no
-//! NIL interpreter here or in the vessel yet, so no edition is executed and
-//! none is mapped: the descriptor's edition fields are carried end to end and
-//! stated back, not backed by bytes. That is the honest extent of it.
-//!
-//! The task receives an `ANPG` descriptor in its own writable data, states
-//! back what it was granted at the head of its arena, and exits. The kernel
-//! compares that statement against what it actually wrote. A descriptor is
-//! launch data and never a capability: the profile is selected here, by the
-//! controller, before anything is acquired.
-//!
-//! Single task, honestly. ADR 0094 widened the single-task gate rather than
-//! padding the launch with a peer that exists only to satisfy a legacy count,
-//! so there is no second task, no channel pair and no display here.
-//!
-//! The console grant has no transport behind it yet. A scenario that grants
-//! `console_write` mints the handle and the task reports it, but every gate
-//! operation except startup and exit is refused, so the grant is not yet
-//! reachable. `console_transport` is what makes it reachable; until then the
-//! emitted evidence says so rather than implying a working console.
+//! ANPG describes the launch; the controller separately binds the console to
+//! its exact live task. Requests use bounded owned user-copy, complete text
+//! preflight, and a monotonic success sequence before any serial publication.
+//! Editions remain unmapped until source and semantic-manifest admission exist.
 //!
 //! The parent module lowers `dead_code` and `unused_imports` under this
 //! feature, because a program build leaves its two-task half unreachable.
@@ -28,9 +12,11 @@
 
 use super::super::arena_profile::program_arena_bases;
 use super::super::owned_execution::{owned_execution_group, user_data_base};
+use super::super::program_console;
 use super::*;
 use anomalous_native_runtime::{
-    minimum_arena_bytes, program_descriptor, program_startup_size, service,
+    maximum_write_bytes, minimum_arena_bytes, program_descriptor, program_startup_size,
+    program_status, service,
 };
 
 /// Where the descriptor sits in the task's private RW data. The vessel's
@@ -180,6 +166,10 @@ struct program {
     bootstrap_stack: u64,
     kernel_stack: u64,
     original_ts: u64,
+    console: program_console::state,
+    console_scratch: [u8; maximum_write_bytes],
+    console_attempts: u64,
+    console_rejected: u64,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -191,6 +181,10 @@ struct program_record {
     zeroed_bytes: u64,
     granted: [u64; proof_words],
     stated: [u64; proof_words],
+    console_attempts: u64,
+    console_rejected: u64,
+    console_writes: u64,
+    console_bytes: u64,
 }
 
 impl program {
@@ -293,6 +287,9 @@ unsafe fn initialize_storage(
         ptr::addr_of_mut!((*pointer).bootstrap_stack).write(bootstrap_stack);
         ptr::addr_of_mut!((*pointer).kernel_stack).write(0);
         ptr::addr_of_mut!((*pointer).original_ts).write(paging::read_cr0() & 8);
+        ptr::addr_of_mut!((*pointer).console_attempts).write(0);
+        ptr::addr_of_mut!((*pointer).console_rejected).write(0);
+        ptr::write_bytes(ptr::addr_of_mut!((*pointer).console_scratch), 0, 1);
     }
 }
 
@@ -408,6 +405,16 @@ fn initialize(
             .commit(0, tasks, circles, 701 + scenario as u64)
             .unwrap_or_else(|e| fail(e));
         ptr::addr_of_mut!((*pointer).identity).write(identity);
+        // Authority comes from the controller's retained launch selection,
+        // never from a descriptor that userspace may later rewrite.
+        let console = program_console::state::new(
+            identity,
+            (selected.console_handle != 0).then_some(selected.console_handle),
+            selected.base,
+            arena_bytes,
+        )
+        .unwrap_or_else(|_| fail("program_console_binding"));
+        ptr::addr_of_mut!((*pointer).console).write(console);
         &mut *pointer
     }
 }
@@ -499,9 +506,21 @@ fn run_program(
     {
         fail("program_continuation");
     }
-    // Exactly the two operations this gate admits: startup and exit. An
-    // interpreter will add more; until it does, a third call is a defect.
-    if state.calls != 2 || state.exits != 1 || state.invalid != 0 {
+    let (attempts, rejected, writes, bytes) = if scenario == 0 {
+        (16, 14, 2, 60)
+    } else {
+        (2, 2, 0, 0)
+    };
+    if state.calls != attempts + 2
+        || state.exits != 1
+        || state.invalid != 0
+        || state.console_attempts != attempts
+        || state.console_rejected != rejected
+        || state.console.written() != writes
+        || state.console.bytes_written() != bytes
+        || !state.console.is_closed()
+        || state.console_scratch.iter().any(|byte| *byte != 0)
+    {
         fail("program_evidence");
     }
     let stated = state.stated_grant();
@@ -551,6 +570,10 @@ fn run_program(
         zeroed_bytes: state.zeroed_bytes,
         granted: state.granted,
         stated,
+        console_attempts: state.console_attempts,
+        console_rejected: state.console_rejected,
+        console_writes: state.console.written(),
+        console_bytes: state.console.bytes_written(),
     };
     let vendor = state.cpu.cpu_vendor();
     storage_busy.store(false, Ordering::Release);
@@ -630,7 +653,7 @@ pub(super) fn gate(frame: *mut scheduler_frame) -> *mut scheduler_frame {
         fail("program_gate_vector");
     }
     state.calls += 1;
-    let mut reply = 0;
+    let mut reply = (program_status::ok, 0, 0);
     match value.accumulator {
         0 => {
             if state.started
@@ -652,10 +675,51 @@ pub(super) fn gate(frame: *mut scheduler_frame) -> *mut scheduler_frame {
                 (*frame).flags = 0x202;
             }
         }
+        1 => {
+            state.console_attempts += 1;
+            let request = program_console::write_request {
+                caller: state.identity,
+                handle: value.destination_index,
+                address: value.source_index,
+                length: value.data,
+                sequence: value.counter,
+            };
+            let identity = state.identity;
+            let execution = &mut state.execution;
+            let tasks = &state.tasks;
+            let circles = &state.circles;
+            let scheduler = &state.scheduler;
+            let result = state.console.write(
+                request,
+                &mut state.console_scratch,
+                |address, destination| {
+                    execution
+                        .copy_from_user(tasks, circles, scheduler, identity, address, destination)
+                        .map_err(|_| ())
+                },
+                |text| {
+                    // The complete UTF-8 request has been copied and validated.
+                    // The current serial sink commits synchronously; a failure
+                    // must never return and allow a duplicate retry.
+                    let mut serial = serial_port::com1();
+                    serial
+                        .write_str(text)
+                        .unwrap_or_else(|_| fail("program_console_publish"));
+                },
+            );
+            if result.status != program_status::ok {
+                state.console_rejected += 1;
+            }
+            if state.console_scratch.iter().any(|byte| *byte != 0) {
+                fail("program_console_scratch");
+            }
+            reply = (result.status, result.sequence, result.length);
+        }
         5 => {
             if value.destination_index != 0 {
                 fail("program_user_status");
             }
+            state.console.close();
             state.terminal = true;
             state.exits += 1;
             state
@@ -664,19 +728,18 @@ pub(super) fn gate(frame: *mut scheduler_frame) -> *mut scheduler_frame {
                 .unwrap_or_else(|_| fail("program_complete"));
             state.finish();
         }
-        // Everything else is refused, including the console write the grant
-        // names: there is no transport behind it yet. A refusal is the honest
-        // answer, and the task's own evidence records that it was refused.
+        // This experimental program profile exposes only startup, console
+        // output, and exit. Other operations carry no implicit service grant.
         _ => {
-            reply = 4;
+            reply = (program_status::invalid, 0, 0);
             state.invalid += 1;
         }
     }
     // SAFETY: The current exact frame remains exclusively retained until IRETQ.
     unsafe {
-        (*frame).accumulator = reply;
-        (*frame).counter = 0;
-        (*frame).data = 0;
+        (*frame).accumulator = reply.0;
+        (*frame).counter = reply.1;
+        (*frame).data = reply.2;
     }
     leave_dispatch(state, frame)
 }
@@ -730,7 +793,7 @@ pub(super) fn run() -> ! {
     let mut serial = serial_port::com1();
     let _ = writeln!(
         serial,
-        r#"{{"schema":1,"event":"kernel.native_program_test.ready","level":"info","vendor":"{}","tasks":1,"scenarios":{},"code_pages":{},"descriptor_bytes":{},"arena_bytes":{},"mappings":4,"data_frames":{},"table_frames":{},"leases":{},"free_frames":{},"edition_mapped":false,"console_transport":false}}"#,
+        r#"{{"schema":1,"event":"kernel.native_program_test.ready","level":"info","vendor":"{}","tasks":1,"scenarios":{},"code_pages":{},"descriptor_bytes":{},"arena_bytes":{},"mappings":4,"data_frames":{},"table_frames":{},"leases":{},"free_frames":{},"edition_mapped":false,"console_transport":true}}"#,
         vendor,
         scenarios.len(),
         program_code_pages,
@@ -739,14 +802,14 @@ pub(super) fn run() -> ! {
         expected_data_frames,
         expected_table_frames,
         expected_leases,
-        initial.free
+        initial.free,
     );
     let mut zeroed_bytes = 0;
     for (scenario, record) in records.into_iter().enumerate() {
         zeroed_bytes += record.zeroed_bytes;
         let _ = writeln!(
             serial,
-            r#"{{"schema":1,"event":"kernel.native_program_test.scenario","level":"info","scenario":{},"arena_base":{},"zeroed_bytes":{},"calls":{},"timer_ticks":{},"invalid":{},"exits":{},"granted_services":{},"console_granted":{},"argument_bytes":{},"edition_bytes":{},"grant_restated":{}}}"#,
+            r#"{{"schema":1,"event":"kernel.native_program_test.scenario","level":"info","scenario":{},"arena_base":{},"zeroed_bytes":{},"calls":{},"timer_ticks":{},"invalid":{},"exits":{},"granted_services":{},"console_granted":{},"console_transport":{},"argument_bytes":{},"edition_bytes":{},"grant_restated":{},"console_attempts":{},"console_writes":{},"console_rejected":{},"console_bytes":{},"console_last_sequence":{}}}"#,
             scenario,
             scenarios[scenario].base,
             record.zeroed_bytes,
@@ -756,14 +819,20 @@ pub(super) fn run() -> ! {
             record.exits,
             record.granted[2],
             record.granted[4],
+            record.granted[4] == 1,
             record.granted[3],
             record.granted[1],
-            record.stated == record.granted
+            record.stated == record.granted,
+            record.console_attempts,
+            record.console_writes,
+            record.console_rejected,
+            record.console_bytes,
+            record.console_writes,
         );
     }
     let _ = writeln!(
         serial,
-        r#"{{"schema":1,"event":"kernel.native_program_test.passed","level":"info","program_tasks":{},"descriptor_bytes":{},"arena_bytes":{},"zeroed_bytes":{},"grants_restated":true,"editions_executed":0,"resources_restored":true,"authority_revoked":true,"source_language":"rust"}}"#,
+        r#"{{"schema":1,"event":"kernel.native_program_test.passed","level":"info","program_tasks":{},"descriptor_bytes":{},"arena_bytes":{},"zeroed_bytes":{},"grants_restated":true,"editions_executed":0,"console_writes":2,"console_rejected":16,"console_bytes":60,"console_verified":true,"resources_restored":true,"authority_revoked":true,"source_language":"rust"}}"#,
         scenarios.len(),
         program_startup_size,
         arena_bytes,

@@ -369,6 +369,8 @@ mod owned_tls_fixture;
 mod owned_tls_runtime;
 #[cfg(any(test, feature = "owned_workspace_test"))]
 mod owned_workspace_fault;
+#[cfg(feature = "native_program_test")]
+mod program_console;
 #[cfg(any(test, feature = "owned_tls_test", feature = "linux_tls_test"))]
 mod task_tls;
 mod user_copy;

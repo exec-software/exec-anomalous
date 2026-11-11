@@ -3,22 +3,13 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! A task launched with a program to run rather than a document to edit.
-//!
-//! The launch is an `ANPG` descriptor: a bounded arena range, an edition to
-//! run, an optional console, and `granted_services` as a ceiling. There is no
-//! interpreter yet, so this runs no edition. What it proves is the part that
-//! has to be true first -- that the launch contract survives the boundary
-//! intact, and that a task cannot talk itself into authority the launch did
-//! not grant.
-//!
-//! The proof is written where the kernel can read it. A task can only exit,
-//! so an assertion here would be indistinguishable from any other fault;
-//! instead the grant this task actually received is copied into the head of
-//! its arena and the kernel compares it against what it granted.
+//! Native program console transport over the existing ANPG launch contract.
+//! The client checks real replies and adversarial raw requests. Edition handles
+//! remain inert until source delivery and semantic-manifest admission exist.
 
 use anomalous_native_runtime::{
-    arena, granted_handle, program_descriptor, program_startup_size, service,
+    arena, console_error, console_transport, console_writer, granted_handle, maximum_write_bytes,
+    program_descriptor, program_startup_size, program_status, service,
 };
 use core::{
     arch::{asm, global_asm},
@@ -33,6 +24,9 @@ global_asm!(include_str!("entry.S"), options(att_syntax));
 /// it was given, before it has had a chance to do anything else.
 pub const proof_offset: usize = 0;
 pub const proof_words: usize = 6;
+
+// Deliberately unaligned and crossing a page boundary for actual user-copy.
+const console_buffer_offset: usize = 4095;
 
 #[repr(C)]
 struct call_record {
@@ -71,6 +65,97 @@ fn call(operation: u64, channel: u64, pointer: u64, length: usize, sequence: u64
 fn exit() -> ! {
     call(5, 0, 0, 0, 0);
     panic!("terminal exit returned");
+}
+
+struct native_console<'a> {
+    scratch: &'a mut [u8],
+}
+
+impl console_transport for native_console<'_> {
+    fn write(&mut self, channel: u64, bytes: &[u8], sequence: u64) -> Result<usize, console_error> {
+        if bytes.len() > self.scratch.len() {
+            return Err(console_error::length);
+        }
+        self.scratch[..bytes.len()].copy_from_slice(bytes);
+        let reply = call(
+            1,
+            channel,
+            self.scratch.as_ptr() as u64,
+            bytes.len(),
+            sequence,
+        );
+        if reply.status != program_status::ok
+            || reply.returned_sequence != sequence
+            || reply.returned_length != bytes.len() as u64
+        {
+            return Err(console_error::transport);
+        }
+        Ok(bytes.len())
+    }
+}
+
+fn refused(handle: u64, address: u64, length: usize, sequence: u64, expected: u64) {
+    let reply = call(1, handle, address, length, sequence);
+    assert_eq!(reply.status, expected);
+    assert_eq!(reply.returned_sequence, 0);
+    assert_eq!(reply.returned_length, 0);
+}
+
+fn exercise_console(startup: &program_descriptor, scratch: &mut [u8]) {
+    let address = scratch.as_ptr() as u64;
+    let Some(handle) = startup.console() else {
+        // The previous incarnation's valid number must confer no authority.
+        for handle in [0x62, 0] {
+            refused(handle, address, 1, 1, program_status::denied);
+        }
+        return;
+    };
+    let raw = handle.raw();
+    for (channel, pointer, length, sequence, status) in [
+        (0, address, 1, 1, program_status::denied),
+        (
+            startup.edition_handle(),
+            address,
+            1,
+            1,
+            program_status::denied,
+        ),
+        (raw ^ 1, address, 1, 1, program_status::denied),
+        (raw, address, 1, 0, program_status::invalid),
+        (raw, address, 1, 2, program_status::invalid),
+        (raw, address, 0, 1, program_status::invalid),
+        (
+            raw,
+            address,
+            maximum_write_bytes + 1,
+            1,
+            program_status::invalid,
+        ),
+        (raw, u64::MAX, 4, 1, program_status::bad_address),
+        (
+            raw,
+            startup.arena_base() + startup.arena_length() - 1,
+            2,
+            1,
+            program_status::bad_address,
+        ),
+        (raw, 0x400000, 1, 1, program_status::bad_address),
+    ] {
+        refused(channel, pointer, length, sequence, status);
+    }
+    for (word, length) in [(0xff_u16, 1), (0x1b, 1), (0x9bc2, 2)] {
+        scratch[..length].copy_from_slice(&word.to_le_bytes()[..length]);
+        refused(raw, address, length, 1, program_status::invalid);
+    }
+    let mut writer = console_writer::new(handle, native_console { scratch }).unwrap();
+    writer
+        .write("Native console: ready — ✓\n".as_bytes())
+        .unwrap();
+    assert_eq!(writer.written(), 1);
+    // A replay cannot republish the first line or consume sequence two.
+    refused(raw, address, 30, 1, program_status::invalid);
+    writer.write(b"Native console: reply checked\n").unwrap();
+    assert_eq!(writer.written(), 2);
 }
 
 /// What this task may reach, as the launch stated it.
@@ -139,8 +224,7 @@ extern "C" fn anomalous_native_program_client_run(pointer: *const u8, length: us
             startup.arena_length() as usize,
         )
     };
-    // Observe every byte before writing one. A launch that reused a previous
-    // task's arena would show here, and nowhere else.
+    // The complete arena is fresh; no edition is mapped by this profile.
     for byte in storage.iter() {
         // SAFETY: Complete retained readable arena; volatile prevents elision.
         assert_eq!(unsafe { ptr::read_volatile(byte) }, 0);
@@ -153,6 +237,12 @@ extern "C" fn anomalous_native_program_client_run(pointer: *const u8, length: us
         startup.arena_base() + proof_offset as u64
     );
     record_grant(&startup, console, record);
+
+    exercise_console(
+        &startup,
+        &mut storage[console_buffer_offset..console_buffer_offset + maximum_write_bytes],
+    );
+
     exit();
 }
 

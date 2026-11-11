@@ -51,6 +51,25 @@ pub trait console_transport {
     fn write(&mut self, channel: u64, bytes: &[u8], sequence: u64) -> Result<usize, console_error>;
 }
 
+/// Validate a whole console payload without publishing bytes or granting any
+/// authority. The service must repeat this check on its own copied bytes;
+/// validation by the calling task is not a privileged admission decision.
+pub fn validate_console_text(bytes: &[u8]) -> Result<&str, console_error> {
+    if bytes.is_empty() {
+        return Err(console_error::empty);
+    }
+    if bytes.len() > maximum_write_bytes {
+        return Err(console_error::length);
+    }
+    // Decode first: UTF-8 continuation bytes overlap the byte values used by
+    // C1 controls, whereas the policy concerns decoded characters.
+    let text = core::str::from_utf8(bytes).map_err(|_| console_error::encoding)?;
+    if text.chars().any(is_control) {
+        return Err(console_error::control);
+    }
+    Ok(text)
+}
+
 pub struct console_writer<transport: console_transport> {
     handle: granted_handle,
     pub(crate) transport: transport,
@@ -90,25 +109,7 @@ impl<transport: console_transport> console_writer<transport> {
     /// write, and silently losing a tail is the failure this would exist to
     /// prevent.
     pub fn write(&mut self, text: &[u8]) -> Result<(), console_error> {
-        if text.is_empty() {
-            return Err(console_error::empty);
-        }
-        if text.len() > maximum_write_bytes {
-            return Err(console_error::length);
-        }
-        // Encoding is settled before control characters are looked for, and
-        // the order is not cosmetic. A UTF-8 continuation byte is 0x80..=0xbf,
-        // which overlaps the C1 range exactly, so a raw-byte scan rejects every
-        // multi-byte character -- an em dash reads as an escape. Decode first,
-        // then judge characters.
-        let text = match core::str::from_utf8(text) {
-            Ok(text) => text,
-            Err(_) => return Err(console_error::encoding),
-        };
-        if text.chars().any(is_control) {
-            return Err(console_error::control);
-        }
-        let text = text.as_bytes();
+        let text = validate_console_text(text)?.as_bytes();
         match self.transport.write(self.handle.raw(), text, self.sequence) {
             Ok(written) if written == text.len() => {
                 self.sequence += 1;
@@ -176,6 +177,31 @@ mod tests {
         .expect("a launch that grants a console")
         .console()
         .expect("console_write was granted")
+    }
+
+    #[test]
+    fn shared_validation_checks_decoded_controls_without_changing_text() {
+        assert_eq!(validate_console_text(b""), Err(console_error::empty));
+        assert_eq!(
+            validate_console_text(&[b'a'; maximum_write_bytes + 1]),
+            Err(console_error::length)
+        );
+        assert_eq!(validate_console_text(b"\xff"), Err(console_error::encoding));
+        for value in 0..=0x9f {
+            let character = char::from_u32(value).unwrap();
+            let mut encoded = [0; 4];
+            let text = character.encode_utf8(&mut encoded);
+            let expected = if character.is_control() && !matches!(character, '\n' | '\t') {
+                Err(console_error::control)
+            } else {
+                Ok(&*text)
+            };
+            assert_eq!(validate_console_text(text.as_bytes()), expected);
+        }
+        let text = "héllo — ok\n\t";
+        let validated = validate_console_text(text.as_bytes()).unwrap();
+        assert_eq!(validated, text);
+        assert_eq!(validated.as_ptr(), text.as_ptr());
     }
 
     #[test]

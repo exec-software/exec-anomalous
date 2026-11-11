@@ -1,12 +1,30 @@
 ---
 title: "Anomalous — Current State"
-date: 2026-10-15
+date: 2026-11-11
 tags: [status, milestone, boot, kernel, memory, interrupts, input, shell, session, display, desktop, privacy, waiting, circle, ring3, scheduler, supervision, rites, x86-64]
 status: active
 domain: foundations
 ---
 
 # Anomalous — Current State
+
+## Current native ABI increment — program console transport
+
+Proposed [ADR 0100](../../docs/adr/0100-qualify-native-program-console-transport.md)
+connects the ANPG console grant to a service bound to the live task, with checked
+owned-memory copying, whole UTF-8 validation and committed sequence/length
+replies. The fixture verifies two writes totaling 60 bytes, sixteen rejected
+requests, and complete cleanup across two arena bases. All 27 final jobs passed
+on 503 unchanged source files, including 96/320 MiB runs under TCG/Nehalem and
+AMD KVM/host with the same image. Exact results and failed attempts are in the
+[Native Program Console Log](../Development/2026-11-11%20Native%20Program%20Console%20Log.md).
+No edition is mapped or executed. Bounded edition delivery, semantic-manifest
+admission and the selected Rust interpreter's corpus qualification remain next;
+Linux's live source-backed RX replacement remains a separate execution gate.
+The re-pinned Linux inputs now reach sequence-12
+`mmap(0x100028000, 0x189000, 5, 0x812, 3, 0x28000)` after eleven returns. That
+interpreter request is observed but unanswered; main entry and Linux exit remain
+unproved.
 
 ## Selected next major slice — existing Linux Antimatter through the Linux veil
 
@@ -381,10 +399,12 @@ scopes, with no overlap or observed per-scope OOM delta. Soft-limit reclaim
 occurred during `make check` without a hard-cap event; the two recorded host
 boots do not establish absence of intervening host OOMs.
 
-The caller is suspended at sequence 12 after eleven Linux returns. Its observed
-request is `mmap(0x100028000, 0x198000, 5, 0x812, 3, 0x28000)`, requesting a
+At that historical checkpoint, the caller was suspended at sequence 12 after
+eleven Linux returns. Its observed request was
+`mmap(0x100028000, 0x198000, 5, 0x812, 3, 0x28000)`, requesting a
 fixed private read/execute mapping over part of the retained libc range. No
-policy is applied to that request. The normal and workspace-development images
+policy was applied to that request. The current re-pinned length is recorded at
+the top of this note. The normal and workspace-development images
 remain byte-identical; three other development images have broad kernel changes.
 Explicit source and exact runtime review accept bounded regression coverage,
 without a metadata-only, binary-equivalence or inherited stack-bound claim.

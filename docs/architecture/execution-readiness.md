@@ -1,5 +1,44 @@
 # Native execution and compatibility readiness
 
+## Native program console increment (2026-11-11)
+
+Proposed [ADR 0100](../adr/0100-qualify-native-program-console-transport.md)
+connects the ANPG console grant to a bounded `int 0xf4` service. The retained
+live task/handle binding admits a complete owned-memory copy, validates UTF-8
+and control characters, and commits sequence/length only after synchronous
+publication. Rejections preserve output and sequence; exit revokes the binding.
+The native fixture verifies two exact messages totaling 60 bytes, sixteen
+rejected requests across two arena bases, checked application replies and full
+cleanup. All 27 final jobs passed on 503 unchanged source files, including the
+96 MiB and 320 MiB proofs under TCG/Nehalem and AMD KVM/host with an identical
+image. Exact evidence and failed attempts are recorded in the
+[Native Program Console Log](../../notebook/Development/2026-11-11%20Native%20Program%20Console%20Log.md).
+The isolated change is based on upstream `main` at `87e365d`, retaining the
+existing Ny input, visible-failure and address-space-yield work together with
+the Linux loader-input re-pin. Qualification covers that combined baseline;
+the earlier development-checkout proof remains separate preliminary evidence.
+
+No edition is mapped or executed by this proof. The
+[Runtime Owner Reply](../../notebook/Development/2026-10-15%20NIL%20Runtime%20into%20Anomalous%20%E2%80%94%20Runtime%20Owner%20Reply.md)
+selects a bounded Rust interpreter with differential corpus qualification.
+Bounded file-backed edition delivery and ADR 0093's semantic-manifest admission
+remain open. The pre-existing handwritten interpreter is preserved unlinked;
+its permissive parsing does not establish application readiness. The service is
+experimental and does not stabilize the native application ABI.
+
+Fresh Linux qualification reaches sequence-12
+`mmap(0x100028000, 0x189000, 5, 0x812, 3, 0x28000)` at both RAM sizes, after
+eleven returns. This is an unanswered interpreter request, before main entry;
+the historical length was `0x198000` before the package re-pin.
+[ADR 0098](../adr/0098-model-source-backed-executable-replacement.md) adds a
+host-only permission model. Live retained replacement for the current request,
+hardware execution and protection evidence, and an authenticated reply are
+still required. The native ANEL ELF route and Linux image planning are
+implemented subsets, while dynamic linking, main executable entry and Linux
+exit remain separate gates.
+
+## Existing Linux execution evidence
+
 Current product direction (2026-10-07):
 [ADR 0073](../adr/0073-run-linux-antimatter-through-the-linux-veil.md) selects the
 existing Linux Antimatter build through the Linux veil. No native Antimatter
@@ -330,7 +369,9 @@ The [Mapping Publication Log](../../notebook/Development/2026-10-15%20Mapping%20
 records the source, emitted review, physical evidence and current baseline image
 comparison, including its runtime coverage limits.
 
-The caller remains suspended at sequence 11 after ten Linux returns. The
+At that historical publication checkpoint, the caller remained suspended at
+sequence 11 after ten Linux returns. ADR 0097 and the current checkpoint above
+subsequently qualify the first mmap return and the next request. The
 read-only, non-executable candidate is never selected as a running caller
 mapping. This slice adds no post-publication guest fault injection and proves
 no Linux mmap return, main `true` entry, dynamic linking, Linux exit or Antimatter

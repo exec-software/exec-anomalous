@@ -1,5 +1,5 @@
 //! Strict oracle for a program-bearing launch: one task, a 64 KiB arena, and
-//! an `ANPG` grant restated from inside it.
+//! an `ANPG` grant restated from inside it and a bounded console service.
 //!
 //! No framebuffer capture, deliberately. This proof's evidence is entirely in
 //! its serial transcript -- the kernel withdraws the aperture and presents
@@ -16,6 +16,10 @@ const arena_bytes: u64 = 64 * 1024;
 const descriptor_bytes: u64 = 256;
 /// `console_write`, the only service either scenario names.
 const console_write: u64 = 1;
+/// Exact independently specified UTF-8 output, each terminated by one LF.
+const console_lines: [&str; 2] = ["Native console: ready — ✓", "Native console: reply checked"];
+const console_bytes: u64 =
+    (console_lines[0].len() + console_lines[1].len() + console_lines.len()) as u64;
 const expected_events: [&str; 12] = [
     "boot.kernel.enter",
     "kernel.fault_path.ready",
@@ -40,6 +44,7 @@ pub(super) fn selected(features: &[&str]) -> bool {
                     | "circle_test"
                     | "control_test"
                     | "rite_test"
+                    | "ny_vessel_test"
                     | "memory_test"
                     | "interrupt_test"
                     | "supervision_test"
@@ -92,7 +97,7 @@ pub(super) fn smoke() -> Result<(), String> {
     let large = run_size(&image.path, "320M", &logs[1])?;
     verify_size_evidence(small, large)?;
     println!(
-        "program launch proved an ANPG grant restated from a private 64 KiB arena at both admitted bases, with no edition executed and no console transport, at 96M and 320M (free frames: {} -> {})",
+        "program launch proved an ANPG grant restated from a private 64 KiB arena at both admitted bases, with exact UTF-8 console output, checked replies, rejected invalid requests and no edition execution, at 96M and 320M (free frames: {} -> {})",
         small.free_frames, large.free_frames
     );
     Ok(())
@@ -126,6 +131,9 @@ pub(super) fn verify_absent(symbols: &str, bytes: &[u8]) -> Result<(), String> {
     for marker in [
         "native_program_test",
         "native_program_profile",
+        "program_console",
+        "Native console: ready",
+        "Native console: reply checked",
         "anomalous_native_program_client",
         "x86_64_native_program",
     ] {
@@ -157,18 +165,44 @@ pub(super) fn verify_transcript(transcript: &str) -> Result<(), String> {
     verify_records(transcript).map(|_| ())
 }
 
+fn record_event(
+    record: structured_record,
+    records: &mut Vec<structured_record>,
+) -> Result<(), String> {
+    let event = expected_events
+        .get(records.len())
+        .ok_or("program launch transcript contains extra records")?;
+    require_string(&record, event, "event", event)?;
+    require_string(&record, event, "level", "info")?;
+    require_number(&record, event, "schema", 1)?;
+    records.push(record);
+    Ok(())
+}
+
 fn verify_records(transcript: &str) -> Result<run_evidence, String> {
     let mut records = Vec::new();
-    for (index, line) in transcript.lines().enumerate() {
-        let line = line.trim();
+    let mut console_count = 0;
+    for (index, raw_line) in transcript.lines().enumerate() {
+        let line = raw_line.trim();
         if line.is_empty() {
-            continue;
+            return Err("program launch has an unexpected empty serial line".into());
         }
         if !line.starts_with('{') {
-            return Err(format!(
-                "program launch has unstructured serial line {}",
-                index + 1
-            ));
+            // Scenarios execute after the eight boot records and before their
+            // evidence is reported. Text is exact UTF-8; only the line-ending
+            // normalization performed by str::lines is allowed. In particular,
+            // trimming must not hide additional bytes emitted by the console.
+            if records.len() != 8 || console_lines.get(console_count) != Some(&raw_line) {
+                return Err(format!(
+                    "program launch has unexpected console text at serial line {}",
+                    index + 1
+                ));
+            }
+            console_count += 1;
+            continue;
+        }
+        if records.len() == 8 && console_count != console_lines.len() {
+            return Err("program launch is missing its exact console output".into());
         }
         let record = json_parser::new(line).parse_record().map_err(|error| {
             format!(
@@ -176,13 +210,7 @@ fn verify_records(transcript: &str) -> Result<run_evidence, String> {
                 index + 1
             )
         })?;
-        let event = expected_events
-            .get(records.len())
-            .ok_or("program launch transcript contains extra records")?;
-        require_string(&record, event, "event", event)?;
-        require_string(&record, event, "level", "info")?;
-        require_number(&record, event, "schema", 1)?;
-        records.push(record);
+        record_event(record, &mut records)?;
     }
     if records.len() != expected_events.len() {
         return Err("program launch transcript is missing lifecycle records".into());
@@ -238,11 +266,10 @@ fn verify_records(transcript: &str) -> Result<run_evidence, String> {
     {
         return Err("program launch requires an admitted CPU vendor".into());
     }
-    // Both false, and required to be stated. An interpreter and a console
-    // transport are the next two pieces of work; until they exist this proof
-    // must say so in its own evidence rather than leave it to a reader.
+    // This proof exercises the granted console service. The edition metadata
+    // remains inert: no edition is mapped or interpreted by this fixture.
     require_bool(&records[8], expected_events[8], "edition_mapped", false)?;
-    require_bool(&records[8], expected_events[8], "console_transport", false)?;
+    require_bool(&records[8], expected_events[8], "console_transport", true)?;
     for scenario in 0..2 {
         verify_scenario(
             &records[9 + scenario],
@@ -260,6 +287,10 @@ fn verify_records(transcript: &str) -> Result<run_evidence, String> {
             "zeroed_bytes",
             "grants_restated",
             "editions_executed",
+            "console_writes",
+            "console_rejected",
+            "console_bytes",
+            "console_verified",
             "resources_restored",
             "authority_revoked",
             "source_language",
@@ -271,10 +302,14 @@ fn verify_records(transcript: &str) -> Result<run_evidence, String> {
         ("arena_bytes", arena_bytes),
         ("zeroed_bytes", 2 * arena_bytes),
         ("editions_executed", 0),
+        ("console_writes", 2),
+        ("console_rejected", 16),
+        ("console_bytes", console_bytes),
     ] {
         require_number(&records[11], expected_events[11], field, value)?;
     }
     require_bool(&records[11], expected_events[11], "grants_restated", true)?;
+    require_bool(&records[11], expected_events[11], "console_verified", true)?;
     require_bool(
         &records[11],
         expected_events[11],
@@ -294,16 +329,22 @@ fn verify_records(transcript: &str) -> Result<run_evidence, String> {
 ///
 /// Scenario 0 grants a console handle paired with `console_write` and twelve
 /// argument bytes; scenario 1 grants nothing and passes no arguments, so the
-/// console pairing is proved in both directions. Exactly two gate calls in
-/// each -- startup and exit -- because this gate admits nothing else yet, and
-/// a third call would mean the task reached for something.
+/// console pairing is proved in both directions. Scenario 0 commits two writes
+/// and rejects fourteen malformed or unauthorized requests; scenario 1 rejects
+/// both requests without a grant. Neither executes an edition.
+/// `console_transport` is `true` only where the grant was present.
 fn verify_scenario(record: &structured_record, event: &str, scenario: usize) -> Result<(), String> {
     let console = scenario == 0;
     let numbers = [
         ("scenario", scenario as u64),
         ("arena_base", arena_bases[scenario]),
         ("zeroed_bytes", arena_bytes),
-        ("calls", 2),
+        ("calls", if console { 18 } else { 4 }),
+        ("console_attempts", if console { 16 } else { 2 }),
+        ("console_writes", if console { 2 } else { 0 }),
+        ("console_rejected", if console { 14 } else { 2 }),
+        ("console_bytes", if console { console_bytes } else { 0 }),
+        ("console_last_sequence", if console { 2 } else { 0 }),
         ("invalid", 0),
         ("exits", 1),
         ("granted_services", if console { console_write } else { 0 }),
@@ -312,11 +353,12 @@ fn verify_scenario(record: &structured_record, event: &str, scenario: usize) -> 
         ("edition_bytes", if console { 4096 } else { 64 }),
     ];
     let mut fields = numbers.iter().map(|(f, _)| *f).collect::<Vec<_>>();
-    fields.extend(["timer_ticks", "grant_restated"]);
+    fields.extend(["timer_ticks", "grant_restated", "console_transport"]);
     require_control_header(record, event, &fields)?;
     for (field, value) in numbers {
         require_number(record, event, field, value)?;
     }
+    require_bool(record, event, "console_transport", console)?;
     if required_number(record, event, "timer_ticks")? > 10_000 {
         return Err("program launch timer bound exceeded".into());
     }
@@ -359,20 +401,23 @@ mod tests {
             r#"{"schema":1,"event":"boot.ready","level":"info","control_abi":"0.1","framebuffer":true}"#.to_owned(),
             r#"{"schema":1,"event":"kernel.interrupts.ready","level":"info","backend":"legacy_pc","vector_base":32,"vector_count":16,"pit_input_hz":1193182,"pit_divisor":11932,"timebase_generation":1,"initial_master_mask":255,"initial_slave_mask":255,"master_mask":252,"slave_mask":255,"input_available":true,"input_source_generation":1,"input_queue_capacity":64,"nmi_masked":true,"if_enabled":true}"#.to_owned(),
         ];
+        // Independently recorded expected output, before the proof records.
+        lines.push("Native console: ready — ✓".to_owned());
+        lines.push("Native console: reply checked".to_owned());
         lines.push(
-            r#"{"schema":1,"event":"kernel.native_program_test.ready","level":"info","vendor":"GenuineIntel","tasks":1,"scenarios":2,"code_pages":1,"descriptor_bytes":256,"arena_bytes":65536,"mappings":4,"data_frames":25,"table_frames":9,"leases":6,"free_frames":20000,"edition_mapped":false,"console_transport":false}"#
+            r#"{"schema":1,"event":"kernel.native_program_test.ready","level":"info","vendor":"GenuineIntel","tasks":1,"scenarios":2,"code_pages":1,"descriptor_bytes":256,"arena_bytes":65536,"mappings":4,"data_frames":25,"table_frames":9,"leases":6,"free_frames":20000,"edition_mapped":false,"console_transport":true}"#
                 .to_owned(),
         );
         lines.push(
-            r#"{"schema":1,"event":"kernel.native_program_test.scenario","level":"info","scenario":0,"arena_base":8404992,"zeroed_bytes":65536,"calls":2,"timer_ticks":3,"invalid":0,"exits":1,"granted_services":1,"console_granted":1,"argument_bytes":12,"edition_bytes":4096,"grant_restated":true}"#
+            r#"{"schema":1,"event":"kernel.native_program_test.scenario","level":"info","scenario":0,"arena_base":8404992,"zeroed_bytes":65536,"calls":18,"console_attempts":16,"console_writes":2,"console_rejected":14,"console_bytes":60,"console_last_sequence":2,"timer_ticks":3,"invalid":0,"exits":1,"granted_services":1,"console_granted":1,"console_transport":true,"argument_bytes":12,"edition_bytes":4096,"grant_restated":true}"#
                 .to_owned(),
         );
         lines.push(
-            r#"{"schema":1,"event":"kernel.native_program_test.scenario","level":"info","scenario":1,"arena_base":8486912,"zeroed_bytes":65536,"calls":2,"timer_ticks":0,"invalid":0,"exits":1,"granted_services":0,"console_granted":0,"argument_bytes":0,"edition_bytes":64,"grant_restated":true}"#
+            r#"{"schema":1,"event":"kernel.native_program_test.scenario","level":"info","scenario":1,"arena_base":8486912,"zeroed_bytes":65536,"calls":4,"console_attempts":2,"console_writes":0,"console_rejected":2,"console_bytes":0,"console_last_sequence":0,"timer_ticks":0,"invalid":0,"exits":1,"granted_services":0,"console_granted":0,"console_transport":false,"argument_bytes":0,"edition_bytes":64,"grant_restated":true}"#
                 .to_owned(),
         );
         lines.push(
-            r#"{"schema":1,"event":"kernel.native_program_test.passed","level":"info","program_tasks":2,"descriptor_bytes":256,"arena_bytes":65536,"zeroed_bytes":131072,"grants_restated":true,"editions_executed":0,"resources_restored":true,"authority_revoked":true,"source_language":"rust"}"#
+            r#"{"schema":1,"event":"kernel.native_program_test.passed","level":"info","program_tasks":2,"descriptor_bytes":256,"arena_bytes":65536,"zeroed_bytes":131072,"grants_restated":true,"editions_executed":0,"console_writes":2,"console_rejected":16,"console_bytes":60,"console_verified":true,"resources_restored":true,"authority_revoked":true,"source_language":"rust"}"#
                 .to_owned(),
         );
         lines.join("\n")
@@ -395,12 +440,26 @@ mod tests {
     }
 
     #[test]
+    fn normal_image_excludes_console_implementation_and_output() {
+        assert!(verify_absent("ordinary_kernel", b"ordinary boot").is_ok());
+        for marker in [
+            "program_console::state::write",
+            "Native console: ready",
+            "Native console: reply checked",
+        ] {
+            assert!(verify_absent(marker, b"").is_err());
+            assert!(verify_absent("", marker.as_bytes()).is_err());
+        }
+    }
+
+    #[test]
     fn program_proof_requires_exact_order_and_complete_records() {
         let valid = valid_transcript();
         verify_transcript(&valid).unwrap();
         verify_transcript(&valid.replace("GenuineIntel", "AuthenticAMD")).unwrap();
         assert!(verify_transcript(&valid.replace("GenuineIntel", "SomeOtherCPU")).is_err());
         let lines = valid.lines().collect::<Vec<_>>();
+        // Console lines are required evidence just like the JSON records.
         for index in 0..lines.len() {
             let mut changed = lines.clone();
             changed.remove(index);
@@ -416,6 +475,58 @@ mod tests {
         }
         assert!(verify_transcript(&format!("{valid}\n{{}}")).is_err());
         assert!(verify_transcript(&format!("{valid}\nnot json")).is_err());
+        assert!(verify_transcript(&format!("\n{valid}")).is_err());
+        assert!(verify_transcript(&format!("{valid}\n\n")).is_err());
+    }
+
+    #[test]
+    fn console_output_requires_exact_utf8_bytes_and_position() {
+        let valid = valid_transcript();
+        assert_eq!(console_bytes, 60);
+        verify_transcript(&valid.replace('\n', "\r\n")).unwrap();
+        for (original, changed) in [
+            ("Native console: ready — ✓", "Native console: ready - v"),
+            ("Native console: ready — ✓", "Native console: ready — �"),
+            ("Native console: ready — ✓", " Native console: ready — ✓"),
+            ("Native console: ready — ✓", "Native console: ready — ✓ "),
+            (
+                "Native console: reply checked",
+                "Native console: reply unchecked",
+            ),
+            (
+                "Native console: reply checked",
+                "Native console: reply checked\nextra",
+            ),
+            (
+                "Native console: reply checked",
+                "Native console: reply checked\n",
+            ),
+            ("Native console: ready — ✓\n", "Native console: ready — ✓"),
+            (
+                "Native console: reply checked\n",
+                "Native console: reply checked",
+            ),
+        ] {
+            assert!(
+                verify_transcript(&valid.replace(original, changed)).is_err(),
+                "accepted console replacement {changed:?}"
+            );
+        }
+        let lines = valid.lines().collect::<Vec<_>>();
+        for source in 8..10 {
+            for destination in 0..lines.len() {
+                if destination == source {
+                    continue;
+                }
+                let mut moved = lines.clone();
+                let line = moved.remove(source);
+                moved.insert(destination, line);
+                assert!(
+                    verify_transcript(&moved.join("\n")).is_err(),
+                    "accepted console line {source} at {destination}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -424,7 +535,9 @@ mod tests {
             .lines()
             .map(str::to_owned)
             .collect::<Vec<_>>();
-        for index in 8..12 {
+        // Lines: 0-7 boot, 8-9 console output, 10 ready, 11-12 scenarios,
+        // 13 passed. Every proof field, including console accounting, is exact.
+        for index in 10..14 {
             let record = json_parser::new(&lines[index]).parse_record().unwrap();
             for (field, value) in &record {
                 for replacement in [
@@ -491,14 +604,16 @@ mod tests {
             .lines()
             .map(str::to_owned)
             .collect::<Vec<_>>();
+        // Lines: 0-7 boot, 8-9 console output, 10 ready, 11-12 scenarios,
+        // 13 passed.
         let mut swapped = lines.clone();
-        swapped.swap(9, 10);
+        swapped.swap(11, 12);
         assert!(verify_transcript(&swapped.join("\n")).is_err());
         let mut repeated = lines.clone();
-        repeated[10] = lines[9].clone();
+        repeated[12] = lines[11].clone();
         assert!(verify_transcript(&repeated.join("\n")).is_err());
         let mut crossed = lines.clone();
-        crossed[9] = lines[9].replace("8404992", "8486912");
+        crossed[11] = lines[11].replace("8404992", "8486912");
         assert!(verify_transcript(&crossed.join("\n")).is_err());
     }
 
@@ -508,8 +623,9 @@ mod tests {
             .lines()
             .map(str::to_owned)
             .collect::<Vec<_>>();
+        // Line 10 is the ready record, after both required console lines.
         let mut disagreeing = lines.clone();
-        disagreeing[8] = lines[8].replace("\"free_frames\":20000", "\"free_frames\":19999");
+        disagreeing[10] = lines[10].replace("\"free_frames\":20000", "\"free_frames\":19999");
         assert!(verify_transcript(&disagreeing.join("\n")).is_err());
     }
 
@@ -522,6 +638,7 @@ mod tests {
             "elf_application_test",
             "mixed_workspace_test",
             "ny_object_test",
+            "ny_vessel_test",
             "linux_application_test",
             "desktop_dev",
         ] {
