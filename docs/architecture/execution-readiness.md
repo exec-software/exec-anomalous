@@ -1,6 +1,35 @@
 # Native execution and compatibility readiness
 
-## Qualified host program-manifest admission (2026-11-11)
+## Qualified native compiler-to-manifest admission (2026-11-11)
+
+Accepted [ADR 0103](../adr/0103-admit-compiler-produced-manifests-in-a-native-loader.md)
+connects complete compiler output to manifest admission in ring 3. An explicit
+compiler option preserves authored context while omitting generated external
+registration. The loader reads an immutable package, rederives identity, intent
+and authority, and applies an explicit workload ceiling. Bootstrap delivery
+grants and diagnostic reports do not become workload authority.
+
+All 24 final qualification jobs passed on 624 unchanged source files. The same
+image passed TCG and AMD KVM at 96/320 MiB: four admissions, six semantic refusals,
+twelve reads and one witness-gated loader marker per boot, with complete cleanup.
+Three provisioning refusals per backend also passed. The existing delivery
+profile passed fresh TCG/KVM regressions, and Linux remains at its unanswered
+sequence-12 mmap boundary. Eight focused compiler tests passed.
+
+The measured 18,874-byte loader uses five RX pages, a 128 KiB arena and a guarded
+32 KiB stack. The reviewed stack sum is 13,424 bytes for this exact artifact.
+The kernel shares the qualified ownership/delivery lifecycle and does not parse
+NIL. No NIL edition executes yet; interpreter corpus qualification and mediated
+execution are next. The
+[Native Manifest Loader Log](../../notebook/Development/2026-11-11%20Native%20Manifest%20Loader%20Log.md)
+records artifact identities, limitations and retained attempts.
+
+Reproduce the retained proof with `make native-manifest-smoke`.
+`make native-manifest-image` builds its inspected image and external packages;
+`make native-manifest-inspect` inspects the loader artifact. The installed SDK
+is unchanged; fixture provenance identifies the separately qualified compiler.
+
+## Previous host program-manifest admission (2026-11-11)
 
 Accepted [ADR 0102](../adr/0102-admit-bounded-program-semantic-manifests.md)
 implements a shared `no_std` derivation and admission component with host
@@ -23,9 +52,9 @@ records the separate evidence.
 
 Positive fixtures are hand-authored NIL checked by the SDK context inspector.
 Complete compiler outputs remain negative fixtures because their external
-`nilaix` registration helper is outside the admitted profile. The bridge from
-compiler output to admission, native loader integration and bounded Rust
-interpreter corpus qualification remain open. This increment executes no edition and changes no
+`nilaix` registration helper is outside the admitted profile. That checkpoint left compiler integration, native admission and interpreter
+qualification open. ADR 0103 above now supplies the bounded compiler bridge and
+native admission; interpreter corpus qualification remains next. This increment executes no edition and changes no
 Linux execution boundary or stable public ABI.
 
 ## Qualified native program edition reads (2026-11-11)

@@ -67,7 +67,11 @@ pub(super) struct loader_mapping_observation {
     pub cleanup_retries: u64,
 }
 
-#[cfg(any(feature = "native_program_test", feature = "linux_loader_entry_test"))]
+#[cfg(any(
+    feature = "native_program_test",
+    feature = "native_manifest_test",
+    feature = "linux_loader_entry_test"
+))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum source_read_error {
     owner_unavailable,
@@ -286,7 +290,10 @@ impl<const task_count: usize> owned_execution_group<task_count> {
     // Unused in a program build, which prepares one task against the program
     // profile instead. Kept rather than gated: the two entry points differ by
     // their profile and task count, and this one stays the native proof's.
-    #[cfg_attr(feature = "native_program_test", allow(dead_code))]
+    #[cfg_attr(
+        any(feature = "native_program_test", feature = "native_manifest_test"),
+        allow(dead_code)
+    )]
     pub(super) unsafe fn prepare_native_arenas(
         &mut self,
         allocator: &mut frame_allocator<'_>,
@@ -323,6 +330,9 @@ impl<const task_count: usize> owned_execution_group<task_count> {
     /// rather than a relaxation of that one, so admitting it here cannot widen
     /// what the native path accepts.
     #[cfg(feature = "native_program_test")]
+    // Combined feature builds select the separate manifest controller while
+    // retaining this unchanged entry point for the delivery profile.
+    #[cfg_attr(feature = "native_manifest_test", allow(dead_code))]
     pub(super) unsafe fn prepare_program_arena(
         &mut self,
         allocator: &mut frame_allocator<'_>,
@@ -347,6 +357,40 @@ impl<const task_count: usize> owned_execution_group<task_count> {
                     [user_stack_top; task_count],
                 ),
                 Some(([arena_base; task_count], arena_profile::program)),
+            )
+        }
+    }
+
+    /// Prepare the independently bounded manifest-admission loader.
+    ///
+    /// # Safety
+    /// Same exclusive bootstrap, immutable payload and retained-owner contract
+    /// as `prepare_program_arena`. The controller selects this named geometry;
+    /// no package, descriptor or caller-selected size can widen another profile.
+    #[cfg(feature = "native_manifest_test")]
+    pub(super) unsafe fn prepare_manifest_arena(
+        &mut self,
+        allocator: &mut frame_allocator<'_>,
+        circles: &mut circle_table,
+        payload: (u64, u64),
+        arena_base: u64,
+    ) -> Result<(), &'static str> {
+        if task_count != 1 || !arena_profile::manifest_loader.admits_base(arena_base) {
+            return Err("owned_manifest_profile");
+        }
+        // SAFETY: The exact four-region profile and single task are selected
+        // before any mapping, alias or execution consumer is published.
+        unsafe {
+            self.prepare_profile(
+                allocator,
+                circles,
+                [payload; task_count],
+                [(0, 0); task_count],
+                (
+                    arena_profile::manifest_loader.code_pages(),
+                    [user_stack_top; task_count],
+                ),
+                Some(([arena_base; task_count], arena_profile::manifest_loader)),
             )
         }
     }
@@ -376,16 +420,22 @@ impl<const task_count: usize> owned_execution_group<task_count> {
         let program_profile = matches!(arena, Some((_, arena_profile::program)));
         #[cfg(not(feature = "native_program_test"))]
         let program_profile = false;
-        // ADR 0101's second code page is available only through this exact
-        // single-task program selection, never through the legacy size API.
+        #[cfg(feature = "native_manifest_test")]
+        let manifest_profile = matches!(arena, Some((_, arena_profile::manifest_loader)));
+        #[cfg(not(feature = "native_manifest_test"))]
+        let manifest_profile = false;
+        // Exceptional widths and the single-task shape belong to retained
+        // named profiles, never to the generic page-count API or feature alone.
         let code_profile = if program_profile {
             task_count == 1 && code_pages == 2
+        } else if manifest_profile {
+            task_count == 1 && code_pages == 5
         } else {
             matches!(code_pages, 1 | 8)
         };
         if !(matches!(task_count, 2 | 3)
             || (cfg!(feature = "shared_veil_test") && task_count == 5)
-            || (cfg!(feature = "native_program_test") && task_count == 1 && program_profile))
+            || (task_count == 1 && (program_profile || manifest_profile)))
             || !code_profile
         {
             return Err("owned_code_profile");
@@ -909,6 +959,7 @@ impl<const task_count: usize> owned_execution_group<task_count> {
     /// copy_to_user; this check is not a transferable permission token.
     #[cfg(any(
         feature = "native_program_test",
+        feature = "native_manifest_test",
         feature = "native_durable_test",
         feature = "native_editor_workspace_test",
         feature = "linux_loader_entry_test"
@@ -3377,7 +3428,11 @@ impl<const task_count: usize> owned_execution_group<task_count> {
     }
 }
 
-#[cfg(any(feature = "native_program_test", feature = "linux_loader_entry_test"))]
+#[cfg(any(
+    feature = "native_program_test",
+    feature = "native_manifest_test",
+    feature = "linux_loader_entry_test"
+))]
 impl<const task_count: usize> owned_execution_group<task_count> {
     /// Read a bounded sealed-source chunk through this execution owner's
     /// already-live physical alias. This does not select a source grant,

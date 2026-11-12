@@ -1,0 +1,58 @@
+{
+  "compiler_commit": "4dad0512dfd3fa4e351f2816196cb48956f5442e",
+  "compiler_base": "9fb6c04ad7a8f5a0c65128daa48945fc84839aa6",
+  "compiler_sha256": "120f9db7c2ddebf6f91a80576da84d15c47109bbee54105fb16b85d62b4a1ed0",
+  "options": [
+    "--quiet",
+    "--no-stdlib",
+    "--no-bundle",
+    "--no-context-registration"
+  ],
+  "editions": [
+    {
+      "name": "arithmetic",
+      "command": [
+        "/home/nathan/Documents/Codex/2026-09-26/l/work/nil-context-registration/build/context-registration/bin/nilcompiler",
+        "--quiet",
+        "--no-stdlib",
+        "--no-bundle",
+        "--no-context-registration",
+        "-o",
+        "/home/nathan/Documents/Codex/2026-09-26/l/work/anomalous-program-console/crates/anomalous-program-manifest/fixtures/native/arithmetic.nil",
+        "/home/nathan/Documents/Codex/2026-09-26/l/work/anomalous-program-console/crates/anomalous-program-manifest/fixtures/native/arithmetic.ny"
+      ],
+      "sha256": "b015b6d807ab0b01821364d3d71bbe1d38dacdb073910dcba42f41c91ee86b63",
+      "bytes": 636
+    },
+    {
+      "name": "console",
+      "command": [
+        "/home/nathan/Documents/Codex/2026-09-26/l/work/nil-context-registration/build/context-registration/bin/nilcompiler",
+        "--quiet",
+        "--no-stdlib",
+        "--no-bundle",
+        "--no-context-registration",
+        "-o",
+        "/home/nathan/Documents/Codex/2026-09-26/l/work/anomalous-program-console/crates/anomalous-program-manifest/fixtures/native/console.nil",
+        "/home/nathan/Documents/Codex/2026-09-26/l/work/anomalous-program-console/crates/anomalous-program-manifest/fixtures/native/console.ny"
+      ],
+      "sha256": "7dd9640422d35d31386b72393162ce4d08451956384d624b53b34714fe4a051f",
+      "bytes": 379
+    },
+    {
+      "name": "large",
+      "command": [
+        "/home/nathan/Documents/Codex/2026-09-26/l/work/nil-context-registration/build/context-registration/bin/nilcompiler",
+        "--quiet",
+        "--no-stdlib",
+        "--no-bundle",
+        "--no-context-registration",
+        "-o",
+        "/home/nathan/Documents/Codex/2026-09-26/l/work/anomalous-program-console/crates/anomalous-program-manifest/fixtures/native/large.nil",
+        "/home/nathan/Documents/Codex/2026-09-26/l/work/anomalous-program-console/crates/anomalous-program-manifest/fixtures/native/large.ny"
+      ],
+      "sha256": "184a478dec89d4d096610b49f6fa6d5c3be0917a490a8e369678605ea4b19994",
+      "bytes": 8261
+    }
+  ]
+}

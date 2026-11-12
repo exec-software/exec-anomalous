@@ -42,6 +42,8 @@ mod native_durable_failure_smoke;
 mod native_durable_smoke;
 mod native_editor_workspace;
 mod native_interactive_smoke;
+mod native_manifest_artifact;
+mod native_manifest_smoke;
 mod native_program_artifact;
 mod native_program_smoke;
 mod native_relaunch_artifact;
@@ -824,6 +826,7 @@ const all_kernel_features: &[&str] = &[
     ny_object_smoke::feature,
     native_application_smoke::feature,
     native_runtime_smoke::feature,
+    native_manifest_smoke::feature,
     native_program_smoke::feature,
     native_durable_smoke::feature,
     native_durable_failure_smoke::feature,
@@ -2549,6 +2552,27 @@ fn run() -> Result<(), String> {
             let transcript = fs::read_to_string(path).map_err(|error| error.to_string())?;
             native_runtime_smoke::verify_transcript(&transcript)
         }
+        Some("native-manifest-inspect") => {
+            reject_extra_arguments(arguments)?;
+            let root = repository_root()?;
+            native_manifest_artifact::package_image(&root, &root.join("build")).map(|_| ())
+        }
+        Some("build-native-manifest" | "native-manifest-image") => {
+            reject_extra_arguments(arguments)?;
+            native_manifest_smoke::build().map(|_| ())
+        }
+        Some("smoke-native-manifest" | "native-manifest-smoke") => {
+            reject_extra_arguments(arguments)?;
+            native_manifest_smoke::smoke()
+        }
+        Some("verify-native-manifest-log" | "verify-native-manifest-transcript") => {
+            let path = arguments
+                .next()
+                .ok_or("verify-native-manifest-log requires one log path")?;
+            reject_extra_arguments(arguments)?;
+            let transcript = fs::read_to_string(path).map_err(|error| error.to_string())?;
+            native_manifest_smoke::verify_transcript(&transcript)
+        }
         Some("native-program-inspect") => {
             reject_extra_arguments(arguments)?;
             let root = repository_root()?;
@@ -3453,6 +3477,11 @@ fn build_image_with_context(
     } else {
         None
     };
+    let native_manifest_payload = if native_manifest_smoke::selected(kernel_features) {
+        Some(native_manifest_artifact::package_image(&root, &build)?)
+    } else {
+        None
+    };
     let native_program_payload = if native_program_smoke::selected(kernel_features) {
         Some(native_program_artifact::package_image(&root, &build)?)
     } else {
@@ -3553,6 +3582,11 @@ fn build_image_with_context(
                     .map(|artifact| artifact.object.as_path())
             })
             .or_else(|| {
+                native_manifest_payload
+                    .as_ref()
+                    .map(|artifact| artifact.object.as_path())
+            })
+            .or_else(|| {
                 native_program_payload
                     .as_ref()
                     .map(|artifact| artifact.object.as_path())
@@ -3586,6 +3620,7 @@ fn build_image_with_context(
             || native_repeated_smoke::selected(kernel_features)
             || native_interactive_smoke::selected(kernel_features)
             || native_runtime_smoke::selected(kernel_features)
+            || native_manifest_smoke::selected(kernel_features)
             || native_program_smoke::selected(kernel_features)
             || native_document_smoke::selected(kernel_features)
             || elf_document_smoke::selected(kernel_features)
@@ -3634,6 +3669,9 @@ fn build_image_with_context(
     }
     if let Some(artifact) = native_document_payload.as_ref() {
         native_document_artifact::inspect_linked(&root, &kernel_elf, artifact)?;
+    }
+    if let Some(artifact) = native_manifest_payload.as_ref() {
+        native_manifest_artifact::inspect_linked(&root, &kernel_elf, artifact)?;
     }
     if let Some(artifact) = native_program_payload.as_ref() {
         native_program_artifact::inspect_linked(&root, &kernel_elf, artifact)?;
@@ -3768,6 +3806,8 @@ fn build_image_with_context(
         "elf-application-test.img"
     } else if native_document_smoke::selected(kernel_features) {
         "native-document-test.img"
+    } else if native_manifest_smoke::selected(kernel_features) {
+        "native-manifest-test.img"
     } else if native_program_smoke::selected(kernel_features) {
         "native-program-test.img"
     } else if native_runtime_smoke::selected(kernel_features) {
@@ -6641,6 +6681,8 @@ fn inspect_normal_feature_exclusion(
     ny_object_artifact::verify_absent(&symbol_listing, &bytes)?;
     native_application_artifact::verify_absent(&symbol_listing, &bytes)?;
     native_runtime_artifact::verify_absent(&symbol_listing, &bytes)?;
+    native_manifest_artifact::verify_absent(&symbol_listing, &bytes)?;
+    native_manifest_smoke::verify_absent(&symbol_listing, &bytes)?;
     native_program_artifact::verify_absent(&symbol_listing, &bytes)?;
     native_program_smoke::verify_absent(&symbol_listing, &bytes)?;
     native_durable_artifact::verify_absent(&symbol_listing, &bytes)?;
@@ -19781,6 +19823,7 @@ mod tests {
             ny_object_smoke::feature,
             native_application_smoke::feature,
             native_runtime_smoke::feature,
+            native_manifest_smoke::feature,
             native_program_smoke::feature,
             native_durable_smoke::feature,
             native_durable_failure_smoke::feature,

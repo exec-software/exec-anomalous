@@ -37,6 +37,8 @@ native_application_test = ["application_profile_test"]
 native_runtime_test = ["native_application_test", "dep:anomalous-native-runtime"]
 # A program-bearing task: a single task with a 64 KiB arena (ADR 0094).
 native_program_test = ["native_runtime_test"]
+# A separately measured manifest-admission loader; does not select the delivery client.
+native_manifest_test = ["native_runtime_test"]
 native_durable_test = ["native_document_test"]
 native_repeated_editor_test = ["native_durable_test"]
 native_durable_failure_test = ["native_durable_test"]

@@ -47,6 +47,10 @@ pub(super) const native_arena_bases: [u64; 2] = [0x804000, 0x814000];
 #[cfg(any(test, feature = "native_program_test"))]
 pub(super) const program_arena_bases: [u64; 2] = [0x804000, 0x818000];
 
+/// Separate guarded positions for the manifest loader's 128 KiB arena.
+#[cfg(any(test, feature = "native_manifest_test"))]
+pub(super) const manifest_loader_arena_bases: [u64; 2] = [0x804000, 0x828000];
+
 #[cfg(any(
     test,
     feature = "native_runtime_test",
@@ -75,6 +79,7 @@ pub(super) const program_arena_bases: [u64; 2] = [0x804000, 0x818000];
 #[cfg_attr(
     any(
         feature = "native_program_test",
+        feature = "native_manifest_test",
         not(all(
             feature = "native_runtime_test",
             any(
@@ -104,6 +109,11 @@ pub(super) enum arena_profile {
     /// 0094 states even while no controller selects it.
     #[cfg(any(test, feature = "native_program_test"))]
     program,
+    /// Manifest admission in userspace, separate from the delivery fixture.
+    /// Measured 18,874-byte RX payload fits five pages; arena and stack stay
+    /// explicitly bounded independently of that executable extent.
+    #[cfg(any(test, feature = "native_manifest_test"))]
+    manifest_loader,
 }
 
 #[cfg(any(
@@ -119,6 +129,8 @@ impl arena_profile {
             Self::native_application => 8,
             #[cfg(any(test, feature = "native_program_test"))]
             Self::program => 2,
+            #[cfg(any(test, feature = "native_manifest_test"))]
+            Self::manifest_loader => 5,
         }
     }
 
@@ -128,7 +140,24 @@ impl arena_profile {
             Self::native_application => 8,
             #[cfg(any(test, feature = "native_program_test"))]
             Self::program => 16,
+            #[cfg(any(test, feature = "native_manifest_test"))]
+            Self::manifest_loader => 32,
         }
+    }
+
+    /// The stack is part of the retained named profile, never a user request.
+    pub(super) const fn stack_pages(self) -> u64 {
+        match self {
+            Self::native_application => 2,
+            #[cfg(any(test, feature = "native_program_test"))]
+            Self::program => 2,
+            #[cfg(any(test, feature = "native_manifest_test"))]
+            Self::manifest_loader => 8,
+        }
+    }
+
+    pub(super) const fn stack_base(self) -> u64 {
+        user_stack_top - self.stack_pages() * page_size
     }
 
     pub(super) const fn arena_bytes(self) -> u64 {
@@ -144,6 +173,8 @@ impl arena_profile {
             Self::native_application => native_arena_bases.contains(&base),
             #[cfg(any(test, feature = "native_program_test"))]
             Self::program => program_arena_bases.contains(&base),
+            #[cfg(any(test, feature = "native_manifest_test"))]
+            Self::manifest_loader => manifest_loader_arena_bases.contains(&base),
         }
     }
 
@@ -173,7 +204,7 @@ impl arena_profile {
         else {
             return false;
         };
-        guard_above <= user_stack_base - page_size
+        guard_above <= self.stack_base() - page_size
             && guard_below >= user_data_base + 2 * page_size
             && code_end <= user_data_base
             && end <= user_address_limit
@@ -200,11 +231,13 @@ pub(super) fn arena_mapping_plan(
     }
     let code_pages = profile.code_pages();
     let arena_pages = profile.arena_pages();
+    let stack_pages = profile.stack_pages();
+    let stack_base = profile.stack_base();
     let requests = [
         (user_code_base, code_pages, false, true),
         (user_data_base, 2, true, false),
         (arena_base, arena_pages, true, false),
-        (user_stack_base, 2, true, false),
+        (stack_base, stack_pages, true, false),
     ]
     .map(
         |(virtual_address, page_count, writable, executable)| mapping_request {
@@ -221,7 +254,7 @@ pub(super) fn arena_mapping_plan(
         (0, 512),
         (arena_base - page_size, 1),
         (arena_base + arena_pages * page_size, 1),
-        (user_stack_base - page_size, 1),
+        (stack_base - page_size, 1),
         (user_stack_top, 1),
     ]
     .map(|(virtual_address, page_count)| reserved_request {
@@ -231,7 +264,7 @@ pub(super) fn arena_mapping_plan(
     // The data budget is the sum of what is actually requested rather than a
     // literal, so a geometry change cannot quietly exceed a stale number. It
     // reproduces the native application's long-standing 20 exactly.
-    let data_pages = code_pages + 2 + arena_pages + 2;
+    let data_pages = code_pages + 2 + arena_pages + stack_pages;
     mapping_plan::new(
         &requests,
         &reserved,
@@ -437,5 +470,66 @@ mod tests {
         for base in [0, 0x804001, u64::MAX, user_address_limit] {
             assert!(!arena_profile::program.is_coherent(base));
         }
+    }
+
+    #[test]
+    fn manifest_loader_has_its_own_exact_code_arena_stack_and_guards() {
+        let loader_stack = user_stack_top - 8 * page_size;
+        assert_eq!(manifest_loader_arena_bases, [0x804000, 0x828000]);
+        assert_eq!(arena_profile::manifest_loader.code_pages(), 5);
+        assert_eq!(arena_profile::manifest_loader.arena_bytes(), 128 * 1024);
+        assert_eq!(arena_profile::manifest_loader.stack_pages(), 8);
+        for base in [0x804000, 0x828000] {
+            let (regions, reservations) = geometry(base, arena_profile::manifest_loader);
+            assert_eq!(
+                regions,
+                vec![
+                    (0x400000, 5, false, true),
+                    (0x800000, 2, true, false),
+                    (base, 32, true, false),
+                    (loader_stack, 8, true, false),
+                ]
+            );
+            assert_eq!(
+                reservations,
+                vec![
+                    (0, 512),
+                    (base - page_size, 1),
+                    (base + 128 * 1024, 1),
+                    (loader_stack - page_size, 1),
+                    (user_stack_top, 1),
+                ]
+            );
+            assert_eq!(
+                regions.iter().map(|(_, count, _, _)| count).sum::<u64>(),
+                47
+            );
+            assert_eq!(
+                plan_of(base, arena_profile::manifest_loader).tables().len(),
+                8
+            );
+            assert!(
+                regions
+                    .iter()
+                    .all(|(_, _, write, execute)| !(*write && *execute))
+            );
+        }
+        assert_eq!(arena_profile::program.stack_pages(), 2);
+        assert_eq!(arena_profile::native_application.stack_pages(), 2);
+    }
+
+    #[test]
+    fn manifest_loader_bases_are_disjoint_and_do_not_widen_legacy_profiles() {
+        let [first, second] = manifest_loader_arena_bases;
+        assert!(first + 128 * 1024 + page_size <= second - page_size);
+        for base in [0, 0x804001, 0x814000, 0x818000, 0x829000, user_stack_base] {
+            assert!(arena_mapping_plan(base, arena_profile::manifest_loader).is_err());
+        }
+        assert!(!arena_profile::program.admits_base(second));
+        assert!(!arena_profile::native_application.admits_base(second));
+        assert_eq!(arena_profile::program.code_pages(), 2);
+        assert_eq!(arena_profile::program.arena_bytes(), 64 * 1024);
+        assert_eq!(arena_profile::native_application.code_pages(), 8);
+        assert_eq!(arena_profile::native_application.arena_bytes(), 32 * 1024);
     }
 }

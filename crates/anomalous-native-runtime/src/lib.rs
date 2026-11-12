@@ -11,6 +11,7 @@
 mod allocation;
 mod console;
 mod edition;
+pub mod manifest_report;
 mod program_startup;
 mod startup;
 

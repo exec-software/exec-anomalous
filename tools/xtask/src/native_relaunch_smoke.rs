@@ -59,6 +59,8 @@ pub(super) fn selected(features: &[&str]) -> bool {
                             | "native_repeated_editor_test"
                             | "native_document_test"
                             | "native_runtime_test"
+                            | "native_program_test"
+                            | "native_manifest_test"
                     )
                 })
                 .chain(core::iter::once(native_application_smoke::feature))

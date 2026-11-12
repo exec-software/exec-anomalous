@@ -1,24 +1,31 @@
-//! A program-bearing launch: one task, two RX pages, a 64 KiB arena (ADR 0101).
+//! Shared one-task delivery lifecycle for ADR 0101 and native admission ADR 0103.
 //!
 //! ANPG describes the launch; the controller separately binds the console to
 //! its exact live task. Requests use bounded owned user-copy, complete text
 //! preflight, and a monotonic success sequence before any serial publication.
 //! Edition bytes are copied from a retained sealed source, never executed.
-//! Semantic-manifest admission and interpreter qualification remain separate.
+//! The optional manifest specialization admits packages in userspace.
+//! Edition interpretation remains a separate qualification.
 //!
 //! The parent module lowers `dead_code` and `unused_imports` under this
 //! feature, because a program build leaves its two-task half unreachable.
 //! Re-denied here so the lowered level never reaches the code that does run.
 #![deny(dead_code, unused_imports)]
 
+#[cfg(not(feature = "native_manifest_test"))]
 use super::super::arena_profile::program_arena_bases;
+#[cfg(feature = "native_manifest_test")]
+#[path = "native_manifest_profile.rs"]
+mod manifest;
 use super::super::owned_execution::{owned_execution_group, user_data_base};
 use super::super::{linux_loader_source, program_console, program_edition};
 use super::*;
 use anomalous_native_runtime::{
-    maximum_read_bytes, maximum_write_bytes, minimum_arena_bytes, program_descriptor,
-    program_startup_size, program_status, service,
+    maximum_read_bytes, maximum_write_bytes, program_descriptor, program_startup_size,
+    program_status, service,
 };
+#[cfg(feature = "native_manifest_test")]
+use manifest::{arena_bytes, expected_data_frames, program_code_pages, scenario};
 
 /// Where the descriptor sits in the task's private RW data. The vessel's
 /// linker script pins the same address, and startup admission compares the
@@ -32,15 +39,22 @@ const descriptor_address: u64 = user_data_base + descriptor_offset;
 /// Comparing the mapping against the profile that produced it would prove
 /// only that the two agree, and they can drift together while it passes; the
 /// contract `program_descriptor` enforces is the independent authority.
-const arena_bytes: u64 = minimum_arena_bytes;
+#[cfg(not(feature = "native_manifest_test"))]
+const arena_bytes: u64 = anomalous_native_runtime::minimum_arena_bytes;
+#[cfg(not(feature = "native_manifest_test"))]
 const program_code_pages: u64 = 2;
+#[cfg(not(feature = "native_manifest_test"))]
 const edition_length: u64 = 8195;
-const edition_source_frames: usize = 3;
+#[cfg(not(feature = "native_manifest_test"))]
+const _: usize = 3;
+#[cfg(not(feature = "native_manifest_test"))]
 const edition_source_fnv: u64 = 0x84ca7df1efd6b401;
+#[cfg(not(feature = "native_manifest_test"))]
 const edition_source_name: &[u8] = b"opt/anomalous-program-edition";
 
 /// The arena offset and word count the vessel writes its grant record at.
 /// Offset zero: a program's first act is to state what it was given.
+#[cfg(not(feature = "native_manifest_test"))]
 const proof_offset: u64 = 0;
 const proof_words: usize = 6;
 
@@ -55,6 +69,7 @@ const proof_words: usize = 6;
 ///
 /// These are expectations, not receipts. The run below is what measures them,
 /// and it fails closed on any of them rather than reporting what it found.
+#[cfg(not(feature = "native_manifest_test"))]
 const expected_data_frames: usize = 26;
 const expected_table_frames: usize = 9;
 const expected_leases: usize = 6;
@@ -67,6 +82,7 @@ const program_frames: usize = expected_data_frames + expected_table_frames;
 /// a handle, and absent with none. `program_descriptor::try_new` refuses
 /// either one without the other, and the vessel checks the pairing again on
 /// the side of the boundary that would be lied to.
+#[derive(Clone, Copy)]
 struct scenario_profile {
     base: u64,
     console_handle: u64,
@@ -74,7 +90,10 @@ struct scenario_profile {
     edition_handle: u64,
     edition_length: u64,
     arguments: &'static [u8],
+    source_fnv: u64,
+    source_name: &'static [u8],
 }
+#[cfg(not(feature = "native_manifest_test"))]
 const scenarios: [scenario_profile; 2] = [
     scenario_profile {
         base: program_arena_bases[0],
@@ -83,6 +102,8 @@ const scenarios: [scenario_profile; 2] = [
         edition_handle: 0x41,
         edition_length,
         arguments: b"hello\0--once",
+        source_fnv: edition_source_fnv,
+        source_name: edition_source_name,
     },
     scenario_profile {
         base: program_arena_bases[1],
@@ -91,8 +112,23 @@ const scenarios: [scenario_profile; 2] = [
         edition_handle: 0x9f,
         edition_length: 64,
         arguments: b"",
+        source_fnv: 0,
+        source_name: b"",
     },
 ];
+
+#[cfg(not(feature = "native_manifest_test"))]
+const scenarios_count: usize = scenarios.len();
+#[cfg(not(feature = "native_manifest_test"))]
+fn scenario(index: usize) -> scenario_profile {
+    *scenarios
+        .get(index)
+        .unwrap_or_else(|| fail("program_scenario"))
+}
+#[cfg(not(feature = "native_manifest_test"))]
+const event_prefix: &str = "kernel.native_program_test";
+#[cfg(feature = "native_manifest_test")]
+const event_prefix: &str = "kernel.native_manifest_test";
 
 static active: AtomicPtr<program> = AtomicPtr::new(ptr::null_mut());
 static dispatch_active: AtomicBool = AtomicBool::new(false);
@@ -103,9 +139,20 @@ unsafe impl Sync for retained_storage {}
 static storage: retained_storage =
     retained_storage(UnsafeCell::new(core::mem::MaybeUninit::uninit()));
 
+#[cfg(not(feature = "native_manifest_test"))]
 unsafe extern "C" {
     static x86_64_native_program_payload_start: u8;
     static x86_64_native_program_payload_end: u8;
+    static x86_64_native_program_user_fault_instruction: u8;
+}
+
+#[cfg(feature = "native_manifest_test")]
+unsafe extern "C" {
+    #[link_name = "x86_64_native_manifest_payload_start"]
+    static x86_64_native_program_payload_start: u8;
+    #[link_name = "x86_64_native_manifest_payload_end"]
+    static x86_64_native_program_payload_end: u8;
+    #[link_name = "x86_64_native_manifest_user_fault_instruction"]
     static x86_64_native_program_user_fault_instruction: u8;
 }
 
@@ -121,9 +168,8 @@ impl program_image {
             .checked_sub(source)
             .unwrap_or_else(|| fail("program_payload_extent"));
         let fault = address!(x86_64_native_program_user_fault_instruction);
-        // Two code pages, separate from the native application's eight. An image that
-        // outgrew its admitted mapping must be refused here rather than
-        // copied into a mapping that cannot hold it.
+        // The selected named profile supplies an independent exact code bound.
+        // Refuse an oversized payload before acquiring or copying any mapping.
         if source < address!(kernel_rodata_start)
             || length == 0
             || length > program_code_pages * paging::page_size
@@ -155,7 +201,8 @@ struct program {
     execution: owned_execution_group<1>,
     cpu: application_cpu::cpu_session_group<1>,
     image: program_image,
-    /// The six words granted, in the order the vessel states them back.
+    /// Six controller-owned startup facts. The delivery fixture restates them;
+    /// the manifest fixture instead returns a separate bounded diagnostic.
     granted: [u64; proof_words],
     arena_base: u64,
     scenario: usize,
@@ -186,7 +233,7 @@ struct program {
     allocator_nested_denials: u64,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 struct program_record {
     calls: u64,
     timer_ticks: u64,
@@ -195,6 +242,8 @@ struct program_record {
     zeroed_bytes: u64,
     granted: [u64; proof_words],
     stated: [u64; proof_words],
+    #[cfg(feature = "native_manifest_test")]
+    report: [u8; anomalous_native_runtime::manifest_report::report_bytes],
     console_attempts: u64,
     console_rejected: u64,
     console_writes: u64,
@@ -244,6 +293,7 @@ impl program {
     }
     /// The grant record the task wrote, read back through the kernel's own
     /// alias. Nothing in userspace is trusted to report it.
+    #[cfg(not(feature = "native_manifest_test"))]
     fn stated_grant(&self) -> [u64; proof_words] {
         core::array::from_fn(|word| {
             self.execution
@@ -330,9 +380,7 @@ fn initialize(
     kernel_cr3: u64,
     bootstrap_stack: u64,
 ) -> &'static mut program {
-    let selected = scenarios
-        .get(scenario)
-        .unwrap_or_else(|| fail("program_scenario"));
+    let selected = self::scenario(scenario);
     if storage_busy.swap(true, Ordering::AcqRel) {
         fail("program_storage_busy");
     }
@@ -379,10 +427,10 @@ fn initialize(
             *source = Some(
                 linux_loader_source::source_controller::new_configured(
                     0x4544_0001,
-                    edition_length,
-                    edition_source_fnv,
-                    edition_source_name,
-                    edition_length,
+                    selected.edition_length,
+                    selected.source_fnv,
+                    selected.source_name,
+                    selected.edition_length,
                 )
                 .unwrap_or_else(|_| fail("program_source_configuration")),
             );
@@ -407,15 +455,15 @@ fn initialize(
                 let mut serial = serial_port::com1();
                 let _ = writeln!(
                     serial,
-                    r#"{{"schema":1,"event":"kernel.native_program_test.source_rejected","level":"info","reason":"{}","source_released":true,"resources_restored":true}}"#,
-                    reason
+                    r#"{{"schema":1,"event":"{}.source_rejected","level":"info","reason":"{}","source_released":true,"resources_restored":true}}"#,
+                    event_prefix, reason
                 );
                 fail(reason);
             }
             if !source.is_ready()
-                || source.length() != edition_length
-                || source.observed_fnv64() != edition_source_fnv
-                || source.chunks() != 3
+                || source.length() != selected.edition_length
+                || source.observed_fnv64() != selected.source_fnv
+                || source.chunks() != selected.edition_length.div_ceil(4096)
             {
                 fail("program_source_import_evidence");
             }
@@ -423,8 +471,18 @@ fn initialize(
         let execution = &mut *ptr::addr_of_mut!((*pointer).execution);
         let circles = &mut *ptr::addr_of_mut!((*pointer).circles);
         let tasks = &mut *ptr::addr_of_mut!((*pointer).tasks);
+        #[cfg(not(feature = "native_manifest_test"))]
         execution
             .prepare_program_arena(
+                allocator,
+                circles,
+                (image.source, image.length),
+                selected.base,
+            )
+            .unwrap_or_else(|e| fail(e));
+        #[cfg(feature = "native_manifest_test")]
+        execution
+            .prepare_manifest_arena(
                 allocator,
                 circles,
                 (image.source, image.length),
@@ -437,10 +495,18 @@ fn initialize(
             fail("program_arena_extent");
         }
         for offset in (0..8192).step_by(8) {
-            if execution.read_data(0, offset) != Some(0)
-                || execution.read_stack(0, offset) != Some(0)
-            {
+            if execution.read_data(0, offset) != Some(0) {
                 fail("program_initial_storage");
+            }
+        }
+        let stack_bytes = if cfg!(feature = "native_manifest_test") {
+            32768
+        } else {
+            8192
+        };
+        for offset in (0..stack_bytes).step_by(8) {
+            if execution.read_stack(0, offset) != Some(0) {
+                fail("program_initial_stack");
             }
         }
         let mut zeroed_bytes = 0;
@@ -534,12 +600,13 @@ fn run_program(
         // SAFETY: The mapping owner remains at its final retained BSS location.
         unsafe { state.execution.activate(allocator) }.unwrap_or_else(|e| fail(e));
         let accounting = allocator.accounting();
-        let source_frames = if scenario == 0 {
-            edition_source_frames
+        let selected = self::scenario(scenario);
+        let source_leases = usize::from(selected.granted_services & service::file_read != 0);
+        let source_frames = if source_leases != 0 {
+            selected.edition_length.div_ceil(4096) as usize
         } else {
             0
         };
-        let source_leases = usize::from(scenario == 0);
         if accounting.free.checked_add(program_frames + source_frames) != Some(initial.free)
             || accounting.data_owned != expected_data_frames + source_frames
             || accounting.table_owned != expected_table_frames
@@ -627,42 +694,50 @@ fn run_program(
     {
         fail("program_continuation");
     }
-    let (attempts, rejected, writes, bytes) = if scenario == 0 {
-        (16, 14, 2, 60)
-    } else {
-        (2, 2, 0, 0)
-    };
-    let (edition_attempts, edition_rejected, edition_reads, edition_bytes, source_reads) =
-        if scenario == 0 {
-            (21, 14, 7, 8203, 5)
+    #[cfg(not(feature = "native_manifest_test"))]
+    let stated = {
+        let (attempts, rejected, writes, bytes) = if scenario == 0 {
+            (16, 14, 2, 60)
         } else {
-            (3, 3, 0, 0, 0)
+            (2, 2, 0, 0)
         };
-    if state.calls != attempts + edition_attempts + 2
-        || state.exits != 1
-        || state.invalid != 0
-        || state.console_attempts != attempts
-        || state.console_rejected != rejected
-        || state.console.written() != writes
-        || state.console.bytes_written() != bytes
-        || !state.console.is_closed()
-        || state.console_scratch.iter().any(|byte| *byte != 0)
-        || state.edition_attempts != edition_attempts
-        || state.edition_rejected != edition_rejected
-        || state.edition.reads() != edition_reads
-        || state.edition.bytes_read() != edition_bytes
-        || state.edition_source_reads != source_reads
-        || state.allocator_service_borrows != if scenario == 0 { 2 } else { 0 }
-        || state.allocator_nested_denials != if scenario == 0 { 1 } else { 0 }
-        || !state.edition.is_closed()
-        || state.edition_scratch.iter().any(|byte| *byte != 0)
-    {
-        fail("program_evidence");
-    }
-    let stated = state.stated_grant();
-    if stated != state.granted {
-        fail("program_grant_mismatch");
-    }
+        let (edition_attempts, edition_rejected, edition_reads, edition_bytes, source_reads) =
+            if scenario == 0 {
+                (21, 14, 7, 8203, 5)
+            } else {
+                (3, 3, 0, 0, 0)
+            };
+        if state.calls != attempts + edition_attempts + 2
+            || state.exits != 1
+            || state.invalid != 0
+            || state.console_attempts != attempts
+            || state.console_rejected != rejected
+            || state.console.written() != writes
+            || state.console.bytes_written() != bytes
+            || !state.console.is_closed()
+            || state.console_scratch.iter().any(|byte| *byte != 0)
+            || state.edition_attempts != edition_attempts
+            || state.edition_rejected != edition_rejected
+            || state.edition.reads() != edition_reads
+            || state.edition.bytes_read() != edition_bytes
+            || state.edition_source_reads != source_reads
+            || state.allocator_service_borrows != if scenario == 0 { 2 } else { 0 }
+            || state.allocator_nested_denials != if scenario == 0 { 1 } else { 0 }
+            || !state.edition.is_closed()
+            || state.edition_scratch.iter().any(|byte| *byte != 0)
+        {
+            fail("program_evidence");
+        }
+        let stated = state.stated_grant();
+        if stated != state.granted {
+            fail("program_grant_mismatch");
+        }
+        stated
+    };
+    #[cfg(feature = "native_manifest_test")]
+    let report = manifest::validate_report(state);
+    #[cfg(feature = "native_manifest_test")]
+    let stated = state.granted;
     if !state
         .tasks
         .snapshot(state.identity)
@@ -717,6 +792,8 @@ fn run_program(
         zeroed_bytes: state.zeroed_bytes,
         granted: state.granted,
         stated,
+        #[cfg(feature = "native_manifest_test")]
+        report,
         console_attempts: state.console_attempts,
         console_rejected: state.console_rejected,
         console_writes: state.console.written(),
@@ -1044,7 +1121,19 @@ pub(super) fn run() -> ! {
     let bootstrap_stack = unsafe { descriptors::selected_privilege_stack_top() };
     let initial = memory::with_frame_allocator(|allocator| allocator.accounting())
         .unwrap_or_else(|e| fail(e.reason()));
-    let mut records = [program_record::default(); scenarios.len()];
+    #[cfg(feature = "native_manifest_test")]
+    manifest::run(image, kernel_cr3, bootstrap_stack, initial);
+    #[cfg(not(feature = "native_manifest_test"))]
+    run_delivery(image, kernel_cr3, bootstrap_stack, initial)
+}
+#[cfg(not(feature = "native_manifest_test"))]
+fn run_delivery(
+    image: program_image,
+    kernel_cr3: u64,
+    bootstrap_stack: u64,
+    initial: frame_accounting,
+) -> ! {
+    let mut records: [Option<program_record>; scenarios_count] = [None; scenarios_count];
     let mut vendor = "";
     for (scenario, slot) in records.iter_mut().enumerate() {
         let (current_vendor, record) =
@@ -1054,12 +1143,23 @@ pub(super) fn run() -> ! {
         } else if current_vendor != vendor {
             fail("program_cpu_comparison");
         }
-        *slot = record;
+        *slot = Some(record);
     }
     interrupts::disable_external_interrupts();
     if !interrupts::scheduler_interrupts_are_masked() {
         fail("program_final_interrupts");
     }
+    let records = records.map(|record| record.unwrap_or_else(|| fail("program_record_missing")));
+    emit_program(vendor, initial, records);
+    super::super::qemu_exit_success();
+    super::super::halt_forever()
+}
+#[cfg(not(feature = "native_manifest_test"))]
+fn emit_program(
+    vendor: &str,
+    initial: frame_accounting,
+    records: [program_record; scenarios_count],
+) {
     let mut serial = serial_port::com1();
     let _ = writeln!(
         serial,
@@ -1117,6 +1217,4 @@ pub(super) fn run() -> ! {
         arena_bytes,
         zeroed_bytes
     );
-    super::super::qemu_exit_success();
-    super::super::halt_forever()
 }

@@ -245,7 +245,15 @@ pub(super) fn inspect_vessel(
     prefix: &str,
     initialized: bool,
 ) -> Result<inspected_image, String> {
-    inspect_vessel_profile(root, path, prefix, initialized, false, false, false)
+    inspect_vessel_profile(
+        root,
+        path,
+        prefix,
+        initialized,
+        false,
+        readonly_profile::ordinary,
+        false,
+    )
 }
 
 pub(super) fn inspect_linux_vessel(root: &Path, path: &Path) -> Result<inspected_image, String> {
@@ -255,7 +263,7 @@ pub(super) fn inspect_linux_vessel(root: &Path, path: &Path) -> Result<inspected
         "anomalous_linux_client",
         true,
         true,
-        false,
+        readonly_profile::ordinary,
         false,
     )
 }
@@ -270,7 +278,7 @@ pub(super) fn inspect_linux_tls_vessel(
         "anomalous_linux_client",
         true,
         true,
-        false,
+        readonly_profile::ordinary,
         true,
     )
 }
@@ -285,7 +293,7 @@ pub(super) fn inspect_native_runtime_vessel(
         "anomalous_native_runtime_client",
         false,
         false,
-        true,
+        readonly_profile::runtime,
         false,
     )
 }
@@ -304,7 +312,7 @@ pub(super) fn inspect_native_program_vessel(
         "anomalous_native_program_client",
         false,
         false,
-        true,
+        readonly_profile::runtime,
         false,
     )
 }
@@ -319,7 +327,7 @@ pub(super) fn inspect_native_document_vessel(
         "anomalous_native_document_client",
         false,
         false,
-        true,
+        readonly_profile::runtime,
         false,
     )
 }
@@ -334,7 +342,7 @@ pub(super) fn inspect_native_relaunch_vessel(
         "anomalous_native_relaunch_client",
         false,
         false,
-        true,
+        readonly_profile::runtime,
         false,
     )
 }
@@ -349,9 +357,32 @@ pub(super) fn inspect_native_durable_vessel(
         "anomalous_native_durable_client",
         false,
         false,
-        true,
+        readonly_profile::runtime,
         false,
     )
+}
+
+/// The separate manifest loader alone selects its measured five-page code bound.
+pub(super) fn inspect_native_manifest_vessel(
+    root: &Path,
+    path: &Path,
+) -> Result<inspected_image, String> {
+    inspect_vessel_profile(
+        root,
+        path,
+        "anomalous_native_manifest_loader",
+        false,
+        false,
+        readonly_profile::manifest_loader,
+        false,
+    )
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum readonly_profile {
+    ordinary,
+    runtime,
+    manifest_loader,
 }
 
 fn inspect_vessel_profile(
@@ -360,12 +391,14 @@ fn inspect_vessel_profile(
     prefix: &str,
     initialized: bool,
     linux: bool,
-    native_runtime: bool,
+    readonly: readonly_profile,
     linux_tls: bool,
 ) -> Result<inspected_image, String> {
     let bytes = fs::read(path).map_err(|e| e.to_string())?;
     let parsed = parse_elf64(&bytes)?;
-    let rx = if native_runtime {
+    let rx = if readonly == readonly_profile::manifest_loader {
+        native_application_artifact::inspect_native_manifest_image(&bytes, &parsed)?
+    } else if readonly == readonly_profile::runtime {
         native_application_artifact::inspect_native_runtime_image(&bytes, &parsed)?
     } else if initialized {
         native_application_artifact::inspect_image_with_canary(&bytes, &parsed, data_canary)?
@@ -473,6 +506,13 @@ fn inspect_vessel_profile(
                 &syscalls,
             )?;
         }
+    } else if readonly == readonly_profile::manifest_loader {
+        native_application_artifact::inspect_native_manifest_instructions(
+            &disassembly,
+            &rx,
+            text.size,
+            fault,
+        )?;
     } else {
         native_application_artifact::inspect_instructions(&disassembly, &rx, text.size, fault)?;
     }

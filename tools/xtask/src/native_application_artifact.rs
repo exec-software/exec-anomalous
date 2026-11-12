@@ -5,6 +5,9 @@ const package: &str = "anomalous-native-client";
 const image_base: u64 = 0x400000;
 const data_base: u64 = 0x800000;
 const image_limit: u64 = 8 * 4096;
+// Independent five-page bound for the measured native manifest loader.
+// Legacy application/runtime entry points retain their eight-page allowance.
+const manifest_image_limit: u64 = 5 * 4096;
 const data_limit: u64 = 2 * 4096;
 const fault_alias: &str = "x86_64_native_application_user_fault_instruction";
 
@@ -143,14 +146,14 @@ pub(super) fn package_image(root: &Path, build: &Path) -> Result<artifact, Strin
 }
 
 pub(super) fn inspect_image(bytes: &[u8], elf: &parsed_elf64) -> Result<Vec<u8>, String> {
-    inspect_image_profile(bytes, elf, None, rodata_metadata::plain)
+    inspect_image_profile(bytes, elf, None, rodata_metadata::plain, image_limit)
 }
 
 pub(super) fn inspect_elf_loader_image(
     bytes: &[u8],
     elf: &parsed_elf64,
 ) -> Result<Vec<u8>, String> {
-    inspect_image_profile(bytes, elf, None, rodata_metadata::merge)
+    inspect_image_profile(bytes, elf, None, rodata_metadata::merge, image_limit)
 }
 
 /// The ELF deployment fixture permits exactly one initialized u64 following
@@ -163,7 +166,13 @@ pub(super) fn inspect_image_with_canary(
     if canary == 0 {
         return Err("ELF data canary must exercise nonzero initialization".into());
     }
-    inspect_image_profile(bytes, elf, Some(canary), rodata_metadata::merge)
+    inspect_image_profile(
+        bytes,
+        elf,
+        Some(canary),
+        rodata_metadata::merge,
+        image_limit,
+    )
 }
 
 /// This profile alone permits the new runtime client's merged string-only
@@ -172,7 +181,28 @@ pub(super) fn inspect_native_runtime_image(
     bytes: &[u8],
     elf: &parsed_elf64,
 ) -> Result<Vec<u8>, String> {
-    inspect_image_profile(bytes, elf, None, rodata_metadata::merge_strings)
+    inspect_image_profile(
+        bytes,
+        elf,
+        None,
+        rodata_metadata::merge_strings,
+        image_limit,
+    )
+}
+
+/// Explicit five-page profile for the separate native manifest loader.
+/// It preserves the private zeroed RW and ordinary CPU contracts.
+pub(super) fn inspect_native_manifest_image(
+    bytes: &[u8],
+    elf: &parsed_elf64,
+) -> Result<Vec<u8>, String> {
+    inspect_image_profile(
+        bytes,
+        elf,
+        None,
+        rodata_metadata::merge_strings,
+        manifest_image_limit,
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -187,6 +217,7 @@ fn inspect_image_profile(
     elf: &parsed_elf64,
     canary: Option<u64>,
     metadata: rodata_metadata,
+    rx_limit: u64,
 ) -> Result<Vec<u8>, String> {
     if elf.kind != 2
         || elf.machine != 62
@@ -198,7 +229,7 @@ fn inspect_image_profile(
     let rx = elf.program_headers[0];
     let rw = elf.program_headers[1];
     for (load, base, flags, limit) in [
-        (rx, image_base, 5, image_limit),
+        (rx, image_base, 5, rx_limit),
         (rw, data_base, 6, data_limit),
     ] {
         if load.kind != 1
@@ -348,7 +379,32 @@ pub(super) fn inspect_instructions(
     text_size: u64,
     fault: u64,
 ) -> Result<(), String> {
-    inspect_instruction_profile(disassembly, image, text_size, fault, None, None)
+    inspect_instruction_profile(
+        disassembly,
+        image,
+        text_size,
+        fault,
+        None,
+        None,
+        image_limit,
+    )
+}
+
+pub(super) fn inspect_native_manifest_instructions(
+    disassembly: &str,
+    image: &[u8],
+    text_size: u64,
+    fault: u64,
+) -> Result<(), String> {
+    inspect_instruction_profile(
+        disassembly,
+        image,
+        text_size,
+        fault,
+        None,
+        None,
+        manifest_image_limit,
+    )
 }
 
 pub(super) fn inspect_linux_instructions(
@@ -361,7 +417,15 @@ pub(super) fn inspect_linux_instructions(
     if syscalls.len() != 2 || syscalls[0] == syscalls[1] {
         return Err("Linux instruction profile requires two distinct syscall markers".into());
     }
-    inspect_instruction_profile(disassembly, image, text_size, fault, Some(syscalls), None)
+    inspect_instruction_profile(
+        disassembly,
+        image,
+        text_size,
+        fault,
+        Some(syscalls),
+        None,
+        image_limit,
+    )
 }
 
 /// Exact feature-private additions to the ordinary Linux instruction profile.
@@ -569,6 +633,7 @@ pub(super) fn inspect_linux_tls_instructions(
         fault,
         Some(syscalls),
         Some(profile),
+        image_limit,
     )
 }
 
@@ -579,6 +644,7 @@ fn inspect_instruction_profile(
     fault: u64,
     syscalls: Option<&[u64]>,
     linux_tls: Option<&linux_tls_instruction_profile>,
+    text_limit: u64,
 ) -> Result<(), String> {
     // This is a CPU instruction-profile check, not control-flow integrity or an
     // arbitrary hostile executable validator. Rust may use internal jump tables.
@@ -607,7 +673,7 @@ fn inspect_instruction_profile(
     let end = image_base
         .checked_add(text_size)
         .ok_or("native text extent overflow")?;
-    if text_size == 0 || text_size > image.len() as u64 || text_size > image_limit {
+    if text_size == 0 || text_size > image.len() as u64 || text_size > text_limit {
         return Err("native text bounds invalid".into());
     }
     let mut cursor = image_base;
@@ -1099,6 +1165,53 @@ mod tests {
         }
     }
 
+    #[test]
+    fn manifest_extent_is_named_and_preserves_private_rw_rules() {
+        let (mut bytes, mut elf) = image_fixture();
+        // Independent five-page witness; generic/native runtime profiles
+        // retain their existing eight-page limit.
+        let rx_bytes = 20480;
+        let rw_offset = 0x1000 + rx_bytes;
+        bytes.resize(rw_offset as usize + 128, 0);
+        elf.program_headers[0].file_size = rx_bytes;
+        elf.program_headers[0].memory_size = rx_bytes;
+        elf.program_headers[1].offset = rw_offset;
+        elf.section_headers[1].size = rx_bytes - 32;
+        elf.section_headers[2].offset = rw_offset;
+        elf.section_headers[3].offset = rw_offset + 128;
+        assert_eq!(
+            inspect_native_manifest_image(&bytes, &elf).unwrap().len(),
+            20480
+        );
+        assert!(inspect_image(&bytes, &elf).is_ok());
+        assert!(inspect_elf_loader_image(&bytes, &elf).is_ok());
+        assert!(inspect_native_runtime_image(&bytes, &elf).is_ok());
+        for (index, size) in [(0, 20481), (1, 8193)] {
+            let mut changed = elf.clone();
+            changed.program_headers[index].memory_size = size;
+            assert!(inspect_native_manifest_image(&bytes, &changed).is_err());
+        }
+        for index in [0, 1] {
+            let mut changed = elf.clone();
+            changed.program_headers[index].flags = 7;
+            assert!(inspect_native_manifest_image(&bytes, &changed).is_err());
+        }
+        let mut legacy = elf.clone();
+        let mut legacy_bytes = bytes.clone();
+        legacy_bytes.resize(0x9080, 0);
+        legacy.program_headers[0].file_size = 32768;
+        legacy.program_headers[0].memory_size = 32768;
+        legacy.program_headers[1].offset = 0x9000;
+        legacy.section_headers[1].size = 32768 - 32;
+        legacy.section_headers[2].offset = 0x9000;
+        legacy.section_headers[3].offset = 0x9080;
+        assert!(inspect_image(&legacy_bytes, &legacy).is_ok());
+        assert!(inspect_native_runtime_image(&legacy_bytes, &legacy).is_ok());
+        assert!(inspect_native_manifest_image(&legacy_bytes, &legacy).is_err());
+        bytes[rw_offset as usize] = 1;
+        assert!(inspect_native_manifest_image(&bytes, &elf).is_err());
+    }
+
     fn instructions() -> (Vec<u8>, String) {
         let parts: &[(&[u8], &str)] = &[
             (&[0x31, 0xc0], "xor %eax,%eax"),
@@ -1166,6 +1279,36 @@ mod tests {
             .is_err()
         );
         assert!(inspect_instructions(&listing, &bytes, u64::MAX, fault).is_err());
+    }
+
+    #[test]
+    fn manifest_text_extent_does_not_widen_legacy_cpu_or_instruction_profiles() {
+        let (mut bytes, mut listing) = instructions();
+        while bytes.len() < 20480 {
+            listing.push_str(&format!("{:x}:\t90\tnop\n", 0x400000 + bytes.len()));
+            bytes.push(0x90);
+        }
+        assert!(inspect_native_manifest_instructions(&listing, &bytes, 20480, 0x40000b).is_ok());
+        assert!(inspect_instructions(&listing, &bytes, 20480, 0x40000b).is_ok());
+        for (old, new) in [
+            ("movdqu", "vmovdqu"),
+            ("ret", "syscall"),
+            ("int $0xf4", "int $0x80"),
+        ] {
+            assert!(
+                inspect_native_manifest_instructions(
+                    &listing.replace(old, new),
+                    &bytes,
+                    20480,
+                    0x40000b
+                )
+                .is_err()
+            );
+        }
+        listing.push_str("405000:\t90\tnop\n");
+        bytes.push(0x90);
+        assert!(inspect_native_manifest_instructions(&listing, &bytes, 20481, 0x40000b).is_err());
+        assert!(inspect_instructions(&listing, &bytes, 20481, 0x40000b).is_ok());
     }
 
     #[test]

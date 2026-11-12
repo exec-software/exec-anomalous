@@ -27,7 +27,12 @@ pub(super) fn selected(features: &[&str]) -> bool {
             &features
                 .iter()
                 .copied()
-                .filter(|v| *v != feature)
+                .filter(|v| {
+                    !matches!(
+                        *v,
+                        "native_document_test" | "native_program_test" | "native_manifest_test"
+                    )
+                })
                 .chain(core::iter::once(native_runtime_smoke::feature))
                 .collect::<Vec<_>>(),
         )

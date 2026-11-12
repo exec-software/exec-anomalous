@@ -207,7 +207,10 @@ impl<const task_count: usize> cpu_session_group<task_count> {
         if !(matches!(task_count, 2 | 3)
             || (cfg!(feature = "shared_veil_test") && task_count == 5)
             || (cfg!(feature = "owned_workspace_cpu_test") && task_count == 1)
-            || (cfg!(feature = "native_program_test") && task_count == 1))
+            || (cfg!(any(
+                feature = "native_program_test",
+                feature = "native_manifest_test"
+            )) && task_count == 1))
             || self.active
             || self.user_owner.is_some()
             || !interrupts_are_clear()

@@ -10,7 +10,10 @@
 // gated, and saying so once here is better than gating twenty items in a file
 // three other profiles share. The program profile re-denies both lints for
 // itself, so nothing is hidden in the code that does run.
-#![cfg_attr(feature = "native_program_test", allow(dead_code, unused_imports))]
+#![cfg_attr(
+    any(feature = "native_program_test", feature = "native_manifest_test"),
+    allow(dead_code, unused_imports)
+)]
 
 use core::arch::asm;
 use core::cell::UnsafeCell;
@@ -157,12 +160,19 @@ mod veil_profile;
 // A program-bearing launch replaces the whole profile rather than widening
 // this one. It is a single task with its own geometry, so ADR 0094 attaches it
 // at the one place a profile is chosen and every delegation below is unchanged.
-#[cfg_attr(feature = "native_program_test", path = "native_program_profile.rs")]
+#[cfg_attr(
+    all(
+        any(feature = "native_program_test", feature = "native_manifest_test"),
+        not(any(feature = "native_document_test", feature = "native_relaunch_test"))
+    ),
+    path = "native_program_profile.rs"
+)]
 #[cfg_attr(
     not(any(
         feature = "native_document_test",
         feature = "native_relaunch_test",
-        feature = "native_program_test"
+        feature = "native_program_test",
+        feature = "native_manifest_test"
     )),
     path = "native_runtime_profile.rs"
 )]

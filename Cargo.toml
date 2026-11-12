@@ -28,6 +28,7 @@ members = [
     "vessels/anomalous-workspace-service",
     "vessels/anomalous-native-client",
     "vessels/anomalous-native-program-client",
+    "vessels/anomalous-native-manifest-loader",
     "vessels/anomalous-native-runtime-client",
     "vessels/anomalous-native-document-client",
     "vessels/anomalous-native-relaunch-client",

@@ -1,0 +1,23 @@
+# NIL Textual Module
+module root
+
+@ai_context("Calculate a bounded integer result without external services")
+# declaration_line 4
+function main -> i32:
+    PUSH_CONST   6  ; line 5
+    CAST         i64  ; line 5
+    STORE_LOCAL  left  ; line 5
+    PUSH_CONST   7  ; line 6
+    CAST         i64  ; line 6
+    STORE_LOCAL  right  ; line 6
+    LOAD_LOCAL   left  ; line 7
+    LOAD_LOCAL   right  ; line 7
+    MUL          i64  ; line 7
+    CAST         i64  ; line 7
+    STORE_LOCAL  answer  ; line 7
+    LOAD_LOCAL   answer  ; line 8
+    CAST         i32  ; line 8
+    CAST         i32  ; line 8
+    RET           ; line 8
+end function
+

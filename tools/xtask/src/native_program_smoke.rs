@@ -43,7 +43,8 @@ pub(super) fn selected(features: &[&str]) -> bool {
         && !features.iter().any(|value| {
             matches!(
                 *value,
-                "fault_test"
+                "native_manifest_test"
+                    | "fault_test"
                     | "circle_test"
                     | "control_test"
                     | "rite_test"
@@ -908,6 +909,7 @@ mod tests {
     fn the_program_feature_excludes_every_other_application_profile() {
         assert!(selected(&[feature]));
         for other in [
+            "native_manifest_test",
             "native_document_test",
             "native_relaunch_test",
             "elf_application_test",
@@ -922,6 +924,109 @@ mod tests {
         assert!(!selected(&["native_runtime_test"]));
         assert!(!native_runtime_smoke::selected(&[feature]));
         assert!(!native_application_smoke::selected(&[feature]));
+    }
+
+    #[test]
+    fn manifest_selection_excludes_lower_profiles_and_preserves_higher_delegation() {
+        let manifest = "native_manifest_test";
+        for (lower, selector) in [
+            (feature, selected as fn(&[&str]) -> bool),
+            (
+                native_runtime_smoke::feature,
+                native_runtime_smoke::selected,
+            ),
+            (
+                native_application_smoke::feature,
+                native_application_smoke::selected,
+            ),
+            (ny_object_smoke::feature, ny_object_smoke::selected),
+            (mixed_workspace::feature, mixed_workspace::selected),
+            (
+                native_editor_workspace::feature,
+                native_editor_workspace::selected,
+            ),
+            (
+                application_profile_smoke::feature,
+                application_profile_smoke::selected,
+            ),
+            (
+                owned_dispatcher_smoke::feature,
+                owned_dispatcher_smoke::selected,
+            ),
+            (
+                owned_multi_region_smoke::feature,
+                owned_multi_region_smoke::selected,
+            ),
+            (owned_source_smoke::feature, owned_source_smoke::selected),
+            (owned_tls_smoke::feature, owned_tls_smoke::selected),
+            (dispatcher_smoke::feature, dispatcher_smoke::selected),
+            (workspace_dev::feature, workspace_dev::selected),
+            (owned_workspace::feature, owned_workspace::selected),
+            (owned_workspace_cpu::feature, owned_workspace_cpu::selected),
+        ] {
+            assert!(
+                !selector(&[lower, manifest]),
+                "lower profile {lower} remained selected"
+            );
+        }
+        for (higher, selector) in [
+            (
+                native_document_smoke::feature,
+                native_document_smoke::selected as fn(&[&str]) -> bool,
+            ),
+            (
+                native_durable_smoke::feature,
+                native_durable_smoke::selected,
+            ),
+            (
+                native_durable_failure_smoke::feature,
+                native_durable_failure_smoke::selected,
+            ),
+            (
+                native_repeated_smoke::feature,
+                native_repeated_smoke::selected,
+            ),
+            (
+                native_interactive_smoke::feature,
+                native_interactive_smoke::selected,
+            ),
+            (
+                native_relaunch_smoke::feature,
+                native_relaunch_smoke::selected,
+            ),
+            (elf_document_smoke::feature, elf_document_smoke::selected),
+            (elf_relaunch_smoke::feature, elf_relaunch_smoke::selected),
+            (
+                elf_application_smoke::feature,
+                elf_application_smoke::selected,
+            ),
+            (
+                linux_application_smoke::feature,
+                linux_application_smoke::selected,
+            ),
+            (
+                veil_application_smoke::feature,
+                veil_application_smoke::selected,
+            ),
+            (shared_veil_smoke::feature, shared_veil_smoke::selected),
+            (linux_tls_smoke::feature, linux_tls_smoke::selected),
+            (
+                linux_loader_entry_smoke::feature,
+                linux_loader_entry_smoke::selected,
+            ),
+            (ny_vessel_smoke::feature, ny_vessel_smoke::selected),
+        ] {
+            for combined in [vec![higher, manifest], vec![higher, manifest, feature]] {
+                assert!(
+                    selector(&combined),
+                    "higher profile {higher} lost selection"
+                );
+                assert!(!selected(&combined), "program profile shadowed {higher}");
+            }
+        }
+        // The interactive desktop also refuses dispatcher-bearing feature
+        // combinations, matching its kernel-side scheduler exclusion.
+        assert!(!desktop_dev::selected(&[desktop_dev::feature, manifest]));
     }
 
     #[test]

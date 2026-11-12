@@ -29,6 +29,8 @@ pub(super) fn selected(features: &[&str]) -> bool {
                 .copied()
                 .filter(|value| {
                     *value != feature
+                        && *value != "native_program_test"
+                        && *value != "native_manifest_test"
                         && *value != native_runtime_smoke::feature
                         && *value != native_durable_smoke::feature
                         && *value != native_durable_failure_smoke::feature

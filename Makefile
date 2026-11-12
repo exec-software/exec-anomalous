@@ -1,4 +1,4 @@
-.PHONY: owned-workspace-cpu-image owned-workspace-cpu-inspect owned-workspace-cpu-smoke
+.PHONY: native-manifest-inspect native-manifest-image native-manifest-smoke owned-workspace-cpu-image owned-workspace-cpu-inspect owned-workspace-cpu-smoke
 .PHONY: owned-workspace-image owned-workspace-inspect owned-workspace-smoke
 .PHONY: elf-relaunch-inspect elf-relaunch-image elf-relaunch-smoke native-relaunch-inspect native-relaunch-image native-relaunch-smoke elf-document-inspect elf-document-image elf-document-smoke native-runtime-inspect native-runtime-image native-runtime-smoke native-program-inspect native-program-image native-program-smoke native-document-inspect native-document-image native-document-smoke shared-veil-inspect shared-veil-image shared-veil-smoke veil-application-inspect veil-application-image veil-application-smoke linux-application-inspect linux-application-image linux-application-smoke elf-application-inspect elf-application-image elf-application-smoke native-application-inspect native-application-image native-application-smoke ny-object-inspect ny-object-image ny-object-smoke application-profile-image application-profile-smoke owned-dispatcher-image owned-dispatcher-smoke dispatcher-image dispatcher-smoke workspace-image workspace-run workspace-smoke workspace-editor-smoke workspace-virtualbox check circle-smoke clean control-smoke desktop-image desktop-run desktop-smoke desktop-virtualbox display-demo display-vessel-smoke fault-smoke image input-wait-smoke interrupt-smoke memory-smoke normal-exclusion rite-smoke run scheduler-smoke semantic-presentation-all-features-link semantic-presentation-inspect semantic-presentation-smoke semantic-surface-transport-all-features-link semantic-surface-transport-inspect semantic-surface-transport-smoke shell-smoke shell-vessel-smoke smoke supervised-renderer-all-features-link supervised-renderer-demo supervised-renderer-inspect supervised-renderer-smoke supervision-smoke virtualbox
 
@@ -129,6 +129,15 @@ native-runtime-image:
 
 native-runtime-smoke:
 	cargo xtask smoke-native-runtime
+
+native-manifest-inspect:
+	cargo xtask native-manifest-inspect
+
+native-manifest-image:
+	cargo xtask build-native-manifest
+
+native-manifest-smoke:
+	cargo xtask smoke-native-manifest
 
 native-program-inspect:
 	cargo xtask native-program-inspect
@@ -462,6 +471,7 @@ check:
 	cargo clippy --package anomalous-native-client --target x86_64-unknown-none -- -D warnings
 	cargo clippy --package anomalous-native-runtime-client --target x86_64-unknown-none -- -D warnings
 	cargo clippy --package anomalous-native-program-client --target x86_64-unknown-none -- -D warnings
+	cargo clippy --package anomalous-native-manifest-loader --target x86_64-unknown-none -- -D warnings
 	cargo clippy --package anomalous-native-document-client --target x86_64-unknown-none -- -D warnings
 	cargo clippy --package anomalous-native-relaunch-client --target x86_64-unknown-none -- -D warnings
 	cargo clippy --package anomalous-native-durable-client --target x86_64-unknown-none -- -D warnings

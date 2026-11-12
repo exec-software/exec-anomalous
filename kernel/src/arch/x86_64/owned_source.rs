@@ -75,6 +75,7 @@ pub(super) enum source_origin {
     #[cfg(any(
         test,
         feature = "native_program_test",
+        feature = "native_manifest_test",
         feature = "linux_loader_entry_test"
     ))]
     provisioned(core::num::NonZeroU64),
@@ -126,6 +127,7 @@ impl owned_source {
     #[cfg(any(
         test,
         feature = "native_program_test",
+        feature = "native_manifest_test",
         feature = "linux_loader_entry_test"
     ))]
     pub(super) unsafe fn new_provisioned(
@@ -232,6 +234,7 @@ impl owned_source {
     #[cfg(any(
         test,
         feature = "native_program_test",
+        feature = "native_manifest_test",
         feature = "linux_loader_entry_test"
     ))]
     pub(super) unsafe fn append_provisioned(
@@ -315,6 +318,7 @@ impl owned_source {
     #[cfg(any(
         test,
         feature = "native_program_test",
+        feature = "native_manifest_test",
         feature = "linux_loader_entry_test"
     ))]
     pub(super) unsafe fn seal_provisioned(&mut self, grant: u64) -> Result<(), source_error> {
@@ -396,6 +400,7 @@ impl owned_source {
             #[cfg(any(
                 test,
                 feature = "native_program_test",
+                feature = "native_manifest_test",
                 feature = "linux_loader_entry_test"
             ))]
             source_origin::provisioned(_) => None,
@@ -437,6 +442,7 @@ impl owned_source {
     #[cfg(any(
         test,
         feature = "native_program_test",
+        feature = "native_manifest_test",
         feature = "linux_loader_entry_test"
     ))]
     fn validate_provisioned(&self, grant: u64) -> Result<(), source_error> {

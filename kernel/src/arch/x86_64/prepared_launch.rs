@@ -241,6 +241,18 @@ impl prepared_launch {
         }
     }
 
+    fn stack_pages(&self) -> u64 {
+        #[cfg(any(
+            test,
+            feature = "native_runtime_test",
+            feature = "mixed_workspace_test"
+        ))]
+        if let Some(profile) = self.arena_kind {
+            return profile.stack_pages();
+        }
+        2
+    }
+
     /// Geometry is informative, not a transferable access grant. Only a fully
     /// prepared or committed owner can report an admitted native arena.
     #[cfg(any(
@@ -526,11 +538,25 @@ impl prepared_launch {
             && !mixed_workspace;
         #[cfg(not(any(test, feature = "native_program_test")))]
         let program = false;
+        #[cfg(any(test, feature = "native_manifest_test"))]
+        let manifest_loader = self.arena_base.is_some()
+            && self.arena_kind == Some(super::arena_profile::arena_profile::manifest_loader)
+            && !workspace
+            && !mixed_workspace;
+        #[cfg(not(any(test, feature = "native_manifest_test")))]
+        let manifest_loader = false;
         if !(matches!(self.expected_code_pages, 1 | 8)
             || (program && self.expected_code_pages == 2)
+            || (manifest_loader && self.expected_code_pages == 5)
             || ((workspace || mixed_workspace) && self.expected_code_pages == 32))
             || plan.regions().count() != usize::from(self.mapping_count())
             || self.mapping.residency().is_none()
+        {
+            return Err(launch_error::invalid_profile);
+        }
+        if manifest_loader
+            && self.admission.bounds().initial_stack_pointer()
+                != super::mapping_plan::user_address_limit - 2 * page_size
         {
             return Err(launch_error::invalid_profile);
         }
@@ -605,11 +631,11 @@ impl prepared_launch {
         ))]
         if let Some(base) = self.arena_base {
             let arena = plan.regions().nth(2).ok_or(launch_error::invalid_profile)?;
-            let stack_base = super::mapping_plan::user_address_limit - 4 * page_size;
             // Revalidated against the profile the controller selected, never
             // against anything the task could have written.
             let profile = self.arena_kind.ok_or(launch_error::invalid_profile)?;
             let arena_pages = profile.arena_pages();
+            let stack_base = profile.stack_base();
             if mixed_workspace
                 || !profile.admits_base(base)
                 || !profile.is_coherent(base)
@@ -627,7 +653,7 @@ impl prepared_launch {
                     base - page_size,
                     base + arena_pages * page_size,
                     stack_base - page_size,
-                    stack_base + 2 * page_size,
+                    stack_base + profile.stack_pages() * page_size,
                 ]
                 .into_iter()
                 .all(|guard| {
@@ -649,6 +675,8 @@ impl prepared_launch {
                 self.expected_code_pages
             } else if self.mapping_count() == 4 && index == 2 {
                 self.arena_pages()
+            } else if index == self.stack_region() {
+                self.stack_pages()
             } else {
                 2
             };
@@ -1998,6 +2026,66 @@ mod tests {
         )
     }
 
+    /// Independent manifest-loader geometry; never ask the production profile
+    /// for the expected dimensions used to test that same profile.
+    fn manifest_loader_mapping(
+        base: u64,
+        widths: [u64; 3],
+        arena_permissions: page_permissions,
+        guarded: bool,
+    ) -> staged_mapping {
+        let [code_pages, arena_pages, stack_pages] = widths;
+        let loader_stack = stack_top - stack_pages * page_size;
+        let requests = [
+            (code_base, code_pages, rx),
+            (0x800000, 2, rw),
+            (base, arena_pages, arena_permissions),
+            (loader_stack, stack_pages, rw),
+        ]
+        .map(
+            |(virtual_address, page_count, permissions)| mapping_request {
+                virtual_address,
+                page_count,
+                permissions,
+            },
+        );
+        let guards = [
+            (0, 512),
+            (loader_stack - page_size, 1),
+            (stack_top, 1),
+            (base - page_size, 1),
+            (base + arena_pages * page_size, 1),
+        ]
+        .map(|(virtual_address, page_count)| reserved_request {
+            virtual_address,
+            page_count,
+        });
+        let plan = mapping_plan::new(
+            &requests,
+            &guards[..if guarded { 5 } else { 4 }],
+            mapping_budget {
+                data_pages: code_pages + 2 + arena_pages + stack_pages,
+                table_frames: 8,
+            },
+        )
+        .unwrap();
+        let residency = program_residency(&plan, 9).unwrap();
+        staged_mapping::new_resident(plan, residency).unwrap()
+    }
+
+    fn manifest_loader_owner(base: u64) -> prepared_launch {
+        let mapping = manifest_loader_mapping(base, [5, 32, 8], rw, true);
+        let admission =
+            user_entry_plan::new(mapping.plan(), 0, 5 * page_size, code_base, 3, stack_top)
+                .unwrap();
+        prepared_launch::new_with_native_arena(
+            mapping,
+            admission,
+            base,
+            super::super::arena_profile::arena_profile::manifest_loader,
+        )
+    }
+
     fn arena_owner(base: u64) -> prepared_launch {
         let mapping = arena_mapping(base, rw, true);
         let admission =
@@ -2184,6 +2272,139 @@ mod tests {
             assert_eq!(allocator.accounting().table_owned, 9);
             assert_eq!(initial.free - allocator.accounting().free, 31);
             // SAFETY: Cancellation must reclaim everything prepare acquired.
+            unsafe { owner.cancel(&mut allocator, &mut memory, &mut tasks, &mut circles) }.unwrap();
+            assert_released(&owner, &allocator, initial, &tasks, &circles);
+        }
+    }
+
+    #[test]
+    fn manifest_loader_owns_exact_memory_and_clears_dirty_arena_and_stack() {
+        for base in [0x804000, 0x828000] {
+            let mut ledger = [0; frame_count / 4];
+            let mut allocator = allocator(&mut ledger);
+            let initial = allocator.accounting();
+            let mut memory = fake_memory::new();
+            let mut circles = circle_table::new_native_arenas();
+            let mut tasks = task_table::new();
+            let mut owner = manifest_loader_owner(base);
+            // SAFETY: Isolated modeled inactive memory, no hardware accesses.
+            unsafe { owner.prepare(&mut allocator, &mut memory, &mut circles, |_, _| true) }
+                .unwrap();
+            assert_eq!(owner.arena_extent(), Some((base, 128 * 1024)));
+            assert_eq!(owner.mapping_count(), 4);
+            assert_eq!(owner.expected_code_pages, 5);
+            assert_eq!(owner.stack_pages(), 8);
+            assert_eq!(owner.mapping().retained_leases(), 5);
+            assert_eq!(allocator.accounting().data_owned, 47);
+            assert_eq!(allocator.accounting().table_owned, 9);
+            assert_eq!(initial.free - allocator.accounting().free, 56);
+            assert!(program_residency(owner.mapping().plan(), 9).is_ok());
+            assert!(matches!(
+                program_residency(owner.mapping().plan(), 8),
+                Err(resident_error::table_budget_exhausted)
+            ));
+            let arena = memory
+                .range(owner.mapping().data_range(2).unwrap())
+                .unwrap();
+            let stack = memory
+                .range(owner.mapping().data_range(3).unwrap())
+                .unwrap();
+            assert_eq!(arena.len() * 8, 128 * 1024);
+            assert_eq!(stack.len() * 8, 32 * 1024);
+            assert!(memory.words[arena.clone()].iter().all(|word| *word == 0));
+            assert!(memory.words[stack.clone()].iter().all(|word| *word == 0));
+            memory.words[arena.clone()].fill(0x4d41_4e49_4645_5354);
+            memory.words[stack.clone()].fill(0x5354_4143_4b5f_4c44);
+            // SAFETY: Cancellation retains and clears the complete owned spans.
+            unsafe { owner.cancel(&mut allocator, &mut memory, &mut tasks, &mut circles) }.unwrap();
+            assert_released(&owner, &allocator, initial, &tasks, &circles);
+            assert!(memory.words[arena].iter().all(|word| *word == 0));
+            assert!(memory.words[stack].iter().all(|word| *word == 0));
+        }
+    }
+
+    #[test]
+    fn manifest_loader_refuses_wrong_geometry_and_unselected_wide_profiles_before_allocation() {
+        for variant in 0..22 {
+            let mut ledger = [0; frame_count / 4];
+            let mut allocator = allocator(&mut ledger);
+            let initial = allocator.accounting();
+            let mut memory = fake_memory::new();
+            let mut circles = circle_table::new_native_arenas();
+            let initial_circles = circles.accounting();
+            let mut tasks = task_table::new();
+            let base = 0x804000;
+            let widths = match variant {
+                0 => [2, 32, 8],
+                1 => [8, 32, 8],
+                2 => [4, 32, 8],
+                3 => [6, 32, 8],
+                4 => [5, 31, 8],
+                5 => [5, 33, 8],
+                6 => [5, 32, 7],
+                7 => [5, 32, 9],
+                _ => [5, 32, 8],
+            };
+            let permissions = match variant {
+                8 => page_permissions {
+                    writable: false,
+                    ..rw
+                },
+                9 => rx,
+                _ => rw,
+            };
+            let mapping = manifest_loader_mapping(base, widths, permissions, variant != 10);
+            let admission = if variant == 21 {
+                let wider = manifest_loader_mapping(base, [6, 32, 8], rw, true);
+                user_entry_plan::new(wider.plan(), 0, 5 * page_size + 1, code_base, 3, stack_top)
+                    .unwrap()
+            } else {
+                let initial_stack = if variant == 20 {
+                    stack_top - 16
+                } else {
+                    stack_top
+                };
+                user_entry_plan::new(mapping.plan(), 0, 4, code_base, 3, initial_stack).unwrap()
+            };
+            let mut owner = prepared_launch::new_with_native_arena(
+                mapping,
+                admission,
+                base,
+                super::super::arena_profile::arena_profile::manifest_loader,
+            );
+            match variant {
+                11 => owner.expected_code_pages = 8,
+                12 => owner.arena_kind = None,
+                13 => owner.arena_base = None,
+                14 => {
+                    owner.arena_base = None;
+                    owner.arena_kind = None;
+                }
+                15 => owner.arena_kind = Some(super::super::arena_profile::arena_profile::program),
+                16 => {
+                    owner.arena_kind =
+                        Some(super::super::arena_profile::arena_profile::native_application)
+                }
+                17 => owner.workspace_profile = true,
+                18 => owner.mixed_workspace_profile = true,
+                19 => owner.arena_base = Some(0x818000),
+                _ => {}
+            }
+            // SAFETY: Invalid inert geometry must reject before access or allocation.
+            assert_eq!(
+                unsafe {
+                    owner.prepare(&mut allocator, &mut memory, &mut circles, |_, _| {
+                        panic!("invalid manifest loader populated")
+                    })
+                },
+                Err(launch_error::invalid_profile),
+                "variant {variant}"
+            );
+            assert_eq!(allocator.accounting(), initial);
+            assert_eq!((memory.clears, memory.writes, memory.reads), (0, 0, 0));
+            assert_eq!(circles.accounting(), initial_circles);
+            assert_eq!(tasks.active_count(), 0);
+            // SAFETY: Rejected preparation published no execution consumer.
             unsafe { owner.cancel(&mut allocator, &mut memory, &mut tasks, &mut circles) }.unwrap();
             assert_released(&owner, &allocator, initial, &tasks, &circles);
         }

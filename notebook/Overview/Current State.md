@@ -8,7 +8,31 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current host checkpoint — bounded program-manifest admission
+## Current native checkpoint — compiler-produced manifest admission
+
+Accepted [ADR 0103](../../docs/adr/0103-admit-compiler-produced-manifests-in-a-native-loader.md)
+connects complete compiler output to manifest admission in ring 3. An explicit
+compiler option preserves authored context while omitting generated external
+registration. The loader reads an immutable package, rederives identity, intent
+and authority, and applies an explicit workload ceiling. Bootstrap delivery
+grants and diagnostic reports do not become workload authority.
+
+All 24 final qualification jobs passed on 624 unchanged source files. The same
+image passed TCG and AMD KVM at 96/320 MiB: four admissions, six semantic refusals,
+twelve reads and one witness-gated loader marker per boot, with complete cleanup.
+Three provisioning refusals per backend also passed. The existing delivery
+profile passed fresh TCG/KVM regressions, and Linux remains at its unanswered
+sequence-12 mmap boundary. Eight focused compiler tests passed.
+
+The measured 18,874-byte loader uses five RX pages, a 128 KiB arena and a guarded
+32 KiB stack. The reviewed stack sum is 13,424 bytes for this exact artifact.
+The kernel shares the qualified ownership/delivery lifecycle and does not parse
+NIL. No NIL edition executes yet; interpreter corpus qualification and mediated
+execution are next. The
+[Native Manifest Loader Log](../Development/2026-11-11%20Native%20Manifest%20Loader%20Log.md)
+records artifact identities, limitations and retained attempts.
+
+## Previous host checkpoint — bounded program-manifest admission
 
 Accepted [ADR 0102](../../docs/adr/0102-admit-bounded-program-semantic-manifests.md)
 adds a shared `no_std` parser, unsigned `.re` envelope and host pack/inspect
@@ -26,11 +50,11 @@ native qualification remains separate below. The
 [Program Manifest Admission Log](../Development/2026-11-11%20Program%20Manifest%20Admission%20Log.md)
 retains this increment's evidence and remaining gates.
 
-Positive fixtures are explicitly hand-authored NIL. Complete compiler outputs
-retain an external `nilaix` context-registration helper and are refused without
-rewriting; the source-to-admission compiler bridge remains open. Native loader
-integration and the selected bounded Rust interpreter's corpus qualification
-remain next. This host increment advances neither native edition execution nor
+Positive fixtures at this host-only checkpoint were hand-authored NIL. Complete
+default compiler outputs retain an external `nilaix` registration helper and
+remain refused without rewriting. ADR 0103 above now supplies the bounded
+compiler bridge and native admission; interpreter corpus qualification remains
+next. This host increment advances neither native edition execution nor
 the Linux sequence-12 boundary.
 
 ## Qualified native ABI baseline — bounded edition reads

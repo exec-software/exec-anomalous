@@ -160,7 +160,10 @@ impl<const task_count: usize> bootstrap_physical_access_group<task_count> {
         if !(matches!(task_count, 2 | 3)
             || (cfg!(feature = "shared_veil_test") && task_count == 5)
             || (cfg!(feature = "owned_workspace_test") && task_count == 1)
-            || (cfg!(feature = "native_program_test") && task_count == 1))
+            || (cfg!(any(
+                feature = "native_program_test",
+                feature = "native_manifest_test"
+            )) && task_count == 1))
             || self.window.is_some()
         {
             return Err(access_error::invalid_state);
@@ -286,7 +289,10 @@ impl<const task_count: usize> bootstrap_physical_access_group<task_count> {
         if !(matches!(task_count, 2 | 3)
             || (cfg!(feature = "shared_veil_test") && task_count == 5)
             || (cfg!(feature = "owned_workspace_test") && task_count == 1)
-            || (cfg!(feature = "native_program_test") && task_count == 1))
+            || (cfg!(any(
+                feature = "native_program_test",
+                feature = "native_manifest_test"
+            )) && task_count == 1))
             || root == 0
             || !root.is_multiple_of(page_size)
             || root >= paging::identity_map_limit
@@ -921,7 +927,12 @@ mod tests {
 // SAFETY: The alias owner preflights the complete bounded RAM extent before
 // reading/writing. Source owners independently retain its physical lease. No
 // alias pointer survives the synchronous operation or root/owner withdrawal.
-#[cfg(any(test, feature = "owned_source_test", feature = "native_program_test"))]
+#[cfg(any(
+    test,
+    feature = "owned_source_test",
+    feature = "native_program_test",
+    feature = "native_manifest_test"
+))]
 unsafe impl<const task_count: usize> super::owned_source::source_memory
     for bootstrap_physical_access_group<task_count>
 {

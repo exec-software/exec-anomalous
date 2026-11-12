@@ -132,6 +132,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "anomalous-native-manifest-loader"
+version = "0.1.0"
+dependencies = [
+ "anomalous-native-runtime",
+ "anomalous-program-manifest",
+]
+
+[[package]]
 name = "anomalous-native-program-client"
 version = "0.1.0"
 dependencies = [

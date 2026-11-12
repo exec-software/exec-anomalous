@@ -65,6 +65,7 @@ pub(super) fn selected(features: &[&str]) -> bool {
                     | "linux_loader_entry_test"
                     | "native_runtime_test"
                     | "native_program_test"
+                    | "native_manifest_test"
                     | "native_durable_test"
                     | "native_durable_failure_test"
                     | "native_repeated_editor_test"

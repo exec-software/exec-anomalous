@@ -37,6 +37,8 @@ pub(super) fn selected(features: &[&str]) -> bool {
                     | ny_object_smoke::feature
                     | native_application_smoke::feature
                     | native_runtime_smoke::feature
+                    | "native_program_test"
+                    | "native_manifest_test"
                     | native_document_smoke::feature
                     | elf_document_smoke::feature
                     | native_relaunch_smoke::feature
