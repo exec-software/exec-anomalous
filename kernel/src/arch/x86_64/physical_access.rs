@@ -921,7 +921,7 @@ mod tests {
 // SAFETY: The alias owner preflights the complete bounded RAM extent before
 // reading/writing. Source owners independently retain its physical lease. No
 // alias pointer survives the synchronous operation or root/owner withdrawal.
-#[cfg(any(test, feature = "owned_source_test"))]
+#[cfg(any(test, feature = "owned_source_test", feature = "native_program_test"))]
 unsafe impl<const task_count: usize> super::owned_source::source_memory
     for bootstrap_physical_access_group<task_count>
 {

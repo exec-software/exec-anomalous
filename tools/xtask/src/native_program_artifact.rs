@@ -22,17 +22,17 @@ const image_base: u64 = 0x400000;
 const startup_address: u64 = 0x801000;
 /// An `ANPG` descriptor, twice the native application's 128.
 const startup_length: u64 = 256;
-/// One RX page. The program profile maps exactly one, so an image that
-/// outgrew it must be refused here as well as by the vessel's own linker
-/// assertion: this is the side that knows what the kernel will map.
-const code_page_bytes: usize = 4096;
+/// Two RX pages for the measured edition-read client. This explicit program
+/// profile remains smaller than the native application's eight-page profile.
+/// The linker and this independent inspector both enforce the bound.
+const code_page_bytes: usize = 8192;
 const startup_entry: [u8; 10] = [0xfc, 0x48, 0xc7, 0xc0, 0, 0, 0, 0, 0xcd, 0xf4];
-const transport_entry: [u8; 25] = [
+const transport_entry: [u8; 29] = [
     0x53, 0x48, 0x89, 0xfb, 0x48, 0x8b, 0x03, 0x48, 0x8b, 0x7b, 0x08, 0x48, 0x8b, 0x73, 0x10, 0x48,
-    0x8b, 0x53, 0x18, 0x48, 0x8b, 0x4b, 0x20, 0xcd, 0xf4,
+    0x8b, 0x53, 0x18, 0x48, 0x8b, 0x4b, 0x20, 0x4c, 0x8b, 0x43, 0x28, 0xcd, 0xf4,
 ];
 const transport_return: [u8; 14] = [
-    0x48, 0x89, 0x43, 0x28, 0x48, 0x89, 0x4b, 0x30, 0x48, 0x89, 0x53, 0x38, 0x5b, 0xc3,
+    0x48, 0x89, 0x43, 0x30, 0x48, 0x89, 0x4b, 0x38, 0x48, 0x89, 0x53, 0x40, 0x5b, 0xc3,
 ];
 
 /// Require one exact symbol; a duplicate or differently typed alias cannot
@@ -109,12 +109,12 @@ fn inspect_client_contract(
     if text_address != image_base || text_size == 0 || text_size > image.len() as u64 {
         return Err("program initialized text geometry changed".into());
     }
-    // The single mapped code page is a kernel-side fact, so it is checked on
+    // The two mapped code pages are kernel-side facts, so their bound is checked on
     // the host where the failure can name it, not discovered at boot by a
     // geometry refusal that cannot say which side was wrong.
     if image.len() > code_page_bytes {
         return Err(format!(
-            "program image is {} bytes and exceeds its single {code_page_bytes}-byte code page",
+            "program image is {} bytes and exceeds its {code_page_bytes}-byte code profile",
             image.len()
         ));
     }
@@ -249,7 +249,7 @@ pub(super) fn package_image(root: &Path, build: &Path) -> Result<artifact, Strin
     };
     inspect_wrapper(root, &artifact)?;
     let mut receipt = format!(
-        "profile=program_launch_v1\nentry=0x400000\nstartup=0x801000\nstartup_bytes=256\narena_bytes=65536\ncode_pages=1\nrx_bytes={}\nrw_bytes={}\n",
+        "profile=program_launch_v1\nentry=0x400000\nstartup=0x801000\nstartup_bytes=256\narena_bytes=65536\ncode_pages=2\nrx_bytes={}\nrw_bytes={}\n",
         artifact.image.len(),
         client.headers[1].memory_size
     );
@@ -413,4 +413,72 @@ pub(super) fn verify_absent(symbols: &str, bytes: &[u8]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture() -> (Vec<u8>, String, Vec<u8>) {
+        let mut image = vec![0x90; 128];
+        // Independent byte witness for the five-input register gate and its
+        // three exact output fields. R8 carries the edition's read offset.
+        image[..17].copy_from_slice(&[
+            0xfc, 0x48, 0xc7, 0xc0, 0, 0, 0, 0, 0xcd, 0xf4, 0xe8, 81, 0, 0, 0, 0x0f, 0x0b,
+        ]);
+        image[32..75].copy_from_slice(&[
+            0x53, 0x48, 0x89, 0xfb, 0x48, 0x8b, 0x03, 0x48, 0x8b, 0x7b, 0x08, 0x48, 0x8b, 0x73,
+            0x10, 0x48, 0x8b, 0x53, 0x18, 0x48, 0x8b, 0x4b, 0x20, 0x4c, 0x8b, 0x43, 0x28, 0xcd,
+            0xf4, 0x48, 0x89, 0x43, 0x30, 0x48, 0x89, 0x4b, 0x38, 0x48, 0x89, 0x53, 0x40, 0x5b,
+            0xc3,
+        ]);
+        image[80..82].copy_from_slice(&[0x0f, 0x0b]);
+        image[96] = 0xc3;
+        let symbols = [
+            ("entry", 0x400000, 'T'),
+            ("startup_return", 0x40000a, 'T'),
+            ("run", 0x400060, 'T'),
+            ("call", 0x400020, 'T'),
+            ("syscall_return", 0x40003d, 'T'),
+            ("fault_instruction", 0x400050, 'T'),
+            ("startup", 0x801000, 'D'),
+            ("descriptor_start", 0x801000, 'D'),
+            ("descriptor_end", 0x801100, 'D'),
+        ]
+        .into_iter()
+        .map(|(suffix, address, kind)| format!("{prefix}_{suffix} {kind} {address:x}\n"))
+        .collect();
+        (image, symbols, vec![0; 4352])
+    }
+
+    #[test]
+    fn edition_offset_and_exact_receipt_stores_are_required() {
+        let (image, symbols, rw) = fixture();
+        assert_eq!(
+            inspect_client_contract(&symbols, &image, 0x400000, 128, &rw, 4352),
+            Ok(0x400050)
+        );
+        for offset in 32..75 {
+            let mut changed = image.clone();
+            changed[offset] ^= 1;
+            assert!(
+                inspect_client_contract(&symbols, &changed, 0x400000, 128, &rw, 4352).is_err(),
+                "accepted changed transport byte {offset}"
+            );
+        }
+        let old_return = symbols.replace("syscall_return T 40003d", "syscall_return T 400039");
+        assert!(inspect_client_contract(&old_return, &image, 0x400000, 128, &rw, 4352).is_err());
+    }
+
+    #[test]
+    fn edition_transport_requires_the_two_page_bound_and_original_descriptor() {
+        let (mut image, symbols, rw) = fixture();
+        image.resize(8192, 0x90);
+        assert!(inspect_client_contract(&symbols, &image, 0x400000, 128, &rw, 4352).is_ok());
+        image.push(0);
+        assert!(inspect_client_contract(&symbols, &image, 0x400000, 128, &rw, 4352).is_err());
+        image.truncate(128);
+        let widened = symbols.replace("descriptor_end D 801100", "descriptor_end D 801200");
+        assert!(inspect_client_contract(&widened, &image, 0x400000, 128, &rw, 4352).is_err());
+    }
 }

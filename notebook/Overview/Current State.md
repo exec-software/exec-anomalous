@@ -8,7 +8,38 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current native ABI increment — program console transport
+## Current native ABI checkpoint — bounded edition reads
+
+Accepted [ADR 0101](../../docs/adr/0101-deliver-bounded-native-program-edition-bytes.md)
+connects the ANPG edition grant to one separately retained immutable source.
+The experimental service validates live task authority and the complete arena
+destination before each bounded read, then returns the exact committed length
+and sequence. EOF returns zero bytes and consumes a sequence; rejected requests
+leave the destination and sequence unchanged. Scratch clearing, authority
+revocation and source cleanup are part of the retained lifecycle.
+
+The measured 5,605-byte client requires two RX pages in the named program
+profile, with its existing 64 KiB arena. The native application's eight-page
+code and 32 KiB arena are unchanged. Preparation releases allocator borrows
+before guest transfer; teardown validates the resumed continuation and
+reacquires the allocator. An authenticated service probe checks ordinary
+reacquisition and nested-borrow denial without modifying the caller frame.
+
+All 30 final jobs passed on 598 unchanged source files. The same reviewed image
+passed at 96 MiB and 320 MiB under TCG/Nehalem and AMD KVM/host. Each successful
+boot verified seven edition reads, including two EOF replies, 8,203 delivered
+bytes including repeated ranges, seventeen rejected reads and complete cleanup.
+Three provisioning refusals per backend also restored all resources. Exact
+host counts, artifact identities and preliminary attempts are recorded in the
+[Edition Read Log](../Development/2026-11-11%20Native%20Program%20Edition%20Read%20Log.md).
+The fixture delivers synthetic binary bytes and executes no edition.
+Semantic-manifest admission and the selected Rust interpreter's corpus
+qualification remain separate gates. The Linux regression still stops at the
+unanswered sequence-12 request after eleven returns:
+`mmap(0x100028000, 0x189000, 5, 0x812, 3, 0x28000)`. Main entry and Linux exit
+remain unproved.
+
+## Previous native ABI checkpoint — program console transport
 
 Proposed [ADR 0100](../../docs/adr/0100-qualify-native-program-console-transport.md)
 connects the ANPG console grant to a service bound to the live task, with checked
@@ -18,13 +49,10 @@ requests, and complete cleanup across two arena bases. All 27 final jobs passed
 on 503 unchanged source files, including 96/320 MiB runs under TCG/Nehalem and
 AMD KVM/host with the same image. Exact results and failed attempts are in the
 [Native Program Console Log](../Development/2026-11-11%20Native%20Program%20Console%20Log.md).
-No edition is mapped or executed. Bounded edition delivery, semantic-manifest
-admission and the selected Rust interpreter's corpus qualification remain next;
+That console-only proof maps or executes no edition. Bounded edition delivery
+is the current increment above; semantic-manifest admission and the selected
+Rust interpreter's corpus qualification remain next.
 Linux's live source-backed RX replacement remains a separate execution gate.
-The re-pinned Linux inputs now reach sequence-12
-`mmap(0x100028000, 0x189000, 5, 0x812, 3, 0x28000)` after eleven returns. That
-interpreter request is observed but unanswered; main entry and Linux exit remain
-unproved.
 
 ## Selected next major slice — existing Linux Antimatter through the Linux veil
 

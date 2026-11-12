@@ -18,6 +18,7 @@ the notebook may contain incomplete ideas and must label them accordingly.
 | Note | Purpose |
 | --- | --- |
 | [Current State](Overview/Current%20State.md) | Verified capabilities, known gaps, and the current development target |
+| [Native Program Edition Read Log](Development/2026-11-11%20Native%20Program%20Edition%20Read%20Log.md) | Qualified bounded edition reads, EOF, source cleanup and allocator phase alignment; all 30 final jobs passed on 598 unchanged source files, including TCG/KVM 96/320 MiB proofs and provisioning refusals |
 | [Native Program Console Log](Development/2026-11-11%20Native%20Program%20Console%20Log.md) | Experimental ANPG console transport with live authority, complete copied text, checked replies and hostile-request rejection; all 27 final jobs and TCG/KVM proofs passed, with no edition execution |
 | [Owned Loader Sources Log](Development/2026-10-07%20Owned%20Loader%20Sources%20Log.md) | Copied and sealed native source ownership across producer retirement; TCG/KVM/VirtualBox qualification and guarded regressions |
 | [ELF Relaunch Log](Development/2026-10-04%20ELF%20Relaunch%20Log.md) | Bounded userspace ELF retained-service replacement comparison against the native baseline; all 52 qualification checks and two restorations passed |

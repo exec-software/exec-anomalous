@@ -509,7 +509,25 @@ impl prepared_launch {
         let mixed_workspace = false;
         #[cfg(any(test, feature = "mixed_workspace_test"))]
         let mixed_workspace = self.mixed_workspace_profile;
+        #[cfg(any(
+            test,
+            feature = "native_runtime_test",
+            feature = "mixed_workspace_test"
+        ))]
+        if self.arena_base.is_some() != self.arena_kind.is_some() {
+            return Err(launch_error::invalid_profile);
+        }
+        // Two code pages belong only to the controller-selected program
+        // arena. Enabling the feature cannot widen the generic page-count API.
+        #[cfg(any(test, feature = "native_program_test"))]
+        let program = self.arena_base.is_some()
+            && self.arena_kind == Some(super::arena_profile::arena_profile::program)
+            && !workspace
+            && !mixed_workspace;
+        #[cfg(not(any(test, feature = "native_program_test")))]
+        let program = false;
         if !(matches!(self.expected_code_pages, 1 | 8)
+            || (program && self.expected_code_pages == 2)
             || ((workspace || mixed_workspace) && self.expected_code_pages == 32))
             || plan.regions().count() != usize::from(self.mapping_count())
             || self.mapping.residency().is_none()
@@ -1891,14 +1909,22 @@ mod tests {
         staged_mapping::new_resident(plan, residency).unwrap()
     }
 
-    /// The program geometry of ADR 0094: one RX code page and a 64 KiB arena.
+    /// ADR 0101's program geometry: two RX code pages and a 64 KiB arena.
     ///
     /// Written out rather than derived from `arena_profile`, for the same
     /// reason the golden plan tests are: a fixture that asks the profile what
     /// to expect cannot notice the profile changing.
     fn program_arena_mapping(base: u64, arena_permissions: page_permissions) -> staged_mapping {
+        program_arena_mapping_with_code_pages(base, arena_permissions, 2)
+    }
+
+    fn program_arena_mapping_with_code_pages(
+        base: u64,
+        arena_permissions: page_permissions,
+        code_pages: u64,
+    ) -> staged_mapping {
         let requests = [
-            (code_base, 1, rx),
+            (code_base, code_pages, rx),
             (0x800000, 2, rw),
             (base, 16, arena_permissions),
             (stack_base, 2, rw),
@@ -1925,7 +1951,7 @@ mod tests {
             &requests,
             &guards,
             mapping_budget {
-                data_pages: 21,
+                data_pages: code_pages + 20,
                 table_frames: 8,
             },
         )
@@ -1962,7 +1988,8 @@ mod tests {
     fn program_owner(base: u64) -> prepared_launch {
         let mapping = program_arena_mapping(base, rw);
         let admission =
-            user_entry_plan::new(mapping.plan(), 0, 4, code_base, 3, stack_top).unwrap();
+            user_entry_plan::new(mapping.plan(), 0, 2 * page_size, code_base, 3, stack_top)
+                .unwrap();
         prepared_launch::new_with_native_arena(
             mapping,
             admission,
@@ -2151,7 +2178,11 @@ mod tests {
             // native profile would report 32 KiB.
             assert_eq!(owner.arena_extent(), Some((base, 64 * 1024)));
             assert_eq!(owner.mapping_count(), 4);
-            assert_eq!(owner.expected_code_pages, 1);
+            assert_eq!(owner.expected_code_pages, 2);
+            assert_eq!(owner.mapping().retained_leases(), 5);
+            assert_eq!(allocator.accounting().data_owned, 22);
+            assert_eq!(allocator.accounting().table_owned, 9);
+            assert_eq!(initial.free - allocator.accounting().free, 31);
             // SAFETY: Cancellation must reclaim everything prepare acquired.
             unsafe { owner.cancel(&mut allocator, &mut memory, &mut tasks, &mut circles) }.unwrap();
             assert_released(&owner, &allocator, initial, &tasks, &circles);
@@ -2173,6 +2204,76 @@ mod tests {
             program_residency(plan, 8),
             Err(resident_error::table_budget_exhausted)
         ));
+    }
+
+    #[test]
+    fn two_program_code_pages_require_exact_mapping_width_and_retained_kind() {
+        for variant in 0..13 {
+            let mut ledger = [0; frame_count / 4];
+            let mut allocator = allocator(&mut ledger);
+            let initial = allocator.accounting();
+            let mut memory = fake_memory::new();
+            let mut circles = circle_table::new_native_arenas();
+            let initial_circles = circles.accounting();
+            let mut tasks = task_table::new();
+            let base = 0x804000;
+            let pages = match variant {
+                0 => 1,
+                1 => 3,
+                2 => 8,
+                _ => 2,
+            };
+            let mapping = program_arena_mapping_with_code_pages(base, rw, pages);
+            let admission = if variant == 12 {
+                let wider = program_arena_mapping_with_code_pages(base, rw, 3);
+                user_entry_plan::new(wider.plan(), 0, 2 * page_size + 1, code_base, 3, stack_top)
+                    .unwrap()
+            } else {
+                user_entry_plan::new(mapping.plan(), 0, 4, code_base, 3, stack_top).unwrap()
+            };
+            let mut owner = prepared_launch::new_with_native_arena(
+                mapping,
+                admission,
+                base,
+                super::super::arena_profile::arena_profile::program,
+            );
+            match variant {
+                3 => owner.expected_code_pages = 1,
+                4 => owner.expected_code_pages = 3,
+                5 => owner.expected_code_pages = 8,
+                6 => owner.arena_kind = None,
+                7 => {
+                    owner.arena_kind =
+                        Some(super::super::arena_profile::arena_profile::native_application);
+                }
+                8 => owner.arena_base = None,
+                9 => {
+                    owner.arena_base = None;
+                    owner.arena_kind = None;
+                }
+                10 => owner.workspace_profile = true,
+                11 => owner.mixed_workspace_profile = true,
+                _ => {}
+            }
+            // SAFETY: Wrong geometry or retained selection must fail before
+            // memory access, allocation or publication of any lifecycle child.
+            assert_eq!(
+                unsafe {
+                    owner.prepare(&mut allocator, &mut memory, &mut circles, |_, _| {
+                        panic!("invalid program code profile populated")
+                    })
+                },
+                Err(launch_error::invalid_profile),
+                "variant {variant}"
+            );
+            assert_eq!(allocator.accounting(), initial);
+            assert_eq!((memory.clears, memory.writes, memory.reads), (0, 0, 0));
+            assert_eq!(circles.accounting(), initial_circles);
+            assert_eq!(tasks.active_count(), 0);
+            // SAFETY: Rejected preparation acquired no execution consumers.
+            unsafe { owner.cancel(&mut allocator, &mut memory, &mut tasks, &mut circles) }.unwrap();
+            assert_released(&owner, &allocator, initial, &tasks, &circles);
+        }
     }
 
     #[test]

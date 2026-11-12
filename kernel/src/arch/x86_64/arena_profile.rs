@@ -93,9 +93,9 @@ pub(super) enum arena_profile {
     /// A bounded native application: eight RX code pages and a fixed 32 KiB
     /// arena.
     native_application,
-    /// A program-bearing task: one RX code page and a 64 KiB arena, the
-    /// minimum `program_descriptor` admits because an interpreter sizes its
-    /// own heap (ADRs 0092, 0093).
+    /// A program-bearing task: two RX code pages and a 64 KiB arena.
+    /// ADR 0101 admits the measured 5,605-byte edition-delivery client; this
+    /// bounded increment does not select an interpreter's eventual geometry.
     ///
     /// Gated so a build without the feature cannot name this profile at all.
     /// Leaving it unconditional would let a `native_runtime_test` or
@@ -112,12 +112,13 @@ pub(super) enum arena_profile {
     feature = "mixed_workspace_test"
 ))]
 impl arena_profile {
-    /// RX pages for the task's image. `prepare_profile` admits 1 or 8.
+    /// RX pages for the named task profile. Two pages require the retained
+    /// program selection; the generic one/eight-page gate remains unchanged.
     pub(super) const fn code_pages(self) -> u64 {
         match self {
             Self::native_application => 8,
             #[cfg(any(test, feature = "native_program_test"))]
-            Self::program => 1,
+            Self::program => 2,
         }
     }
 
@@ -261,7 +262,7 @@ mod tests {
     const golden_native_arena_pages: u64 = 8;
     const golden_native_code_pages: u64 = 8;
     const golden_native_data_pages: u64 = 20;
-    const golden_program_data_pages: u64 = 21;
+    const golden_program_data_pages: u64 = 22;
     const golden_mappings: usize = 4;
     const golden_reservations: usize = 5;
 
@@ -387,13 +388,13 @@ mod tests {
     #[test]
     fn a_program_arena_is_sixty_four_kibibytes_and_guarded() {
         assert_eq!(arena_profile::program.arena_bytes(), 64 * 1024);
-        assert_eq!(arena_profile::program.code_pages(), 1);
+        assert_eq!(arena_profile::program.code_pages(), 2);
         for base in program_arena_bases {
             let (regions, reserved) = geometry(base, arena_profile::program);
             assert_eq!(
                 regions,
                 vec![
-                    (user_code_base, 1, false, true),
+                    (user_code_base, 2, false, true),
                     (user_data_base, 2, true, false),
                     (base, 16, true, false),
                     (user_stack_base, 2, true, false),

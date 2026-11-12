@@ -1,6 +1,36 @@
 # Native execution and compatibility readiness
 
-## Native program console increment (2026-11-11)
+## Qualified native program edition reads (2026-11-11)
+
+Accepted [ADR 0101](../adr/0101-deliver-bounded-native-program-edition-bytes.md)
+adds bounded positional reads from one controller-bound immutable edition to
+the experimental ANPG gate. Complete destination preflight precedes source
+access, exact copied bytes precede receipt commitment, and EOF consumes a
+sequence without copying. Live task/handle checks, unchanged destinations on
+rejection, scratch clearing and explicit source release bound the service.
+
+The measured client is 5,605 bytes, admitted as two RX pages only through the
+named program profile. Its 64 KiB arena and the native application's eight RX
+pages and 32 KiB arena retain their bounds. Preparation ends its allocator
+borrow before guest entry; teardown validates the resumed continuation before
+fresh allocator acquisition. The service probe checks reacquisition and nested
+denial while preserving the complete saved frame.
+
+All 30 final jobs passed on 598 unchanged source files. The same reviewed image
+passed at 96 MiB and 320 MiB under TCG/Nehalem and AMD KVM/host: seven committed
+edition reads, seventeen rejections, 8,203 delivered bytes including repeated
+ranges, preserved caller frames and complete source/allocator restoration per
+successful boot. Three provisioning refusals per backend also passed. Host
+suites passed 644 default-kernel, 727 all-feature-kernel, 402 xtask and 35 native
+runtime tests; focused program and tooling suites passed 24 and 12 respectively.
+Evidence, artifact identities and preliminary attempts are recorded in the
+[Edition Read Log](../../notebook/Development/2026-11-11%20Native%20Program%20Edition%20Read%20Log.md).
+The source contains synthetic binary bytes. Semantic-manifest admission and
+the selected Rust interpreter's corpus qualification remain open. Linux remains
+at the unanswered sequence-12 boundary recorded below; no additional Linux
+execution or stable public ABI is established.
+
+## Qualified native program console baseline (2026-11-11)
 
 Proposed [ADR 0100](../adr/0100-qualify-native-program-console-transport.md)
 connects the ANPG console grant to a bounded `int 0xf4` service. The retained
@@ -21,12 +51,13 @@ the earlier development-checkout proof remains separate preliminary evidence.
 No edition is mapped or executed by this proof. The
 [Runtime Owner Reply](../../notebook/Development/2026-10-15%20NIL%20Runtime%20into%20Anomalous%20%E2%80%94%20Runtime%20Owner%20Reply.md)
 selects a bounded Rust interpreter with differential corpus qualification.
-Bounded file-backed edition delivery and ADR 0093's semantic-manifest admission
-remain open. The pre-existing handwritten interpreter is preserved unlinked;
+The current increment above adds bounded edition delivery; ADR 0093's
+semantic-manifest admission remains open. The pre-existing handwritten
+interpreter is preserved unlinked;
 its permissive parsing does not establish application readiness. The service is
 experimental and does not stabilize the native application ABI.
 
-Fresh Linux qualification reaches sequence-12
+The latest Linux regression preserves sequence-12
 `mmap(0x100028000, 0x189000, 5, 0x812, 3, 0x28000)` at both RAM sizes, after
 eleven returns. This is an unanswered interpreter request, before main entry;
 the historical length was `0x198000` before the package re-pin.

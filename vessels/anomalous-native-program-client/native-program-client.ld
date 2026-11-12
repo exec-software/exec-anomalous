@@ -35,10 +35,9 @@ SECTIONS {
     /DISCARD/ : { *(.comment) *(.eh_frame*) *(.note*) }
 }
 ASSERT(anomalous_native_program_client_entry == anomalous_native_program_client_image_start, "native program entry moved")
-/* One RX page, not the native application's eight: the program profile maps
-   exactly one, so an image that outgrew it must fail at the link rather than
-   be refused at boot by a geometry check that cannot say why. */
-ASSERT(anomalous_native_program_client_image_end - anomalous_native_program_client_image_start <= 4096, "native program RX exceeds its single code page")
+/* ADR 0101: measured edition-read client needs two RX pages. This named
+   program profile remains separate from the eight-page native application. */
+ASSERT(anomalous_native_program_client_image_end - anomalous_native_program_client_image_start <= 8192, "native program RX exceeds its two code pages")
 ASSERT(anomalous_native_program_client_descriptor_start == 0x801000, "native program descriptor moved")
 ASSERT(anomalous_native_program_client_descriptor_end - anomalous_native_program_client_descriptor_start == 256, "native program descriptor size")
 ASSERT(anomalous_native_program_client_data_end - anomalous_native_program_client_data_start <= 8192, "native program RW too large")

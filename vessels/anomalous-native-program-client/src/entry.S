@@ -26,12 +26,13 @@ anomalous_native_program_client_call:
     movq 16(%rbx), %rsi
     movq 24(%rbx), %rdx
     movq 32(%rbx), %rcx
+    movq 40(%rbx), %r8
     int $0xf4
 .global anomalous_native_program_client_syscall_return
 anomalous_native_program_client_syscall_return:
-    movq %rax, 40(%rbx)
-    movq %rcx, 48(%rbx)
-    movq %rdx, 56(%rbx)
+    movq %rax, 48(%rbx)
+    movq %rcx, 56(%rbx)
+    movq %rdx, 64(%rbx)
     popq %rbx
     retq
 .size anomalous_native_program_client_call, . - anomalous_native_program_client_call

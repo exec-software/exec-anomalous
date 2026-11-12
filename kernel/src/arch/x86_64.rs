@@ -282,7 +282,11 @@ mod linux_application_calls;
 mod linux_loader_plan;
 #[cfg(feature = "linux_loader_entry_test")]
 mod linux_loader_reply;
-#[cfg(any(test, feature = "linux_loader_entry_test"))]
+#[cfg(any(
+    test,
+    feature = "linux_loader_entry_test",
+    feature = "native_program_test"
+))]
 mod linux_loader_source;
 #[cfg(feature = "linux_application_test")]
 mod linux_syscall;
@@ -371,6 +375,8 @@ mod owned_tls_runtime;
 mod owned_workspace_fault;
 #[cfg(feature = "native_program_test")]
 mod program_console;
+#[cfg(feature = "native_program_test")]
+mod program_edition;
 #[cfg(any(test, feature = "owned_tls_test", feature = "linux_tls_test"))]
 mod task_tls;
 mod user_copy;
@@ -434,7 +440,7 @@ mod owned_mapping;
     not(test)
 ))]
 mod owned_mapping_test;
-#[cfg(any(test, feature = "owned_source_test"))]
+#[cfg(any(test, feature = "owned_source_test", feature = "native_program_test"))]
 mod owned_source;
 #[cfg(any(test, feature = "owned_source_test"))]
 mod owned_source_plan;

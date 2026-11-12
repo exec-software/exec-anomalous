@@ -72,7 +72,11 @@ enum source_phase {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum source_origin {
     task(task_identity),
-    #[cfg(any(test, feature = "linux_loader_entry_test"))]
+    #[cfg(any(
+        test,
+        feature = "native_program_test",
+        feature = "linux_loader_entry_test"
+    ))]
     provisioned(core::num::NonZeroU64),
 }
 
@@ -119,7 +123,11 @@ impl owned_source {
     /// The caller is the explicitly selected boot provisioning controller, has
     /// assigned a fresh nonzero grant and retains the owner through cleanup.
     /// It must not attribute these bytes to a task or permit task upload APIs.
-    #[cfg(any(test, feature = "linux_loader_entry_test"))]
+    #[cfg(any(
+        test,
+        feature = "native_program_test",
+        feature = "linux_loader_entry_test"
+    ))]
     pub(super) unsafe fn new_provisioned(
         grant: u64,
         length: u64,
@@ -221,7 +229,11 @@ impl owned_source {
     /// The selected privileged controller supplies nonaliasing kernel bytes;
     /// it retains the independent source lease and physical-access owner under
     /// sole-BSP IF-clear/NMI-masked exclusion. This is not a task upload gate.
-    #[cfg(any(test, feature = "linux_loader_entry_test"))]
+    #[cfg(any(
+        test,
+        feature = "native_program_test",
+        feature = "linux_loader_entry_test"
+    ))]
     pub(super) unsafe fn append_provisioned(
         &mut self,
         grant: u64,
@@ -300,7 +312,11 @@ impl owned_source {
     /// Only the selected privileged provisioning controller may seal this
     /// source after checking its complete external-input contract. IF is clear
     /// and no importer or consumer can concurrently access the retained owner.
-    #[cfg(any(test, feature = "linux_loader_entry_test"))]
+    #[cfg(any(
+        test,
+        feature = "native_program_test",
+        feature = "linux_loader_entry_test"
+    ))]
     pub(super) unsafe fn seal_provisioned(&mut self, grant: u64) -> Result<(), source_error> {
         self.validate_provisioned(grant)?;
         self.seal_complete()
@@ -377,7 +393,11 @@ impl owned_source {
     pub(super) const fn uploader(&self) -> Option<task_identity> {
         match self.origin {
             source_origin::task(identity) => Some(identity),
-            #[cfg(any(test, feature = "linux_loader_entry_test"))]
+            #[cfg(any(
+                test,
+                feature = "native_program_test",
+                feature = "linux_loader_entry_test"
+            ))]
             source_origin::provisioned(_) => None,
         }
     }
@@ -414,7 +434,11 @@ impl owned_source {
         Ok(())
     }
 
-    #[cfg(any(test, feature = "linux_loader_entry_test"))]
+    #[cfg(any(
+        test,
+        feature = "native_program_test",
+        feature = "linux_loader_entry_test"
+    ))]
     fn validate_provisioned(&self, grant: u64) -> Result<(), source_error> {
         match self.origin {
             source_origin::provisioned(expected)

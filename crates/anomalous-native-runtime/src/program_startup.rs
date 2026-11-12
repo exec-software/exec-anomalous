@@ -202,6 +202,20 @@ impl program_descriptor {
     pub const fn edition_length(&self) -> u64 {
         self.edition_length
     }
+    /// The one retained edition, when this launch grants bounded file reads.
+    /// This handle names no other file and conveys no namespace authority.
+    /// The descriptor remains launch data; the kernel's live binding decides
+    /// whether a request may actually read the retained source.
+    pub const fn edition(&self) -> Option<granted_handle> {
+        if self.granted_services & service::file_read != 0 {
+            Some(granted_handle {
+                value: self.edition_handle,
+                family: service::file_read,
+            })
+        } else {
+            None
+        }
+    }
     /// The console, when this launch granted one.
     ///
     /// `None` is not an error: a program that only computes is a legitimate
@@ -682,5 +696,28 @@ mod tests {
     #[test]
     fn the_descriptor_fits_the_size_this_contract_publishes() {
         assert!(core::mem::size_of::<program_descriptor>() <= program_startup_size);
+    }
+
+    #[test]
+    fn edition_metadata_requires_an_explicit_file_read_grant() {
+        let ungranted = valid();
+        assert_eq!(ungranted.edition_handle(), 7);
+        assert_eq!(ungranted.edition(), None);
+        let granted = program_descriptor::try_new(
+            base,
+            minimum_arena_bytes,
+            7,
+            4097,
+            9,
+            service::console_write | service::file_read,
+            b"",
+        )
+        .unwrap();
+        let decoded = program_descriptor::decode(&granted.encode()).unwrap();
+        let edition = decoded.edition().unwrap();
+        assert_eq!(edition.raw(), 7);
+        assert_eq!(edition.family(), service::file_read);
+        assert_ne!(edition, decoded.console().unwrap());
+        assert_eq!(granted.encode().len(), program_startup_size);
     }
 }

@@ -5,11 +5,12 @@
 
 //! Native program console transport over the existing ANPG launch contract.
 //! The client checks real replies and adversarial raw requests. Edition handles
-//! remain inert until source delivery and semantic-manifest admission exist.
+//! are readable only through a task-bound service; no edition executes.
 
 use anomalous_native_runtime::{
-    arena, console_error, console_transport, console_writer, granted_handle, maximum_write_bytes,
-    program_descriptor, program_startup_size, program_status, service,
+    arena, console_error, console_transport, console_writer, edition_error, edition_reader,
+    edition_receipt, edition_transport, granted_handle, maximum_write_bytes, program_descriptor,
+    program_startup_size, program_status, service,
 };
 use core::{
     arch::{asm, global_asm},
@@ -35,6 +36,7 @@ struct call_record {
     pointer: u64,
     length: u64,
     sequence: u64,
+    offset: u64,
     status: u64,
     returned_sequence: u64,
     returned_length: u64,
@@ -45,12 +47,23 @@ unsafe extern "C" {
 }
 
 fn call(operation: u64, channel: u64, pointer: u64, length: usize, sequence: u64) -> call_record {
+    call_at(operation, channel, pointer, length, sequence, 0)
+}
+fn call_at(
+    operation: u64,
+    channel: u64,
+    pointer: u64,
+    length: usize,
+    sequence: u64,
+    offset: u64,
+) -> call_record {
     let mut record = call_record {
         operation,
         channel,
         pointer,
         length: length as u64,
         sequence,
+        offset,
         status: u64::MAX,
         returned_sequence: 0,
         returned_length: 0,
@@ -158,6 +171,126 @@ fn exercise_console(startup: &program_descriptor, scratch: &mut [u8]) {
     assert_eq!(writer.written(), 2);
 }
 
+struct native_edition;
+impl edition_transport for native_edition {
+    fn read_at(
+        &mut self,
+        handle: u64,
+        offset: u64,
+        destination: &mut [u8],
+        sequence: u64,
+    ) -> Result<edition_receipt, edition_error> {
+        let reply = call_at(
+            2,
+            handle,
+            destination.as_mut_ptr() as u64,
+            destination.len(),
+            sequence,
+            offset,
+        );
+        if reply.status != program_status::ok {
+            return Err(edition_error::transport);
+        }
+        Ok(edition_receipt {
+            sequence: reply.returned_sequence,
+            length: reply.returned_length,
+        })
+    }
+}
+
+fn edition_refused(
+    handle: u64,
+    pointer: u64,
+    capacity: usize,
+    sequence: u64,
+    offset: u64,
+    expected: u64,
+    scratch: &mut [u8],
+) {
+    scratch.fill(0xa5);
+    let reply = call_at(2, handle, pointer, capacity, sequence, offset);
+    assert_eq!(reply.status, expected);
+    assert_eq!(reply.returned_sequence, 0);
+    assert_eq!(reply.returned_length, 0);
+    assert!(scratch.iter().all(|byte| *byte == 0xa5));
+}
+
+fn exercise_edition(startup: &program_descriptor, scratch: &mut [u8]) {
+    let address = scratch.as_mut_ptr() as u64;
+    let Some(handle) = startup.edition() else {
+        for raw in [0x41, startup.edition_handle(), 0] {
+            edition_refused(raw, address, 1, 1, 0, program_status::denied, scratch);
+        }
+        return;
+    };
+    let raw = handle.raw();
+    assert_eq!(startup.edition_length(), 8195);
+    for (channel, pointer, capacity, sequence, offset, status) in [
+        (0, address, 1, 1, 0, program_status::denied),
+        (
+            startup.console().unwrap().raw(),
+            address,
+            1,
+            1,
+            0,
+            program_status::denied,
+        ),
+        (raw ^ 1, address, 1, 1, 0, program_status::denied),
+        (raw, address, 1, 0, 0, program_status::invalid),
+        (raw, address, 1, 2, 0, program_status::invalid),
+        (raw, address, 0, 1, 0, program_status::invalid),
+        (raw, address, 4097, 1, 0, program_status::invalid),
+        (raw, u64::MAX, 2, 1, 0, program_status::bad_address),
+        (
+            raw,
+            startup.arena_base() + startup.arena_length() - 1,
+            2,
+            1,
+            0,
+            program_status::bad_address,
+        ),
+        (raw, 0x400000, 1, 1, 0, program_status::bad_address),
+        (raw, address, 2, 1, u64::MAX, program_status::invalid),
+        (raw, 0x801000, 1, 1, 0, program_status::bad_address),
+        (raw, address, 1, u64::MAX, 0, program_status::invalid),
+    ] {
+        edition_refused(
+            channel, pointer, capacity, sequence, offset, status, scratch,
+        );
+    }
+    let mut reader = edition_reader::new(handle, startup.edition_length(), native_edition).unwrap();
+    for (index, (offset, capacity, expected)) in [
+        (0, 4096, 4096),
+        (4096, 4096, 4096),
+        (8192, 4096, 3),
+        (4093, 7, 7),
+        (8194, 4096, 1),
+        (8195, 4096, 0),
+        (8200, 1, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        scratch.fill(0xa5);
+        let received = reader.read_at(offset, &mut scratch[..capacity]).unwrap();
+        assert_eq!(received, expected);
+        for (position, byte) in scratch[..received].iter().enumerate() {
+            assert_eq!(
+                *byte,
+                ((offset + position as u64) as u8)
+                    .wrapping_mul(37)
+                    .wrapping_add(11)
+            );
+        }
+        assert!(scratch[received..].iter().all(|byte| *byte == 0xa5));
+        if index == 0 {
+            edition_refused(raw, address, 1, 1, 0, program_status::invalid, scratch);
+        }
+    }
+    assert_eq!(reader.reads(), 7);
+    assert_eq!(reader.bytes_read(), 8203);
+}
+
 /// What this task may reach, as the launch stated it.
 ///
 /// Read back by the kernel, so every value here is one the kernel can compare
@@ -243,6 +376,10 @@ extern "C" fn anomalous_native_program_client_run(pointer: *const u8, length: us
         &mut storage[console_buffer_offset..console_buffer_offset + maximum_write_bytes],
     );
 
+    exercise_edition(
+        &startup,
+        &mut storage[console_buffer_offset..console_buffer_offset + maximum_write_bytes],
+    );
     exit();
 }
 

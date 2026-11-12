@@ -23,8 +23,10 @@ use super::owned_source::{
 use super::physical_access::bootstrap_physical_access;
 use crate::memory::physical::frame_allocator;
 
+#[cfg(any(test, feature = "linux_loader_entry_test"))]
 pub(super) const source_byte_limit: u64 = 512 * 1024;
 const directory_capacity: u32 = 128;
+#[cfg(any(test, feature = "linux_loader_entry_test"))]
 const file_name: &[u8] = b"opt/anomalous-linux-source";
 const fnv_offset: u64 = 0xcbf29ce484222325;
 const fnv_prime: u64 = 0x100000001b3;
@@ -120,6 +122,7 @@ pub(super) struct source_controller {
 impl source_controller {
     /// Inert configuration only. Import, not these numeric fields, requires
     /// explicit privileged provisioning authority.
+    #[cfg(any(test, feature = "linux_loader_entry_test"))]
     pub(super) fn new(
         grant: u64,
         expected_length: u64,

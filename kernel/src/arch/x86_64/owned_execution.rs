@@ -67,6 +67,13 @@ pub(super) struct loader_mapping_observation {
     pub cleanup_retries: u64,
 }
 
+#[cfg(any(feature = "native_program_test", feature = "linux_loader_entry_test"))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum source_read_error {
+    owner_unavailable,
+    source(super::owned_source::source_error),
+}
+
 #[cfg_attr(feature = "owned_multi_region_test", allow(dead_code))]
 const transition_pages: usize = 4;
 
@@ -308,7 +315,7 @@ impl<const task_count: usize> owned_execution_group<task_count> {
         }
     }
 
-    /// Prepare the single task of a program-bearing launch (ADR 0094).
+    /// Prepare the single task of a program-bearing launch (ADRs 0094, 0101).
     ///
     /// A separate entry point rather than a widened `prepare_native_arenas`.
     /// The native application's two-task shape and its two fixed bases are a
@@ -366,13 +373,20 @@ impl<const task_count: usize> owned_execution_group<task_count> {
         // `prepare_segments`, which pass no arena at all -- widening two
         // legacy paths as a side effect of enabling a third.
         #[cfg(feature = "native_program_test")]
-        let single_task_program = matches!(arena, Some((_, arena_profile::program)));
+        let program_profile = matches!(arena, Some((_, arena_profile::program)));
         #[cfg(not(feature = "native_program_test"))]
-        let single_task_program = false;
+        let program_profile = false;
+        // ADR 0101's second code page is available only through this exact
+        // single-task program selection, never through the legacy size API.
+        let code_profile = if program_profile {
+            task_count == 1 && code_pages == 2
+        } else {
+            matches!(code_pages, 1 | 8)
+        };
         if !(matches!(task_count, 2 | 3)
             || (cfg!(feature = "shared_veil_test") && task_count == 5)
-            || (cfg!(feature = "native_program_test") && task_count == 1 && single_task_program))
-            || !matches!(code_pages, 1 | 8)
+            || (cfg!(feature = "native_program_test") && task_count == 1 && program_profile))
+            || !code_profile
         {
             return Err("owned_code_profile");
         }
@@ -894,6 +908,7 @@ impl<const task_count: usize> owned_execution_group<task_count> {
     /// The caller must retain the IF-clear ownership interval through I/O and
     /// copy_to_user; this check is not a transferable permission token.
     #[cfg(any(
+        feature = "native_program_test",
         feature = "native_durable_test",
         feature = "native_editor_workspace_test",
         feature = "linux_loader_entry_test"
@@ -3362,8 +3377,8 @@ impl<const task_count: usize> owned_execution_group<task_count> {
     }
 }
 
-#[cfg(feature = "linux_loader_entry_test")]
-impl owned_execution_group<3> {
+#[cfg(any(feature = "native_program_test", feature = "linux_loader_entry_test"))]
+impl<const task_count: usize> owned_execution_group<task_count> {
     /// Read a bounded sealed-source chunk through this execution owner's
     /// already-live physical alias. This does not select a source grant,
     /// authenticate a task, or publish any bytes to userspace. Metadata errors
@@ -3376,12 +3391,12 @@ impl owned_execution_group<3> {
     /// the authenticated request and any eventual userspace output, and lends
     /// initialized kernel scratch that cannot alias the retained source. No
     /// source slice, physical pointer or scratch reference may escape the call.
-    pub(super) unsafe fn read_loader_source(
+    pub(super) unsafe fn read_source(
         &mut self,
         reader: &super::owned_source::sealed_source_reader<'_>,
         offset: u64,
         destination: &mut [u8],
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), source_read_error> {
         if !self.prepared
             || !self.selecting
             || self.finishing
@@ -3390,14 +3405,35 @@ impl owned_execution_group<3> {
             || !self.access.is_current()
             || !self.current_stack_is_owned()
         {
-            return Err("loader_source_read_state");
+            return Err(source_read_error::owner_unavailable);
         }
         // SAFETY: The borrowing reader retains the sealed lease; this borrow
         // retains the current alias. The caller supplies nonaliasing kernel
         // scratch under the same excluded ownership interval. The reader
         // checks the complete nonempty <=4096-byte logical extent first.
         unsafe { reader.read(offset, destination, &mut self.access) }
-            .map_err(|_| "loader_source_read")
+            .map_err(source_read_error::source)
+    }
+}
+
+#[cfg(feature = "linux_loader_entry_test")]
+impl owned_execution_group<3> {
+    /// Preserve the Linux proof's diagnostic vocabulary over the shared reader.
+    ///
+    /// # Safety
+    /// The caller must meet `read_source`'s retained ownership, authenticated
+    /// request, nonaliasing scratch and IF-clear/NMI-masked exclusion contract.
+    pub(super) unsafe fn read_loader_source(
+        &mut self,
+        reader: &super::owned_source::sealed_source_reader<'_>,
+        offset: u64,
+        destination: &mut [u8],
+    ) -> Result<(), &'static str> {
+        // SAFETY: The unchanged Linux embedding supplies the shared read contract.
+        unsafe { self.read_source(reader, offset, destination) }.map_err(|error| match error {
+            source_read_error::owner_unavailable => "loader_source_read_state",
+            source_read_error::source(_) => "loader_source_read",
+        })
     }
 
     /// Prepare one nine-region sealed-source caller and two ordinary native

@@ -1,9 +1,10 @@
-//! A program-bearing launch: one task, one RX page, a 64 KiB arena (ADR 0094).
+//! A program-bearing launch: one task, two RX pages, a 64 KiB arena (ADR 0101).
 //!
 //! ANPG describes the launch; the controller separately binds the console to
 //! its exact live task. Requests use bounded owned user-copy, complete text
 //! preflight, and a monotonic success sequence before any serial publication.
-//! Editions remain unmapped until source and semantic-manifest admission exist.
+//! Edition bytes are copied from a retained sealed source, never executed.
+//! Semantic-manifest admission and interpreter qualification remain separate.
 //!
 //! The parent module lowers `dead_code` and `unused_imports` under this
 //! feature, because a program build leaves its two-task half unreachable.
@@ -12,11 +13,11 @@
 
 use super::super::arena_profile::program_arena_bases;
 use super::super::owned_execution::{owned_execution_group, user_data_base};
-use super::super::program_console;
+use super::super::{linux_loader_source, program_console, program_edition};
 use super::*;
 use anomalous_native_runtime::{
-    maximum_write_bytes, minimum_arena_bytes, program_descriptor, program_startup_size,
-    program_status, service,
+    maximum_read_bytes, maximum_write_bytes, minimum_arena_bytes, program_descriptor,
+    program_startup_size, program_status, service,
 };
 
 /// Where the descriptor sits in the task's private RW data. The vessel's
@@ -32,7 +33,11 @@ const descriptor_address: u64 = user_data_base + descriptor_offset;
 /// only that the two agree, and they can drift together while it passes; the
 /// contract `program_descriptor` enforces is the independent authority.
 const arena_bytes: u64 = minimum_arena_bytes;
-const program_code_pages: u64 = 1;
+const program_code_pages: u64 = 2;
+const edition_length: u64 = 8195;
+const edition_source_frames: usize = 3;
+const edition_source_fnv: u64 = 0x84ca7df1efd6b401;
+const edition_source_name: &[u8] = b"opt/anomalous-program-edition";
 
 /// The arena offset and word count the vessel writes its grant record at.
 /// Offset zero: a program's first act is to state what it was given.
@@ -41,16 +46,16 @@ const proof_words: usize = 6;
 
 /// Frame accounting for one program task, derived rather than measured.
 ///
-/// `data_pages` for this geometry is 1 code + 2 data + 16 arena + 2 stack =
-/// 21, and `prepare_profile` then allocates one `transition_pages` stack of
-/// 4, so 25 data frames. Nine table frames is the resident count the host
+/// `data_pages` for this geometry is 2 code + 2 data + 16 arena + 2 stack =
+/// 22, and `prepare_profile` then allocates one `transition_pages` stack of
+/// 4, so 26 data frames. Nine table frames is the resident count the host
 /// fixture brackets: the user plan needs eight and `resident_plan` adds one.
 /// Six leases is one per mapped region plus the table lease plus the
 /// transition stack.
 ///
 /// These are expectations, not receipts. The run below is what measures them,
 /// and it fails closed on any of them rather than reporting what it found.
-const expected_data_frames: usize = 25;
+const expected_data_frames: usize = 26;
 const expected_table_frames: usize = 9;
 const expected_leases: usize = 6;
 const program_frames: usize = expected_data_frames + expected_table_frames;
@@ -74,9 +79,9 @@ const scenarios: [scenario_profile; 2] = [
     scenario_profile {
         base: program_arena_bases[0],
         console_handle: 0x62,
-        granted_services: service::console_write,
+        granted_services: service::console_write | service::file_read,
         edition_handle: 0x41,
-        edition_length: 4096,
+        edition_length,
         arguments: b"hello\0--once",
     },
     scenario_profile {
@@ -116,8 +121,8 @@ impl program_image {
             .checked_sub(source)
             .unwrap_or_else(|| fail("program_payload_extent"));
         let fault = address!(x86_64_native_program_user_fault_instruction);
-        // One code page, not the native application's eight. An image that
-        // outgrew its single mapped page must be refused here rather than
+        // Two code pages, separate from the native application's eight. An image that
+        // outgrew its admitted mapping must be refused here rather than
         // copied into a mapping that cannot hold it.
         if source < address!(kernel_rodata_start)
             || length == 0
@@ -170,6 +175,15 @@ struct program {
     console_scratch: [u8; maximum_write_bytes],
     console_attempts: u64,
     console_rejected: u64,
+    edition: program_edition::state,
+    edition_scratch: [u8; maximum_read_bytes],
+    source: Option<linux_loader_source::source_controller>,
+    live_accounting: Option<frame_accounting>,
+    edition_attempts: u64,
+    edition_rejected: u64,
+    edition_source_reads: u64,
+    allocator_service_borrows: u64,
+    allocator_nested_denials: u64,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -185,6 +199,13 @@ struct program_record {
     console_rejected: u64,
     console_writes: u64,
     console_bytes: u64,
+    edition_attempts: u64,
+    edition_rejected: u64,
+    edition_reads: u64,
+    edition_read_bytes: u64,
+    edition_source_reads: u64,
+    allocator_service_borrows: u64,
+    allocator_nested_denials: u64,
 }
 
 impl program {
@@ -290,6 +311,14 @@ unsafe fn initialize_storage(
         ptr::addr_of_mut!((*pointer).console_attempts).write(0);
         ptr::addr_of_mut!((*pointer).console_rejected).write(0);
         ptr::write_bytes(ptr::addr_of_mut!((*pointer).console_scratch), 0, 1);
+        ptr::addr_of_mut!((*pointer).source).write(None);
+        ptr::addr_of_mut!((*pointer).live_accounting).write(None);
+        ptr::addr_of_mut!((*pointer).allocator_service_borrows).write(0);
+        ptr::addr_of_mut!((*pointer).allocator_nested_denials).write(0);
+        ptr::addr_of_mut!((*pointer).edition_attempts).write(0);
+        ptr::addr_of_mut!((*pointer).edition_rejected).write(0);
+        ptr::addr_of_mut!((*pointer).edition_source_reads).write(0);
+        ptr::write_bytes(ptr::addr_of_mut!((*pointer).edition_scratch), 0, 1);
     }
 }
 
@@ -342,6 +371,55 @@ fn initialize(
             selected.base,
             granted,
         );
+        // Provision before installing the execution alias: both use slot 288.
+        // The retained BSS field owns partial imports through explicit cleanup.
+        if selected.granted_services & service::file_read != 0 {
+            let before = allocator.accounting();
+            let source = &mut *ptr::addr_of_mut!((*pointer).source);
+            *source = Some(
+                linux_loader_source::source_controller::new_configured(
+                    0x4544_0001,
+                    edition_length,
+                    edition_source_fnv,
+                    edition_source_name,
+                    edition_length,
+                )
+                .unwrap_or_else(|_| fail("program_source_configuration")),
+            );
+            let source = source
+                .as_mut()
+                .unwrap_or_else(|| fail("program_source_owner"));
+            if let Err(error) = source.import(allocator) {
+                let reason = match error {
+                    linux_loader_source::source_load_error::missing_entry => {
+                        "program_source_missing"
+                    }
+                    linux_loader_source::source_load_error::size => "program_source_size",
+                    linux_loader_source::source_load_error::hash => "program_source_hash",
+                    _ => error.as_str(),
+                };
+                source
+                    .finish(allocator)
+                    .unwrap_or_else(|_| fail("program_source_cleanup"));
+                if !source.is_released() || allocator.accounting() != before {
+                    fail("program_source_rejection_cleanup");
+                }
+                let mut serial = serial_port::com1();
+                let _ = writeln!(
+                    serial,
+                    r#"{{"schema":1,"event":"kernel.native_program_test.source_rejected","level":"info","reason":"{}","source_released":true,"resources_restored":true}}"#,
+                    reason
+                );
+                fail(reason);
+            }
+            if !source.is_ready()
+                || source.length() != edition_length
+                || source.observed_fnv64() != edition_source_fnv
+                || source.chunks() != 3
+            {
+                fail("program_source_import_evidence");
+            }
+        }
         let execution = &mut *ptr::addr_of_mut!((*pointer).execution);
         let circles = &mut *ptr::addr_of_mut!((*pointer).circles);
         let tasks = &mut *ptr::addr_of_mut!((*pointer).tasks);
@@ -415,75 +493,106 @@ fn initialize(
         )
         .unwrap_or_else(|_| fail("program_console_binding"));
         ptr::addr_of_mut!((*pointer).console).write(console);
+        let edition = program_edition::state::new(
+            identity,
+            (selected.granted_services & service::file_read != 0)
+                .then_some(selected.edition_handle),
+            selected.edition_length,
+            selected.base,
+            arena_bytes,
+        )
+        .unwrap_or_else(|_| fail("program_edition_binding"));
+        ptr::addr_of_mut!((*pointer).edition).write(edition);
         &mut *pointer
     }
 }
 
 #[inline(never)]
 fn run_program(
-    allocator: &mut frame_allocator,
     image: program_image,
     scenario: usize,
     kernel_cr3: u64,
     bootstrap_stack: u64,
     initial: frame_accounting,
 ) -> (&'static str, program_record) {
-    if super::is_active()
-        || is_active()
-        || interrupts::interrupts_enabled()
-        || paging::read_cr3() != kernel_cr3
-        || !tls_bases_are_zero()
-        || allocator.accounting() != initial
-    {
-        fail("program_setup");
+    // Preparation returns before selection/publication or any guest transfer.
+    let pointer = memory::with_frame_allocator(|allocator| {
+        if super::is_active()
+            || is_active()
+            || interrupts::interrupts_enabled()
+            || paging::read_cr3() != kernel_cr3
+            || !tls_bases_are_zero()
+            || allocator.accounting() != initial
+        {
+            fail("program_setup");
+        }
+        let state = initialize(allocator, image, scenario, kernel_cr3, bootstrap_stack);
+        state
+            .scheduler
+            .admit(&mut state.circles, &mut state.tasks, state.identity)
+            .unwrap_or_else(|_| fail("program_admit"));
+        // SAFETY: The mapping owner remains at its final retained BSS location.
+        unsafe { state.execution.activate(allocator) }.unwrap_or_else(|e| fail(e));
+        let accounting = allocator.accounting();
+        let source_frames = if scenario == 0 {
+            edition_source_frames
+        } else {
+            0
+        };
+        let source_leases = usize::from(scenario == 0);
+        if accounting.free.checked_add(program_frames + source_frames) != Some(initial.free)
+            || accounting.data_owned != expected_data_frames + source_frames
+            || accounting.table_owned != expected_table_frames
+            || accounting.active_leases != expected_leases + source_leases
+            || accounting.bound_leases != expected_leases + source_leases
+            || state.zeroed_bytes != arena_bytes
+        {
+            fail("program_live_ownership");
+        }
+        state.live_accounting = Some(accounting);
+        ptr::from_mut(state)
+    })
+    .unwrap_or_else(|e| fail(e.reason()));
+    let frame = {
+        // SAFETY: Stable initialized BSS, not yet published to handlers.
+        let state = unsafe { &mut *pointer };
+        // SAFETY: Stable sole-BSP CPU owner and unchanged native entry profile.
+        unsafe { state.cpu.prepare() }.unwrap_or_else(|e| fail(e));
+        let first = state
+            .scheduler
+            .start_next(&mut state.tasks)
+            .unwrap_or_else(|_| fail("program_start"));
+        if first.task() != state.identity || first.context() != scheduler_context::initial {
+            fail("program_first");
+        }
+        // SAFETY: Serialized dispatch retains the root, stack and alias.
+        unsafe { state.execution.select(0) }.unwrap_or_else(|reason| fail(reason));
+        let frame = state
+            .execution
+            .frame(0)
+            .unwrap_or_else(|reason| fail(reason));
+        if !state.frame_valid(frame) {
+            fail("program_selected_frame");
+        }
+        if active
+            .compare_exchange(
+                ptr::null_mut(),
+                pointer,
+                Ordering::Release,
+                Ordering::Relaxed,
+            )
+            .is_err()
+        {
+            fail("program_publication");
+        }
+        frame
+    };
+    let entry_rsp: u64;
+    // SAFETY: Read the current bootstrap continuation without touching memory.
+    unsafe {
+        core::arch::asm!("mov {}, rsp", out(reg) entry_rsp, options(nomem, nostack, preserves_flags));
     }
-    let state = initialize(allocator, image, scenario, kernel_cr3, bootstrap_stack);
-    state
-        .scheduler
-        .admit(&mut state.circles, &mut state.tasks, state.identity)
-        .unwrap_or_else(|_| fail("program_admit"));
-    // SAFETY: The mapping owner remains at its final retained BSS location.
-    unsafe { state.execution.activate(allocator) }.unwrap_or_else(|e| fail(e));
-    let accounting = allocator.accounting();
-    if accounting.free.checked_add(program_frames) != Some(initial.free)
-        || accounting.data_owned != expected_data_frames
-        || accounting.table_owned != expected_table_frames
-        || accounting.active_leases != expected_leases
-        || accounting.bound_leases != expected_leases
-        || state.zeroed_bytes != arena_bytes
-    {
-        fail("program_live_ownership");
-    }
-    // SAFETY: Stable sole-BSP CPU owner and unchanged native entry profile.
-    unsafe { state.cpu.prepare() }.unwrap_or_else(|e| fail(e));
-    let first = state
-        .scheduler
-        .start_next(&mut state.tasks)
-        .unwrap_or_else(|_| fail("program_start"));
-    if first.task() != state.identity || first.context() != scheduler_context::initial {
-        fail("program_first");
-    }
-    // SAFETY: Serialized dispatch retains the root, stack and alias.
-    unsafe { state.execution.select(0) }.unwrap_or_else(|reason| fail(reason));
-    let frame = state
-        .execution
-        .frame(0)
-        .unwrap_or_else(|reason| fail(reason));
-    if !state.frame_valid(frame) {
-        fail("program_selected_frame");
-    }
-    let pointer = ptr::from_mut(&mut *state);
-    if active
-        .compare_exchange(
-            ptr::null_mut(),
-            pointer,
-            Ordering::Release,
-            Ordering::Relaxed,
-        )
-        .is_err()
-    {
-        fail("program_publication");
-    }
+    // No mutable program reference or allocator borrow crosses this transfer.
     // SAFETY: Serialized handlers alone borrow this stable owner until resume.
     let status = unsafe {
         if !(*pointer).cpu.restore_task(0) {
@@ -491,14 +600,26 @@ fn run_program(
         }
         x86_64_application_enter(frame, ptr::addr_of_mut!((*pointer).kernel_stack))
     };
-    if status != completion_status
+    let resumed_rsp: u64;
+    // SAFETY: Inspect the restored bootstrap continuation before reborrowing BSS.
+    unsafe {
+        core::arch::asm!("mov {}, rsp", out(reg) resumed_rsp, options(nomem, nostack, preserves_flags));
+    }
+    if entry_rsp != resumed_rsp
+        || status != completion_status
         || is_active()
         || dispatch_active.load(Ordering::Acquire)
         || paging::read_cr3() != kernel_cr3
-        || paging::read_cr0() & 8 != state.original_ts
-        // SAFETY: Sole-BSP TSS remains initialized and bootstrap restored.
-        || unsafe { descriptors::selected_privilege_stack_top() } != bootstrap_stack
         || interrupts::interrupts_enabled()
+        // SAFETY: Initialized sole-BSP TSS, bootstrap dispatch withdrawn.
+        || unsafe { descriptors::selected_privilege_stack_top() } != bootstrap_stack
+    {
+        fail("program_resume_ownership");
+    }
+    // SAFETY: Terminal dispatch withdrew all handler access and restored the
+    // bootstrap continuation before this fresh exclusive borrow.
+    let state = unsafe { &mut *pointer };
+    if paging::read_cr0() & 8 != state.original_ts
         || !tls_bases_are_zero()
         || !state.cpu.storage_is_cleared()
         || !state.terminal
@@ -511,7 +632,13 @@ fn run_program(
     } else {
         (2, 2, 0, 0)
     };
-    if state.calls != attempts + 2
+    let (edition_attempts, edition_rejected, edition_reads, edition_bytes, source_reads) =
+        if scenario == 0 {
+            (21, 14, 7, 8203, 5)
+        } else {
+            (3, 3, 0, 0, 0)
+        };
+    if state.calls != attempts + edition_attempts + 2
         || state.exits != 1
         || state.invalid != 0
         || state.console_attempts != attempts
@@ -520,6 +647,15 @@ fn run_program(
         || state.console.bytes_written() != bytes
         || !state.console.is_closed()
         || state.console_scratch.iter().any(|byte| *byte != 0)
+        || state.edition_attempts != edition_attempts
+        || state.edition_rejected != edition_rejected
+        || state.edition.reads() != edition_reads
+        || state.edition.bytes_read() != edition_bytes
+        || state.edition_source_reads != source_reads
+        || state.allocator_service_borrows != if scenario == 0 { 2 } else { 0 }
+        || state.allocator_nested_denials != if scenario == 0 { 1 } else { 0 }
+        || !state.edition.is_closed()
+        || state.edition_scratch.iter().any(|byte| *byte != 0)
     {
         fail("program_evidence");
     }
@@ -534,34 +670,45 @@ fn run_program(
     {
         fail("program_terminal");
     }
-    state
-        .scheduler
-        .withdraw_terminal_context(&mut state.circles, &mut state.tasks, state.identity)
-        .unwrap_or_else(|_| fail("program_withdraw"));
-    // SAFETY: Bootstrap restored, the task is terminal and its context is
-    // withdrawn; every mapping, arena and alias lease stays retained until
-    // this explicit teardown.
-    unsafe {
+    memory::with_frame_allocator(|allocator| {
         state
-            .execution
-            .finish(allocator, &mut state.tasks, &mut state.circles)
-    }
-    .unwrap_or_else(|e| fail(e));
-    let snapshot = state
-        .scheduler
-        .snapshot(&state.tasks)
-        .unwrap_or_else(|_| fail("program_final_scheduler"));
-    if allocator.accounting() != initial
-        || state.circles.accounting() != circle_table::new().accounting()
-        || state.tasks.active_count() != 0
-        || state.tasks.attached_context_count() != 0
-        || snapshot.admitted() != 0
-        || snapshot.runnable() != 0
-        || snapshot.current().is_some()
-        || state.tasks.validate(state.identity).is_ok()
-    {
-        fail("program_final_accounting");
-    }
+            .scheduler
+            .withdraw_terminal_context(&mut state.circles, &mut state.tasks, state.identity)
+            .unwrap_or_else(|_| fail("program_withdraw"));
+        // SAFETY: Bootstrap restored, the task is terminal and its context is
+        // withdrawn; every mapping, arena and alias lease stays retained until
+        // this explicit teardown.
+        unsafe {
+            state
+                .execution
+                .finish(allocator, &mut state.tasks, &mut state.circles)
+        }
+        .unwrap_or_else(|e| fail(e));
+        if let Some(source) = state.source.as_mut() {
+            // SAFETY: All consumers and their aliases retired above; bootstrap root
+            // is exclusive. Retain the owner until source cleanup succeeds.
+            unsafe { source.finish(allocator) }.unwrap_or_else(|_| fail("program_source_cleanup"));
+            if !source.is_released() {
+                fail("program_source_not_released");
+            }
+        }
+        let snapshot = state
+            .scheduler
+            .snapshot(&state.tasks)
+            .unwrap_or_else(|_| fail("program_final_scheduler"));
+        if allocator.accounting() != initial
+            || state.circles.accounting() != circle_table::new().accounting()
+            || state.tasks.active_count() != 0
+            || state.tasks.attached_context_count() != 0
+            || snapshot.admitted() != 0
+            || snapshot.runnable() != 0
+            || snapshot.current().is_some()
+            || state.tasks.validate(state.identity).is_ok()
+        {
+            fail("program_final_accounting");
+        }
+    })
+    .unwrap_or_else(|e| fail(e.reason()));
     let record = program_record {
         calls: state.calls,
         timer_ticks: state.timer_ticks,
@@ -574,6 +721,13 @@ fn run_program(
         console_rejected: state.console_rejected,
         console_writes: state.console.written(),
         console_bytes: state.console.bytes_written(),
+        edition_attempts: state.edition_attempts,
+        edition_rejected: state.edition_rejected,
+        edition_reads: state.edition.reads(),
+        edition_read_bytes: state.edition.bytes_read(),
+        edition_source_reads: state.edition_source_reads,
+        allocator_service_borrows: state.allocator_service_borrows,
+        allocator_nested_denials: state.allocator_nested_denials,
     };
     let vendor = state.cpu.cpu_vendor();
     storage_busy.store(false, Ordering::Release);
@@ -637,6 +791,82 @@ pub(super) fn fault(
     let _ = (state, frame, snapshot);
     fail("program_unexpected_fault")
 }
+// One exclusive current-task interval covers preflight, source read and copyout.
+// Neither the source reader nor the physical alias escapes an operation.
+struct edition_access<'a> {
+    execution: &'a mut owned_execution_group<1>,
+    source: Option<&'a linux_loader_source::source_controller>,
+    tasks: &'a task_table,
+    circles: &'a circle_table,
+    scheduler: &'a scheduler_table,
+    identity: task_identity,
+    source_reads: &'a mut u64,
+    live_accounting: frame_accounting,
+    allocator_service_borrows: &'a mut u64,
+    allocator_nested_denials: &'a mut u64,
+}
+impl program_edition::read_io for edition_access<'_> {
+    fn preflight(&mut self, address: u64, length: usize) -> Result<(), ()> {
+        self.execution
+            .preflight_to_user(
+                self.tasks,
+                self.circles,
+                self.scheduler,
+                self.identity,
+                address,
+                length,
+            )
+            .map_err(|_| ())?;
+        if *self.allocator_service_borrows == 0 {
+            memory::with_frame_allocator(|allocator| {
+                if allocator.accounting() != self.live_accounting {
+                    fail("program_allocator_changed");
+                }
+                let mut nested_entered = false;
+                let nested = memory::with_frame_allocator(|_| {
+                    nested_entered = true;
+                });
+                if nested_entered || nested != Err(memory::memory_error::allocator_busy) {
+                    fail("program_allocator_nested");
+                }
+                *self.allocator_nested_denials += 1;
+            })
+            .unwrap_or_else(|e| fail(e.reason()));
+            *self.allocator_service_borrows += 1;
+            memory::with_frame_allocator(|allocator| {
+                if allocator.accounting() != self.live_accounting {
+                    fail("program_allocator_changed");
+                }
+            })
+            .unwrap_or_else(|e| fail(e.reason()));
+            *self.allocator_service_borrows += 1;
+        }
+        Ok(())
+    }
+    fn read(&mut self, offset: u64, destination: &mut [u8]) -> Result<usize, ()> {
+        let reader = self.source.ok_or(())?.reader().map_err(|_| ())?;
+        *self.source_reads += 1;
+        // SAFETY: Live gate authenticated the exact task/root/frame; IF is clear
+        // and the retained immutable source outlives this scoped scratch read.
+        unsafe { self.execution.read_source(&reader, offset, destination) }.map_err(|_| ())?;
+        Ok(destination.len())
+    }
+    fn publish(&mut self, address: u64, bytes: &[u8]) -> Result<(), ()> {
+        // Complete revalidation precedes the first store. Recoverable errors
+        // change nothing; an unexpected hardware copy fault cannot return.
+        self.execution
+            .copy_to_user(
+                self.tasks,
+                self.circles,
+                self.scheduler,
+                self.identity,
+                address,
+                bytes,
+            )
+            .map_err(|_| ())
+    }
+}
+
 pub(super) fn gate(frame: *mut scheduler_frame) -> *mut scheduler_frame {
     let state = enter_dispatch();
     // SAFETY: Stable session exclusively owns the current aligned CPU image.
@@ -715,11 +945,60 @@ pub(super) fn gate(frame: *mut scheduler_frame) -> *mut scheduler_frame {
             }
             reply = (result.status, result.sequence, result.length);
         }
+        2 => {
+            state.edition_attempts += 1;
+            let request = program_edition::read_request {
+                caller: state.identity,
+                handle: value.destination_index,
+                address: value.source_index,
+                length: value.data,
+                sequence: value.counter,
+                offset: value.register_8,
+            };
+            let mut access = edition_access {
+                execution: &mut state.execution,
+                source: state.source.as_ref(),
+                tasks: &state.tasks,
+                circles: &state.circles,
+                scheduler: &state.scheduler,
+                identity: state.identity,
+                source_reads: &mut state.edition_source_reads,
+                live_accounting: state
+                    .live_accounting
+                    .unwrap_or_else(|| fail("program_accounting_missing")),
+                allocator_service_borrows: &mut state.allocator_service_borrows,
+                allocator_nested_denials: &mut state.allocator_nested_denials,
+            };
+            let result = state
+                .edition
+                .read(request, &mut state.edition_scratch, &mut access);
+            // scheduler_frame is repr(C), all 22 words are initialized u64s,
+            // and the validated frame stays exclusively retained in this gate.
+            const _: () = assert!(core::mem::size_of::<scheduler_frame>() == 22 * 8);
+            // SAFETY: The exact authenticated saved frame and its initialized
+            // entry snapshot contain no padding; neither slice escapes.
+            let unchanged = unsafe {
+                core::slice::from_raw_parts(frame.cast::<u8>(), 22 * 8)
+                    == core::slice::from_raw_parts(ptr::from_ref(&value).cast::<u8>(), 22 * 8)
+            };
+            if !unchanged {
+                fail("program_edition_frame_changed");
+            }
+
+            if result.status != program_status::ok {
+                state.edition_rejected += 1;
+            }
+            if state.edition_scratch.iter().any(|byte| *byte != 0) {
+                fail("program_edition_scratch");
+            }
+            reply = (result.status, result.sequence, result.length);
+        }
         5 => {
             if value.destination_index != 0 {
                 fail("program_user_status");
             }
             state.console.close();
+            state.edition.close();
             state.terminal = true;
             state.exits += 1;
             state
@@ -729,7 +1008,7 @@ pub(super) fn gate(frame: *mut scheduler_frame) -> *mut scheduler_frame {
             state.finish();
         }
         // This experimental program profile exposes only startup, console
-        // output, and exit. Other operations carry no implicit service grant.
+        // output, bounded edition reads, and exit. Other operations carry no implicit service grant.
         _ => {
             reply = (program_status::invalid, 0, 0);
             state.invalid += 1;
@@ -763,29 +1042,20 @@ pub(super) fn run() -> ! {
     let kernel_cr3 = paging::read_cr3();
     // SAFETY: Initialized sole-BSP descriptors remain exclusively owned.
     let bootstrap_stack = unsafe { descriptors::selected_privilege_stack_top() };
-    let (initial, vendor, records) = memory::with_frame_allocator(|allocator| {
-        let initial = allocator.accounting();
-        let mut records = [program_record::default(); scenarios.len()];
-        let mut vendor = "";
-        for (scenario, slot) in records.iter_mut().enumerate() {
-            let (current_vendor, record) = run_program(
-                allocator,
-                image,
-                scenario,
-                kernel_cr3,
-                bootstrap_stack,
-                initial,
-            );
-            if scenario == 0 {
-                vendor = current_vendor;
-            } else if current_vendor != vendor {
-                fail("program_cpu_comparison");
-            }
-            *slot = record;
+    let initial = memory::with_frame_allocator(|allocator| allocator.accounting())
+        .unwrap_or_else(|e| fail(e.reason()));
+    let mut records = [program_record::default(); scenarios.len()];
+    let mut vendor = "";
+    for (scenario, slot) in records.iter_mut().enumerate() {
+        let (current_vendor, record) =
+            run_program(image, scenario, kernel_cr3, bootstrap_stack, initial);
+        if scenario == 0 {
+            vendor = current_vendor;
+        } else if current_vendor != vendor {
+            fail("program_cpu_comparison");
         }
-        (initial, vendor, records)
-    })
-    .unwrap_or_else(|e| fail(e.reason()));
+        *slot = record;
+    }
     interrupts::disable_external_interrupts();
     if !interrupts::scheduler_interrupts_are_masked() {
         fail("program_final_interrupts");
@@ -793,7 +1063,7 @@ pub(super) fn run() -> ! {
     let mut serial = serial_port::com1();
     let _ = writeln!(
         serial,
-        r#"{{"schema":1,"event":"kernel.native_program_test.ready","level":"info","vendor":"{}","tasks":1,"scenarios":{},"code_pages":{},"descriptor_bytes":{},"arena_bytes":{},"mappings":4,"data_frames":{},"table_frames":{},"leases":{},"free_frames":{},"edition_mapped":false,"console_transport":true}}"#,
+        r#"{{"schema":1,"event":"kernel.native_program_test.ready","level":"info","vendor":"{}","tasks":1,"scenarios":{},"code_pages":{},"descriptor_bytes":{},"arena_bytes":{},"mappings":4,"data_frames":{},"table_frames":{},"leases":{},"free_frames":{},"edition_mapped":false,"console_transport":true,"edition_transport":true,"source_frames":3,"source_leases":1}}"#,
         vendor,
         scenarios.len(),
         program_code_pages,
@@ -809,7 +1079,7 @@ pub(super) fn run() -> ! {
         zeroed_bytes += record.zeroed_bytes;
         let _ = writeln!(
             serial,
-            r#"{{"schema":1,"event":"kernel.native_program_test.scenario","level":"info","scenario":{},"arena_base":{},"zeroed_bytes":{},"calls":{},"timer_ticks":{},"invalid":{},"exits":{},"granted_services":{},"console_granted":{},"console_transport":{},"argument_bytes":{},"edition_bytes":{},"grant_restated":{},"console_attempts":{},"console_writes":{},"console_rejected":{},"console_bytes":{},"console_last_sequence":{}}}"#,
+            r#"{{"schema":1,"event":"kernel.native_program_test.scenario","level":"info","scenario":{},"arena_base":{},"zeroed_bytes":{},"calls":{},"timer_ticks":{},"invalid":{},"exits":{},"granted_services":{},"console_granted":{},"console_transport":{},"argument_bytes":{},"edition_bytes":{},"grant_restated":{},"console_attempts":{},"console_writes":{},"console_rejected":{},"console_bytes":{},"console_last_sequence":{},"edition_granted":{},"edition_attempts":{},"edition_reads":{},"edition_rejected":{},"edition_read_bytes":{},"edition_last_sequence":{},"edition_source_reads":{},"allocator_service_borrows":{},"allocator_nested_denials":{}}}"#,
             scenario,
             scenarios[scenario].base,
             record.zeroed_bytes,
@@ -828,11 +1098,20 @@ pub(super) fn run() -> ! {
             record.console_rejected,
             record.console_bytes,
             record.console_writes,
+            u64::from(record.granted[2] & service::file_read != 0),
+            record.edition_attempts,
+            record.edition_reads,
+            record.edition_rejected,
+            record.edition_read_bytes,
+            record.edition_reads,
+            record.edition_source_reads,
+            record.allocator_service_borrows,
+            record.allocator_nested_denials,
         );
     }
     let _ = writeln!(
         serial,
-        r#"{{"schema":1,"event":"kernel.native_program_test.passed","level":"info","program_tasks":{},"descriptor_bytes":{},"arena_bytes":{},"zeroed_bytes":{},"grants_restated":true,"editions_executed":0,"console_writes":2,"console_rejected":16,"console_bytes":60,"console_verified":true,"resources_restored":true,"authority_revoked":true,"source_language":"rust"}}"#,
+        r#"{{"schema":1,"event":"kernel.native_program_test.passed","level":"info","program_tasks":{},"descriptor_bytes":{},"arena_bytes":{},"zeroed_bytes":{},"grants_restated":true,"editions_executed":0,"console_writes":2,"console_rejected":16,"console_bytes":60,"console_verified":true,"edition_reads":7,"edition_rejected":17,"edition_read_bytes":8203,"edition_verified":true,"edition_frame_preserved":true,"source_released":true,"allocator_available":true,"resources_restored":true,"authority_revoked":true,"source_language":"rust"}}"#,
         scenarios.len(),
         program_startup_size,
         arena_bytes,
