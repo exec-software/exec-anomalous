@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! Experimental host qualification executors for admitted NIL (ADRs 0104/0105).
+//! Experimental host qualification executors for admitted NIL (ADRs 0104–0106).
 //! This is not a native-integrated or full-corpus-qualified NIL interpreter.
 //! Every entry requires whole-edition admission; storage, dispatch and output
 //! are bounded, and the only effect is an explicit, witness-bound console sink.

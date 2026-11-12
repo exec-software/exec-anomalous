@@ -1,5 +1,50 @@
 # Native execution and compatibility readiness
 
+## Qualified bounded compiler scalar control-flow prerequisite (2026-11-12)
+
+Accepted [ADR 0106](../adr/0106-admit-bounded-compiler-scalar-control-flow.md)
+adds explicitly selected profile 3 in both envelope headers. Profile-1 and
+profile-2 entry points keep their accepted contracts and reject profile-3
+packages; the new entry point rejects their packages. A shared private parser
+policy retains the same immutable witness, identity/intent checks, authority
+union and fixed validation storage. There is no parser autodetection.
+
+Only local operands gain `$ny.temp.<ASCII_identifier>.<decimal>` names, bounded
+to 128 bytes including the prefix and canonical decimal counter. These are
+ordinary function-local slots sharing the existing local cap and definite
+initialization rules. Other symbol positions and dotted temporary prefixes
+remain outside the profile. Bare `ADD` normalizes to the existing `i64` binary
+operation; reachable flow must prove two integer operands. Dead instructions
+still receive syntax, reference and authority checks without invented operand
+states. The extension does not admit array/floating addition or other untyped
+arithmetic.
+
+The same iterative executor and runtime storage/limits are reused. All 27 final
+jobs passed on their first attempts, with an independent audit of 672 unchanged
+source files. Host suites pass 648 default-kernel, 731 all-feature kernel, 425
+xtask, 37 native-runtime, 18 manifest, 37 executor and 38 flow tests. Python
+harnesses pass six profile-1, five profile-2 and four profile-3 tests.
+
+The profile-3 proof passes 61 cases: 27 exact semantic matches, one fuel-policy
+refusal against a completed finite reference run and 33 admission refusals.
+Seven complete pinned-compiler outputs match exactly; the eighth supplies the
+finite-reference fuel refusal. Another 28 checks preserve profile-2 raw-syntax
+refusals. The existing 126-case
+profile-1 and 77-case profile-2 proofs pass unchanged. Each profile's unchanged
+corpus run still refuses all 45 candidate interpreter invocations.
+
+Fresh TCG native admission, native delivery and Linux regressions pass at
+96/320 MiB. Five retained native admission artifacts are byte-identical to the
+prior KVM-qualified checkpoint, preserving its emitted review; historical KVM
+evidence remains separate from this increment's fresh runs. Native NIL execution
+remains zero, and Linux stops at unanswered sequence-12 `mmap` after eleven
+returns. The
+[Compiler Scalar Flow Log](../../notebook/Development/2026-11-12%20Compiler%20Scalar%20Flow%20Log.md)
+records the final evidence. The accepted profile-2 evidence below remains
+historical. No native integration or geometry change is added, and full corpus
+qualification and native mediated execution remain gated. Missing authored
+intent is not invented or waived to admit the unmodified corpus.
+
 ## Qualified bounded host function/control-flow prerequisite (2026-11-11)
 
 Accepted [ADR 0105](../adr/0105-validate-bounded-function-control-flow-before-host-execution.md)

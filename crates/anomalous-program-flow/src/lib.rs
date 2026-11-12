@@ -2,7 +2,8 @@
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! Host-only profile-2 admission. All syntax and references are checked before
+//! Host-only profile-2 and explicitly selected profile-3 admission.
+//! All syntax and references are checked before
 //! reachable CFG validation; even dead instructions contribute authority.
 //! The immutable plan is accessible only through a complete admission witness.
 
@@ -21,6 +22,46 @@ pub const maximum_parameters: usize = 8;
 pub const maximum_basic_blocks: usize = 256;
 pub const maximum_validation_transfers: usize = 1 << 20;
 pub const maximum_name_bytes: usize = 128;
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum parse_profile {
+    flow,
+    scalar,
+}
+
+impl parse_profile {
+    const fn tag(self) -> u32 {
+        match self {
+            Self::flow => derivation_profile,
+            Self::scalar => scalar::derivation_profile,
+        }
+    }
+}
+
+/// Explicit opt-in for bounded compiler temporary locals and integer ADD.
+/// Profile 2 retains its original grammar and never selects this parser policy.
+pub mod scalar {
+    use super::{admitted_program, error, parse_profile, validation_workspace};
+
+    pub const derivation_profile: u32 = 3;
+
+    /// Validates completely before publishing any output bytes.
+    pub fn encode<'a>(
+        edition: &'a [u8],
+        output: &mut [u8],
+        workspace: &mut validation_workspace<'a>,
+    ) -> Result<usize, error> {
+        super::encode_profile(edition, output, workspace, parse_profile::scalar)
+    }
+
+    pub fn admit<'a, 'w>(
+        image: &'a [u8],
+        ceiling: u64,
+        workspace: &'w mut validation_workspace<'a>,
+    ) -> Result<admitted_program<'a, 'w>, error> {
+        super::admit_profile(image, ceiling, workspace, parse_profile::scalar)
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum kind {
@@ -258,7 +299,7 @@ impl<'a> validation_workspace<'a> {
         self.queue_length = 0;
     }
 
-    fn parse(&mut self, edition: &'a [u8]) -> Result<(), error> {
+    fn parse(&mut self, edition: &'a [u8], profile: parse_profile) -> Result<(), error> {
         self.reset();
         if edition.is_empty() || edition.len() > maximum_edition_bytes {
             return Err(error::edition);
@@ -294,7 +335,7 @@ impl<'a> validation_workspace<'a> {
                     }
                     active = None;
                 } else {
-                    self.parse_instruction(owner, line, line_number + 1)?;
+                    self.parse_instruction(owner, line, line_number + 1, profile)?;
                 }
                 continue;
             }
@@ -416,8 +457,14 @@ impl<'a> validation_workspace<'a> {
         self.validate_flow()
     }
 
-    fn local(&mut self, owner: usize, name: &'a str, stored: bool) -> Result<usize, error> {
-        identifier(name)?;
+    fn local(
+        &mut self,
+        owner: usize,
+        name: &'a str,
+        stored: bool,
+        profile: parse_profile,
+    ) -> Result<usize, error> {
+        local_identifier(name, profile)?;
         if builtin(name).is_some() {
             return Err(error::unsupported);
         }
@@ -445,6 +492,7 @@ impl<'a> validation_workspace<'a> {
         owner: usize,
         line: &'a str,
         physical_line: usize,
+        profile: parse_profile,
     ) -> Result<(), error> {
         let pc = self.plan.instruction_count;
         if pc == maximum_instructions {
@@ -465,13 +513,21 @@ impl<'a> validation_workspace<'a> {
                         .ok_or(error::syntax)?,
                 )
             }
-            ["LOAD_LOCAL", name] => operation::load(self.local(owner, name, false)?),
-            ["STORE_LOCAL", name] => operation::store(self.local(owner, name, true)?),
+            ["LOAD_LOCAL", name] => operation::load(self.local(owner, name, false, profile)?),
+            ["STORE_LOCAL", name] => operation::store(self.local(owner, name, true, profile)?),
             ["CAST", value] => operation::cast(width(value)?),
             ["NEG", value] => operation::negate(width(value)?),
             [opcode, value] if binary(opcode).is_some() => operation::binary {
                 opcode: binary(opcode).unwrap(),
                 width: width(value)?,
+            },
+            // The reference's untyped ADD is also overloaded for arrays and
+            // floats. Reachable CFG validation proves both operands integer;
+            // this profile has no array or floating values. Dead code keeps
+            // its syntax/reference checks without invented operand states.
+            ["ADD"] if profile == parse_profile::scalar => operation::binary {
+                opcode: "ADD",
+                width: "i64",
             },
             [opcode] if comparison(opcode).is_some() => {
                 operation::compare(comparison(opcode).unwrap())
@@ -788,6 +844,7 @@ impl<'a> validation_workspace<'a> {
 }
 
 pub struct admitted_program<'a, 'w> {
+    profile: u32,
     edition: &'a [u8],
     identity: [u8; 32],
     required: u64,
@@ -796,6 +853,9 @@ pub struct admitted_program<'a, 'w> {
 }
 
 impl<'a> admitted_program<'a, '_> {
+    pub const fn profile(&self) -> u32 {
+        self.profile
+    }
     pub const fn edition(&self) -> &'a [u8] {
         self.edition
     }
@@ -822,7 +882,16 @@ pub fn encode<'a>(
     output: &mut [u8],
     workspace: &mut validation_workspace<'a>,
 ) -> Result<usize, error> {
-    workspace.parse(edition)?;
+    encode_profile(edition, output, workspace, parse_profile::flow)
+}
+
+fn encode_profile<'a>(
+    edition: &'a [u8],
+    output: &mut [u8],
+    workspace: &mut validation_workspace<'a>,
+    profile: parse_profile,
+) -> Result<usize, error> {
+    workspace.parse(edition, profile)?;
     let intent = workspace.plan.intent.as_bytes();
     let manifest_length = manifest_header_bytes + intent.len();
     let edition_offset = image_header_bytes + manifest_length;
@@ -836,7 +905,7 @@ pub fn encode<'a>(
     image[..8].copy_from_slice(b"ANPROG\r\n");
     put16(image, 8, 1);
     put16(image, 10, image_header_bytes as u16);
-    put32(image, 12, derivation_profile);
+    put32(image, 12, profile.tag());
     put64(image, 16, image_header_bytes as u64);
     put64(image, 24, manifest_length as u64);
     put64(image, 32, edition_offset as u64);
@@ -846,7 +915,7 @@ pub fn encode<'a>(
     manifest[..8].copy_from_slice(b"ANSMAN\r\n");
     put16(manifest, 8, 1);
     put16(manifest, 10, manifest_header_bytes as u16);
-    put32(manifest, 12, derivation_profile);
+    put32(manifest, 12, profile.tag());
     put64(manifest, 16, workspace.plan.authority);
     put64(manifest, 24, edition.len() as u64);
     manifest[32..64].copy_from_slice(&identity);
@@ -860,6 +929,15 @@ pub fn admit<'a, 'w>(
     image: &'a [u8],
     ceiling: u64,
     workspace: &'w mut validation_workspace<'a>,
+) -> Result<admitted_program<'a, 'w>, error> {
+    admit_profile(image, ceiling, workspace, parse_profile::flow)
+}
+
+fn admit_profile<'a, 'w>(
+    image: &'a [u8],
+    ceiling: u64,
+    workspace: &'w mut validation_workspace<'a>,
+    profile: parse_profile,
 ) -> Result<admitted_program<'a, 'w>, error> {
     workspace.reset();
     if ceiling & !authority::known != 0 {
@@ -878,7 +956,7 @@ pub fn admit<'a, 'w>(
     if get16(image, 8) != 1 {
         return Err(error::version);
     }
-    if get32(image, 12) != derivation_profile {
+    if get32(image, 12) != profile.tag() {
         return Err(error::profile);
     }
     let manifest_length = get64(image, 24);
@@ -906,7 +984,7 @@ pub fn admit<'a, 'w>(
     if get16(manifest, 8) != 1 {
         return Err(error::version);
     }
-    if get32(manifest, 12) != derivation_profile {
+    if get32(manifest, 12) != profile.tag() {
         return Err(error::profile);
     }
     if get64(manifest, 24) != edition_length
@@ -924,7 +1002,7 @@ pub fn admit<'a, 'w>(
     if identity.as_slice() != &manifest[32..64] {
         return Err(error::identity);
     }
-    workspace.parse(edition)?;
+    workspace.parse(edition, profile)?;
     if required != workspace.plan.authority || intent != workspace.plan.intent {
         return Err(error::mismatch);
     }
@@ -932,6 +1010,7 @@ pub fn admit<'a, 'w>(
         return Err(error::ceiling);
     }
     Ok(admitted_program {
+        profile: profile.tag(),
         edition,
         identity,
         required,
@@ -952,6 +1031,26 @@ fn identifier(value: &str) -> Result<(), error> {
         .next()
         .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
         || !bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    {
+        return Err(error::syntax);
+    }
+    Ok(())
+}
+
+fn local_identifier(value: &str, profile: parse_profile) -> Result<(), error> {
+    if profile != parse_profile::scalar || !value.starts_with("$ny.temp.") {
+        return identifier(value);
+    }
+    if value.len() > maximum_name_bytes {
+        return Err(error::limit);
+    }
+    let (prefix, counter) = value[9..].split_once('.').ok_or(error::syntax)?;
+    identifier(prefix)?;
+    // Retain canonical spelling as identity. The counter is never an index or
+    // a quantity, so its bounded decimal bytes need no integer conversion.
+    if counter.is_empty()
+        || !counter.bytes().all(|byte| byte.is_ascii_digit())
+        || (counter.len() > 1 && counter.starts_with('0'))
     {
         return Err(error::syntax);
     }
@@ -1129,3 +1228,6 @@ fn get64(bytes: &[u8], offset: usize) -> u64 {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod scalar_tests;

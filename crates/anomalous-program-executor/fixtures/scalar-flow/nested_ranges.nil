@@ -1,0 +1,61 @@
+# NIL Textual Module
+module root
+
+@ai_context("Check independent hidden counters for nested integer ranges")
+# declaration_line 4
+function main -> i32:
+    PUSH_CONST   0  ; line 5
+    CAST         i64  ; line 5
+    STORE_LOCAL  total  ; line 5
+    PUSH_CONST   1  ; line 6
+    STORE_LOCAL  $ny.temp.idx.0  ; line 6
+    PUSH_CONST   4  ; line 6
+    STORE_LOCAL  $ny.temp.len.1  ; line 6
+    LABEL        main__L_iter_start_0  ; line 6
+    LOAD_LOCAL   $ny.temp.idx.0  ; line 6
+    LOAD_LOCAL   $ny.temp.len.1  ; line 6
+    CMP_LT        ; line 6
+    JMP_IF_NOT   main__L_iter_end_2  ; line 6
+    LOAD_LOCAL   $ny.temp.idx.0  ; line 6
+    CAST         i32  ; line 6
+    STORE_LOCAL  outer  ; line 6
+    PUSH_CONST   3  ; line 7
+    STORE_LOCAL  $ny.temp.len.2  ; line 7
+    PUSH_CONST   0  ; line 7
+    STORE_LOCAL  $ny.temp.idx.3  ; line 7
+    LABEL        main__L_for_start_3  ; line 7
+    LOAD_LOCAL   $ny.temp.idx.3  ; line 7
+    LOAD_LOCAL   $ny.temp.len.2  ; line 7
+    CMP_LT        ; line 7
+    JMP_IF_NOT   main__L_for_end_5  ; line 7
+    LOAD_LOCAL   $ny.temp.idx.3  ; line 7
+    CAST         i32  ; line 7
+    STORE_LOCAL  inner  ; line 7
+    LOAD_LOCAL   total  ; line 8
+    LOAD_LOCAL   outer  ; line 8
+    PUSH_CONST   10  ; line 8
+    MUL          i32  ; line 8
+    ADD          i64  ; line 8
+    LOAD_LOCAL   inner  ; line 8
+    ADD          i64  ; line 8
+    CAST         i64  ; line 8
+    STORE_LOCAL  total  ; line 8
+    LABEL        main__L_for_continue_4  ; line 7
+    LOAD_LOCAL   $ny.temp.idx.3  ; line 7
+    PUSH_CONST   1  ; line 7
+    ADD           ; line 7
+    STORE_LOCAL  $ny.temp.idx.3  ; line 7
+    JMP          main__L_for_start_3  ; line 7
+    LABEL        main__L_for_end_5  ; line 7
+    LABEL        main__L_iter_continue_1  ; line 6
+    LOAD_LOCAL   $ny.temp.idx.0  ; line 6
+    PUSH_CONST   1  ; line 6
+    ADD           ; line 6
+    STORE_LOCAL  $ny.temp.idx.0  ; line 6
+    JMP          main__L_iter_start_0  ; line 6
+    LABEL        main__L_iter_end_2  ; line 6
+    LOAD_LOCAL   total  ; line 11
+    CAST         i32  ; line 11
+    RET           ; line 11
+end function
+

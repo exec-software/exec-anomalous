@@ -30,6 +30,9 @@ desktop, or a security boundary for sensitive workloads.
   checks and a 77-case bounded proof.
   [ADR 0105](docs/adr/0105-validate-bounded-function-control-flow-before-host-execution.md)
   keeps full corpus qualification and native execution as separate gates.
+  [Profile 3](docs/adr/0106-admit-bounded-compiler-scalar-control-flow.md) adds
+  bounded compiler temporary locals and scalar range-loop forms, qualified by
+  27 final checks and a 61-case bounded proof.
 - Host-side libraries explore typed session routing, shared semantic scenes,
   presentation acknowledgement, and recovery.
 - **Eidolon** supplies an independent Python reference codec for lossless

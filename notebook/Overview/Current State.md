@@ -1,6 +1,6 @@
 ---
 title: "Anomalous — Current State"
-date: 2026-11-11
+date: 2026-11-12
 tags: [status, milestone, boot, kernel, memory, interrupts, input, shell, session, display, desktop, privacy, waiting, circle, ring3, scheduler, supervision, rites, x86-64]
 status: active
 domain: foundations
@@ -8,7 +8,40 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current host checkpoint — bounded functions and control flow
+## Current host checkpoint — compiler scalar control flow
+
+Accepted [ADR 0106](../../docs/adr/0106-admit-bounded-compiler-scalar-control-flow.md)
+adds explicit host-only profile 3 while preserving profile 2's accepted grammar
+and refusals. The new route shares the validator and executor, admitting only
+local operands with the bounded `$ny.temp.<ASCII_identifier>.<decimal>` spelling.
+The counter has canonical decimal spelling, and the complete name fits 128
+bytes. It also normalizes bare `ADD` to the existing `i64` operation, with
+integer operands proved on reachable paths. Other dollar-name positions,
+dotted temporary prefixes and other untyped arithmetic remain refused.
+
+The same fixed storage, whole-artifact authority union, stack/local validation
+and runtime limits apply. No native feature, mapping profile or edition
+execution is added.
+
+All 27 final jobs passed on their first attempts; the independent audit confirms
+672 unchanged source files. The profile-3 proof passes 61 cases: 27 exact
+semantic matches, one fuel-policy refusal against a completed finite reference
+run and 33 admission refusals. Seven complete compiler outputs match exactly;
+the eighth supplies the finite-reference fuel refusal. Another 28 checks
+preserve profile-2 raw-syntax refusals. The existing 126-case profile-1 and
+77-case profile-2 proofs pass
+unchanged; each profile still refuses all 45 unmodified corpus invocations.
+
+Fresh TCG native admission, native delivery and Linux regressions pass at
+96/320 MiB. Five retained native admission artifacts remain byte-identical to
+the prior KVM-qualified checkpoint; no fresh KVM run is claimed. Linux still
+stops at unanswered sequence-12 `mmap` after eleven returns. The
+[Compiler Scalar Flow Log](../Development/2026-11-12%20Compiler%20Scalar%20Flow%20Log.md)
+records the final evidence separately from the accepted profile-2 checkpoint
+below. The full unmodified corpus and native execution gates remain closed;
+missing authored intent is not supplied or waived.
+
+## Previous host checkpoint — bounded functions and control flow
 
 Accepted [ADR 0105](../../docs/adr/0105-validate-bounded-function-control-flow-before-host-execution.md)
 adds a separate host-only profile-2 admission and execution path. It validates

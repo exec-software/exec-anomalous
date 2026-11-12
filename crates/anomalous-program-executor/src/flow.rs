@@ -341,7 +341,8 @@ fn value_kind(value: value<'_>) -> kind {
     }
 }
 
-/// Execute only a profile-2 witness. Every return, arithmetic error, policy
+/// Execute only a validated control-flow witness (profile 2 or 3).
+/// Every return, arithmetic error, policy
 /// refusal or service refusal clears the internal frame/value storage. Earlier
 /// acknowledged sink effects remain committed; there is no automatic retry.
 pub fn execute<'a>(
@@ -364,3 +365,6 @@ pub fn execute<'a>(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod scalar_tests;

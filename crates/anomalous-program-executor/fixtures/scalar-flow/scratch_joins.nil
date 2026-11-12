@@ -1,0 +1,105 @@
+# NIL Textual Module
+module root
+
+# declaration_line 3
+function anomalous__scalar_flow__scratch_joins__classify(value: i64) -> i64:
+    STORE_LOCAL  value  ; line 3
+    LOAD_LOCAL   value  ; line 3
+    CAST         i64  ; line 3
+    STORE_LOCAL  value  ; line 3
+    LOAD_LOCAL   value  ; line 4
+    PUSH_CONST   0  ; line 4
+    CMP_GT        ; line 4
+    JMP_IF_NOT   anomalous__scalar_flow__scratch_joins__classify__L_and_false_4  ; line 4
+    LOAD_LOCAL   value  ; line 4
+    PUSH_CONST   3  ; line 4
+    CMP_LT        ; line 4
+    STORE_LOCAL  $ny.temp.logical_and.1  ; line 4
+    JMP          anomalous__scalar_flow__scratch_joins__classify__L_and_end_5  ; line 4
+    LABEL        anomalous__scalar_flow__scratch_joins__classify__L_and_false_4  ; line 4
+    PUSH_CONST   0  ; line 4
+    STORE_LOCAL  $ny.temp.logical_and.1  ; line 4
+    LABEL        anomalous__scalar_flow__scratch_joins__classify__L_and_end_5  ; line 4
+    LOAD_LOCAL   $ny.temp.logical_and.1  ; line 4
+    JMP_IF       anomalous__scalar_flow__scratch_joins__classify__L_or_true_2  ; line 4
+    LOAD_LOCAL   value  ; line 4
+    PUSH_CONST   5  ; line 4
+    CMP_EQ        ; line 4
+    STORE_LOCAL  $ny.temp.logical_or.0  ; line 4
+    JMP          anomalous__scalar_flow__scratch_joins__classify__L_or_end_3  ; line 4
+    LABEL        anomalous__scalar_flow__scratch_joins__classify__L_or_true_2  ; line 4
+    PUSH_CONST   1  ; line 4
+    STORE_LOCAL  $ny.temp.logical_or.0  ; line 4
+    LABEL        anomalous__scalar_flow__scratch_joins__classify__L_or_end_3  ; line 4
+    LOAD_LOCAL   $ny.temp.logical_or.0  ; line 4
+    JMP_IF_NOT   anomalous__scalar_flow__scratch_joins__classify__L_ifexpr_else_0  ; line 4
+    PUSH_CONST   10  ; line 4
+    CAST         i32  ; line 4
+    JMP          anomalous__scalar_flow__scratch_joins__classify__L_ifexpr_end_1  ; line 4
+    LABEL        anomalous__scalar_flow__scratch_joins__classify__L_ifexpr_else_0  ; line 4
+    PUSH_CONST   20  ; line 4
+    CAST         i32  ; line 4
+    LABEL        anomalous__scalar_flow__scratch_joins__classify__L_ifexpr_end_1  ; line 4
+    CAST         i64  ; line 4
+    STORE_LOCAL  selected  ; line 4
+    LOAD_LOCAL   selected  ; line 5
+    CAST         i64  ; line 5
+    RET           ; line 5
+end function
+
+@ai_context("Check generated scratch slots remain separate from authored locals and other frames")
+# declaration_line 9
+function main -> i32:
+    PUSH_CONST   70  ; line 10
+    CAST         i64  ; line 10
+    STORE_LOCAL  idx_0  ; line 10
+    PUSH_CONST   80  ; line 11
+    CAST         i64  ; line 11
+    STORE_LOCAL  len_1  ; line 11
+    PUSH_CONST   90  ; line 12
+    CAST         i64  ; line 12
+    STORE_LOCAL  logical_and_0  ; line 12
+    PUSH_CONST   100  ; line 13
+    CAST         i64  ; line 13
+    STORE_LOCAL  logical_or_1  ; line 13
+    PUSH_CONST   0  ; line 14
+    CAST         i64  ; line 14
+    STORE_LOCAL  total  ; line 14
+    PUSH_CONST   6  ; line 15
+    STORE_LOCAL  $ny.temp.len.0  ; line 15
+    PUSH_CONST   0  ; line 15
+    STORE_LOCAL  $ny.temp.idx.1  ; line 15
+    LABEL        main__L_for_start_0  ; line 15
+    LOAD_LOCAL   $ny.temp.idx.1  ; line 15
+    LOAD_LOCAL   $ny.temp.len.0  ; line 15
+    CMP_LT        ; line 15
+    JMP_IF_NOT   main__L_for_end_2  ; line 15
+    LOAD_LOCAL   $ny.temp.idx.1  ; line 15
+    CAST         i32  ; line 15
+    STORE_LOCAL  index  ; line 15
+    LOAD_LOCAL   total  ; line 16
+    LOAD_LOCAL   index  ; line 16
+    CALL         anomalous__scalar_flow__scratch_joins__classify 1  ; line 16
+    ADD          i64  ; line 16
+    CAST         i64  ; line 16
+    STORE_LOCAL  total  ; line 16
+    LABEL        main__L_for_continue_1  ; line 15
+    LOAD_LOCAL   $ny.temp.idx.1  ; line 15
+    PUSH_CONST   1  ; line 15
+    ADD           ; line 15
+    STORE_LOCAL  $ny.temp.idx.1  ; line 15
+    JMP          main__L_for_start_0  ; line 15
+    LABEL        main__L_for_end_2  ; line 15
+    LOAD_LOCAL   total  ; line 18
+    LOAD_LOCAL   idx_0  ; line 18
+    ADD          i64  ; line 18
+    LOAD_LOCAL   len_1  ; line 18
+    ADD          i64  ; line 18
+    LOAD_LOCAL   logical_and_0  ; line 18
+    ADD          i64  ; line 18
+    LOAD_LOCAL   logical_or_1  ; line 18
+    ADD          i64  ; line 18
+    CAST         i32  ; line 18
+    RET           ; line 18
+end function
+

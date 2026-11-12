@@ -1,0 +1,157 @@
+# NIL Textual Module
+module root
+
+# declaration_line 3
+function anomalous__scalar_flow__short_circuit__report(value: i64) -> i64:
+    STORE_LOCAL  value  ; line 3
+    LOAD_LOCAL   value  ; line 3
+    CAST         i64  ; line 3
+    STORE_LOCAL  value  ; line 3
+    LOAD_LOCAL   value  ; line 4
+    CALL         println 1  ; line 4
+    LOAD_LOCAL   value  ; line 5
+    CAST         i64  ; line 5
+    RET           ; line 5
+end function
+
+# declaration_line 8
+function anomalous__scalar_flow__short_circuit__broken -> i64:
+    PUSH_CONST   0  ; line 9
+    CAST         i64  ; line 9
+    STORE_LOCAL  zero  ; line 9
+    PUSH_CONST   1  ; line 10
+    LOAD_LOCAL   zero  ; line 10
+    DIV          i64  ; line 10
+    CAST         i64  ; line 10
+    RET           ; line 10
+end function
+
+@ai_context("Check logical scratch joins preserve short circuit output and skipped faults")
+# declaration_line 14
+function main -> i32:
+    PUSH_CONST   0  ; line 15
+    CAST         i64  ; line 15
+    STORE_LOCAL  total  ; line 15
+    PUSH_CONST   0  ; line 16
+    JMP_IF_NOT   main__L_and_false_2  ; line 16
+    PUSH_CONST   11  ; line 16
+    CALL         anomalous__scalar_flow__short_circuit__report 1  ; line 16
+    PUSH_CONST   0  ; line 16
+    CMP_GT        ; line 16
+    STORE_LOCAL  $ny.temp.logical_and.0  ; line 16
+    JMP          main__L_and_end_3  ; line 16
+    LABEL        main__L_and_false_2  ; line 16
+    PUSH_CONST   0  ; line 16
+    STORE_LOCAL  $ny.temp.logical_and.0  ; line 16
+    LABEL        main__L_and_end_3  ; line 16
+    LOAD_LOCAL   $ny.temp.logical_and.0  ; line 16
+    JMP_IF_NOT   main__L_if_end_0  ; line 16
+    LOAD_LOCAL   total  ; line 17
+    PUSH_CONST   100  ; line 17
+    ADD          i64  ; line 17
+    CAST         i64  ; line 17
+    STORE_LOCAL  total  ; line 17
+    LABEL        main__L_if_end_0  ; line 16
+    PUSH_CONST   1  ; line 19
+    JMP_IF       main__L_or_true_6  ; line 19
+    PUSH_CONST   22  ; line 19
+    CALL         anomalous__scalar_flow__short_circuit__report 1  ; line 19
+    PUSH_CONST   0  ; line 19
+    CMP_GT        ; line 19
+    STORE_LOCAL  $ny.temp.logical_or.1  ; line 19
+    JMP          main__L_or_end_7  ; line 19
+    LABEL        main__L_or_true_6  ; line 19
+    PUSH_CONST   1  ; line 19
+    STORE_LOCAL  $ny.temp.logical_or.1  ; line 19
+    LABEL        main__L_or_end_7  ; line 19
+    LOAD_LOCAL   $ny.temp.logical_or.1  ; line 19
+    JMP_IF_NOT   main__L_if_end_4  ; line 19
+    LOAD_LOCAL   total  ; line 20
+    PUSH_CONST   1  ; line 20
+    ADD          i64  ; line 20
+    CAST         i64  ; line 20
+    STORE_LOCAL  total  ; line 20
+    LABEL        main__L_if_end_4  ; line 19
+    PUSH_CONST   1  ; line 22
+    JMP_IF_NOT   main__L_and_false_10  ; line 22
+    PUSH_CONST   33  ; line 22
+    CALL         anomalous__scalar_flow__short_circuit__report 1  ; line 22
+    PUSH_CONST   0  ; line 22
+    CMP_GT        ; line 22
+    STORE_LOCAL  $ny.temp.logical_and.2  ; line 22
+    JMP          main__L_and_end_11  ; line 22
+    LABEL        main__L_and_false_10  ; line 22
+    PUSH_CONST   0  ; line 22
+    STORE_LOCAL  $ny.temp.logical_and.2  ; line 22
+    LABEL        main__L_and_end_11  ; line 22
+    LOAD_LOCAL   $ny.temp.logical_and.2  ; line 22
+    JMP_IF_NOT   main__L_if_end_8  ; line 22
+    LOAD_LOCAL   total  ; line 23
+    PUSH_CONST   2  ; line 23
+    ADD          i64  ; line 23
+    CAST         i64  ; line 23
+    STORE_LOCAL  total  ; line 23
+    LABEL        main__L_if_end_8  ; line 22
+    PUSH_CONST   0  ; line 25
+    JMP_IF       main__L_or_true_14  ; line 25
+    PUSH_CONST   44  ; line 25
+    CALL         anomalous__scalar_flow__short_circuit__report 1  ; line 25
+    PUSH_CONST   0  ; line 25
+    CMP_GT        ; line 25
+    STORE_LOCAL  $ny.temp.logical_or.3  ; line 25
+    JMP          main__L_or_end_15  ; line 25
+    LABEL        main__L_or_true_14  ; line 25
+    PUSH_CONST   1  ; line 25
+    STORE_LOCAL  $ny.temp.logical_or.3  ; line 25
+    LABEL        main__L_or_end_15  ; line 25
+    LOAD_LOCAL   $ny.temp.logical_or.3  ; line 25
+    JMP_IF_NOT   main__L_if_end_12  ; line 25
+    LOAD_LOCAL   total  ; line 26
+    PUSH_CONST   4  ; line 26
+    ADD          i64  ; line 26
+    CAST         i64  ; line 26
+    STORE_LOCAL  total  ; line 26
+    LABEL        main__L_if_end_12  ; line 25
+    PUSH_CONST   0  ; line 28
+    JMP_IF_NOT   main__L_and_false_18  ; line 28
+    CALL         anomalous__scalar_flow__short_circuit__broken 0  ; line 28
+    PUSH_CONST   0  ; line 28
+    CMP_GT        ; line 28
+    STORE_LOCAL  $ny.temp.logical_and.4  ; line 28
+    JMP          main__L_and_end_19  ; line 28
+    LABEL        main__L_and_false_18  ; line 28
+    PUSH_CONST   0  ; line 28
+    STORE_LOCAL  $ny.temp.logical_and.4  ; line 28
+    LABEL        main__L_and_end_19  ; line 28
+    LOAD_LOCAL   $ny.temp.logical_and.4  ; line 28
+    JMP_IF_NOT   main__L_if_end_16  ; line 28
+    LOAD_LOCAL   total  ; line 29
+    PUSH_CONST   1000  ; line 29
+    ADD          i64  ; line 29
+    CAST         i64  ; line 29
+    STORE_LOCAL  total  ; line 29
+    LABEL        main__L_if_end_16  ; line 28
+    PUSH_CONST   1  ; line 31
+    JMP_IF       main__L_or_true_22  ; line 31
+    CALL         anomalous__scalar_flow__short_circuit__broken 0  ; line 31
+    PUSH_CONST   0  ; line 31
+    CMP_GT        ; line 31
+    STORE_LOCAL  $ny.temp.logical_or.5  ; line 31
+    JMP          main__L_or_end_23  ; line 31
+    LABEL        main__L_or_true_22  ; line 31
+    PUSH_CONST   1  ; line 31
+    STORE_LOCAL  $ny.temp.logical_or.5  ; line 31
+    LABEL        main__L_or_end_23  ; line 31
+    LOAD_LOCAL   $ny.temp.logical_or.5  ; line 31
+    JMP_IF_NOT   main__L_if_end_20  ; line 31
+    LOAD_LOCAL   total  ; line 32
+    PUSH_CONST   8  ; line 32
+    ADD          i64  ; line 32
+    CAST         i64  ; line 32
+    STORE_LOCAL  total  ; line 32
+    LABEL        main__L_if_end_20  ; line 31
+    LOAD_LOCAL   total  ; line 34
+    CAST         i32  ; line 34
+    RET           ; line 34
+end function
+

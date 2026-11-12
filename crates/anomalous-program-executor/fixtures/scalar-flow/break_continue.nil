@@ -1,0 +1,52 @@
+# NIL Textual Module
+module root
+
+@ai_context("Check range continue increments and break skips the remaining iterations")
+# declaration_line 4
+function main -> i32:
+    PUSH_CONST   0  ; line 5
+    CAST         i64  ; line 5
+    STORE_LOCAL  total  ; line 5
+    PUSH_CONST   0  ; line 6
+    STORE_LOCAL  $ny.temp.idx.0  ; line 6
+    PUSH_CONST   10  ; line 6
+    STORE_LOCAL  $ny.temp.len.1  ; line 6
+    LABEL        main__L_iter_start_0  ; line 6
+    LOAD_LOCAL   $ny.temp.idx.0  ; line 6
+    LOAD_LOCAL   $ny.temp.len.1  ; line 6
+    CMP_LT        ; line 6
+    JMP_IF_NOT   main__L_iter_end_2  ; line 6
+    LOAD_LOCAL   $ny.temp.idx.0  ; line 6
+    CAST         i32  ; line 6
+    STORE_LOCAL  index  ; line 6
+    LOAD_LOCAL   index  ; line 7
+    PUSH_CONST   2  ; line 7
+    CMP_EQ        ; line 7
+    JMP_IF_NOT   main__L_if_end_3  ; line 7
+    JMP          main__L_iter_continue_1  ; line 8
+    LABEL        main__L_if_end_3  ; line 7
+    LOAD_LOCAL   index  ; line 10
+    PUSH_CONST   6  ; line 10
+    CMP_EQ        ; line 10
+    JMP_IF_NOT   main__L_if_end_5  ; line 10
+    JMP          main__L_iter_end_2  ; line 11
+    LABEL        main__L_if_end_5  ; line 10
+    LOAD_LOCAL   index  ; line 13
+    CALL         println 1  ; line 13
+    LOAD_LOCAL   total  ; line 14
+    LOAD_LOCAL   index  ; line 14
+    ADD          i64  ; line 14
+    CAST         i64  ; line 14
+    STORE_LOCAL  total  ; line 14
+    LABEL        main__L_iter_continue_1  ; line 6
+    LOAD_LOCAL   $ny.temp.idx.0  ; line 6
+    PUSH_CONST   1  ; line 6
+    ADD           ; line 6
+    STORE_LOCAL  $ny.temp.idx.0  ; line 6
+    JMP          main__L_iter_start_0  ; line 6
+    LABEL        main__L_iter_end_2  ; line 6
+    LOAD_LOCAL   total  ; line 16
+    CAST         i32  ; line 16
+    RET           ; line 16
+end function
+
