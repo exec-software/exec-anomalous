@@ -1,0 +1,15 @@
+# NIL Textual Module
+module root
+
+# String constants
+const S1 = "Anomalous manifest: hello"
+
+@ai_context("Write one greeting to the granted console and return zero")
+# declaration_line 4
+function main -> i32:
+    PUSH_CONST_STR S1
+    CALL         println 1
+    PUSH_CONST   0
+    CAST         i32
+    RET
+end function

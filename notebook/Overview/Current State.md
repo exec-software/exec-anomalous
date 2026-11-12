@@ -8,7 +8,32 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current native ABI checkpoint — bounded edition reads
+## Current host checkpoint — bounded program-manifest admission
+
+Accepted [ADR 0102](../../docs/adr/0102-admit-bounded-program-semantic-manifests.md)
+adds a shared `no_std` parser, unsigned `.re` envelope and host pack/inspect
+commands. Admission rederives exact edition identity, plain authored intent and
+console authority from a fully consumed bounded NIL subset, then checks an
+explicit workload ceiling. The returned witness borrows the checked bytes;
+it grants no native authority and executes no edition.
+
+All 25 final jobs passed on their first attempts against 608 unchanged source
+files, including eighteen manifest tests, nine focused tooling tests, 1,659
+mutation refusals and twenty CLI cases. Fresh TCG regressions preserve the
+native edition-delivery image byte for byte from qualified baseline `914d942`
+and leave Linux at its unanswered sequence-12 boundary. The earlier TCG/KVM
+native qualification remains separate below. The
+[Program Manifest Admission Log](../Development/2026-11-11%20Program%20Manifest%20Admission%20Log.md)
+retains this increment's evidence and remaining gates.
+
+Positive fixtures are explicitly hand-authored NIL. Complete compiler outputs
+retain an external `nilaix` context-registration helper and are refused without
+rewriting; the source-to-admission compiler bridge remains open. Native loader
+integration and the selected bounded Rust interpreter's corpus qualification
+remain next. This host increment advances neither native edition execution nor
+the Linux sequence-12 boundary.
+
+## Qualified native ABI baseline — bounded edition reads
 
 Accepted [ADR 0101](../../docs/adr/0101-deliver-bounded-native-program-edition-bytes.md)
 connects the ANPG edition grant to one separately retained immutable source.
@@ -33,8 +58,9 @@ Three provisioning refusals per backend also restored all resources. Exact
 host counts, artifact identities and preliminary attempts are recorded in the
 [Edition Read Log](../Development/2026-11-11%20Native%20Program%20Edition%20Read%20Log.md).
 The fixture delivers synthetic binary bytes and executes no edition.
-Semantic-manifest admission and the selected Rust interpreter's corpus
-qualification remain separate gates. The Linux regression still stops at the
+Native semantic-manifest integration and the selected Rust interpreter's corpus
+qualification remain separate gates; the host admission increment is above.
+The Linux regression still stops at the
 unanswered sequence-12 request after eleven returns:
 `mmap(0x100028000, 0x189000, 5, 0x812, 3, 0x28000)`. Main entry and Linux exit
 remain unproved.
@@ -50,8 +76,8 @@ on 503 unchanged source files, including 96/320 MiB runs under TCG/Nehalem and
 AMD KVM/host with the same image. Exact results and failed attempts are in the
 [Native Program Console Log](../Development/2026-11-11%20Native%20Program%20Console%20Log.md).
 That console-only proof maps or executes no edition. Bounded edition delivery
-is the current increment above; semantic-manifest admission and the selected
-Rust interpreter's corpus qualification remain next.
+is qualified above; native semantic-manifest integration and the selected Rust
+interpreter's corpus qualification remain next.
 Linux's live source-backed RX replacement remains a separate execution gate.
 
 ## Selected next major slice — existing Linux Antimatter through the Linux veil

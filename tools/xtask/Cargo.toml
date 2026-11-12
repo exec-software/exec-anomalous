@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 anomalous-document-protocol.workspace = true
 anomalous-native-runtime.workspace = true
+anomalous-program-manifest.workspace = true
 anomalous-elf-adapter = { workspace = true, features = ["linux_image"] }
 anomalous-abi.workspace = true
 anomalous-veil-protocol = { workspace = true, features = ["read-only-files"] }

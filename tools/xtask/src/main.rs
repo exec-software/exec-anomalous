@@ -59,6 +59,7 @@ mod owned_source_smoke;
 mod owned_tls_smoke;
 mod owned_workspace;
 mod owned_workspace_cpu;
+mod program_manifest;
 mod shared_veil_smoke;
 mod supervised_renderer_oracle;
 mod veil_application_artifact;
@@ -2271,6 +2272,31 @@ fn main() -> ExitCode {
 fn run() -> Result<(), String> {
     // These host-only inspectors never build, map, or execute foreign images.
     match env::args_os().nth(1).as_deref().and_then(OsStr::to_str) {
+        Some("program-manifest-pack") => {
+            let mut arguments = env::args_os().skip(2);
+            let input = arguments
+                .next()
+                .ok_or("program-manifest-pack requires INPUT_NIL OUTPUT.re")?;
+            let output = arguments
+                .next()
+                .ok_or("program-manifest-pack requires INPUT_NIL OUTPUT.re")?;
+            reject_extra_arguments(arguments)?;
+            return program_manifest::pack(Path::new(&input), Path::new(&output));
+        }
+        Some("program-manifest-inspect") => {
+            let mut arguments = env::args_os().skip(2);
+            let input = arguments
+                .next()
+                .ok_or("program-manifest-inspect requires PACKAGE CEILING")?;
+            let ceiling = arguments
+                .next()
+                .ok_or("program-manifest-inspect requires PACKAGE CEILING")?;
+            reject_extra_arguments(arguments)?;
+            let ceiling = ceiling
+                .to_str()
+                .ok_or("ceiling must be none or console_write")?;
+            return program_manifest::inspect(Path::new(&input), ceiling);
+        }
         Some("linux-image-inspect") => {
             return linux_process::inspect_image(env::args_os().skip(2).collect());
         }
@@ -2294,6 +2320,11 @@ fn run() -> Result<(), String> {
     let workspace_guard = acquire_workspace_lock()?;
     let mut arguments = env::args_os().skip(1);
     match arguments.next().as_deref().and_then(OsStr::to_str) {
+        Some("program-manifest-proof") => {
+            reject_extra_arguments(arguments)?;
+            let root = repository_root()?;
+            program_manifest::proof(&root, &root.join("build"))
+        }
         Some("image") => {
             reject_extra_arguments(arguments)?;
             let image = build_image(&[])?;
@@ -16010,6 +16041,9 @@ fn print_help() {
     println!(
         "Anomalous development tasks\n\n\
 Usage:\n\
+  cargo xtask program-manifest-pack INPUT_NIL OUTPUT.re package a bounded unsigned program image\n\
+  cargo xtask program-manifest-inspect PACKAGE CEILING rederive claims under none|console_write\n\
+  cargo xtask program-manifest-proof check bounded host-only admission and refusal fixtures\n\
   cargo xtask image        build a normal bootable raw disk\n\
   cargo xtask qemu         boot the normal image interactively in QEMU\n\
   cargo xtask smoke        build a test-only image and require boot.ready\n\

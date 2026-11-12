@@ -1,5 +1,33 @@
 # Native execution and compatibility readiness
 
+## Qualified host program-manifest admission (2026-11-11)
+
+Accepted [ADR 0102](../adr/0102-admit-bounded-program-semantic-manifests.md)
+implements a shared `no_std` derivation and admission component with host
+pack/inspect commands. The bounded textual NIL profile derives console
+authority from every accepted function, retains one plain authored main intent
+and binds both to the exact edition's SHA-256. An unsigned `.re` envelope must
+match independent rederivation and an explicit workload ceiling. Its borrowed
+admission witness is a host policy result, not a live native grant.
+
+All 25 final jobs passed on their first attempts against 608 unchanged source
+files. Host suites passed eighteen manifest, nine focused tooling, 644 default
+kernel, 727 all-feature kernel, 411 xtask and 35 native runtime tests, together
+with 1,659 mutation refusals and twenty CLI cases. Fresh TCG native and Linux
+regressions passed at 96/320 MiB; the native image is byte-identical to qualified
+edition-delivery baseline `914d942`, and Linux's sequence-12 boundary is
+unchanged. This increment reran TCG only; the earlier TCG/KVM native evidence
+remains separate below. The
+[Program Manifest Admission Log](../../notebook/Development/2026-11-11%20Program%20Manifest%20Admission%20Log.md)
+records the separate evidence.
+
+Positive fixtures are hand-authored NIL checked by the SDK context inspector.
+Complete compiler outputs remain negative fixtures because their external
+`nilaix` registration helper is outside the admitted profile. The bridge from
+compiler output to admission, native loader integration and bounded Rust
+interpreter corpus qualification remain open. This increment executes no edition and changes no
+Linux execution boundary or stable public ABI.
+
 ## Qualified native program edition reads (2026-11-11)
 
 Accepted [ADR 0101](../adr/0101-deliver-bounded-native-program-edition-bytes.md)
@@ -25,8 +53,9 @@ suites passed 644 default-kernel, 727 all-feature-kernel, 402 xtask and 35 nativ
 runtime tests; focused program and tooling suites passed 24 and 12 respectively.
 Evidence, artifact identities and preliminary attempts are recorded in the
 [Edition Read Log](../../notebook/Development/2026-11-11%20Native%20Program%20Edition%20Read%20Log.md).
-The source contains synthetic binary bytes. Semantic-manifest admission and
-the selected Rust interpreter's corpus qualification remain open. Linux remains
+The source contains synthetic binary bytes. Native semantic-manifest integration
+and the selected Rust interpreter's corpus qualification remain open; the host
+admission increment is recorded above. Linux remains
 at the unanswered sequence-12 boundary recorded below; no additional Linux
 execution or stable public ABI is established.
 
@@ -51,8 +80,8 @@ the earlier development-checkout proof remains separate preliminary evidence.
 No edition is mapped or executed by this proof. The
 [Runtime Owner Reply](../../notebook/Development/2026-10-15%20NIL%20Runtime%20into%20Anomalous%20%E2%80%94%20Runtime%20Owner%20Reply.md)
 selects a bounded Rust interpreter with differential corpus qualification.
-The current increment above adds bounded edition delivery; ADR 0093's
-semantic-manifest admission remains open. The pre-existing handwritten
+The qualified baseline above adds bounded edition delivery; ADR 0093's native
+semantic-manifest integration remains open. The pre-existing handwritten
 interpreter is preserved unlinked;
 its permissive parsing does not establish application readiness. The service is
 experimental and does not stabilize the native application ABI.

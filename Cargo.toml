@@ -4,6 +4,7 @@ members = [
     "crates/anomalous-abi",
     "crates/anomalous-editor-contract",
     "crates/anomalous-native-runtime",
+    "crates/anomalous-program-manifest",
     "crates/anomalous-document-protocol",
     "crates/anomalous-elf-adapter",
     "crates/anomalous-veil-protocol",
@@ -45,6 +46,7 @@ rust-version = "1.88"
 [workspace.dependencies]
 anomalous-document-protocol = { path = "crates/anomalous-document-protocol" }
 anomalous-native-runtime = { path = "crates/anomalous-native-runtime" }
+anomalous-program-manifest = { path = "crates/anomalous-program-manifest" }
 anomalous-veil-protocol = { path = "crates/anomalous-veil-protocol", default-features = false }
 anomalous-elf-adapter = { path = "crates/anomalous-elf-adapter" }
 anomalous-abi = { path = "crates/anomalous-abi" }

@@ -1,0 +1,31 @@
+# NIL Textual Module
+module root
+
+# String constants
+const S_MOD_10090086955720768438 = "anomalous::manifest::console"
+const S_FUNC_10090086955720768438 = "main"
+const S_JSON_10090086955720768438 = "Write one greeting to the granted console and return zero"
+const S_FILE_10090086955720768438 = "src"
+const S5 = "Anomalous manifest: hello"
+
+# declaration_line 4
+function __nilaix_register_ai_context_10090086955720768438 -> void:
+    PUSH_CONST_STR S_MOD_10090086955720768438
+    PUSH_CONST_STR S_FUNC_10090086955720768438
+    PUSH_CONST_STR S_JSON_10090086955720768438
+    PUSH_CONST_STR S_FILE_10090086955720768438
+    PUSH_CONST   4
+    INTEROP_CALL nilaix register_ai_context_internal 5 void
+    RET         
+end function
+
+@ai_context("Write one greeting to the granted console and return zero")
+# declaration_line 4
+function main -> i32:
+    PUSH_CONST_STR S5  ; line 5
+    CALL         println 1  ; line 5
+    PUSH_CONST   0  ; line 6
+    CAST         i32  ; line 6
+    RET           ; line 6
+end function
+
