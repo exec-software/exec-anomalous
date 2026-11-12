@@ -11,3 +11,4 @@ publish = false
 [dependencies]
 anomalous-program-manifest = { workspace = true, features = ["execution_view"] }
 anomalous-native-runtime.workspace = true
+anomalous-program-flow.workspace = true

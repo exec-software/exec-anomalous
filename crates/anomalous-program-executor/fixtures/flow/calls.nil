@@ -1,0 +1,56 @@
+# NIL Textual Module
+module root
+
+# declaration_line 3
+function anomalous__flow__calls__wrapper(value: i64) -> i64:
+    STORE_LOCAL  value  ; line 3
+    LOAD_LOCAL   value  ; line 3
+    CAST         i64  ; line 3
+    STORE_LOCAL  value  ; line 3
+    PUSH_CONST   100  ; line 4
+    CAST         i64  ; line 4
+    STORE_LOCAL  saved  ; line 4
+    LOAD_LOCAL   value  ; line 5
+    PUSH_CONST   3  ; line 5
+    CALL         anomalous__flow__calls__difference 2  ; line 5
+    CAST         i64  ; line 5
+    STORE_LOCAL  inner  ; line 5
+    LOAD_LOCAL   saved  ; line 6
+    LOAD_LOCAL   inner  ; line 6
+    ADD          i64  ; line 6
+    CAST         i64  ; line 6
+    RET           ; line 6
+end function
+
+@ai_context("Check ordered direct arguments and isolated nested call frames")
+# declaration_line 10
+function main -> i32:
+    PUSH_CONST   9  ; line 11
+    CALL         anomalous__flow__calls__wrapper 1  ; line 11
+    PUSH_CONST   9  ; line 11
+    PUSH_CONST   4  ; line 11
+    CALL         anomalous__flow__calls__difference 2  ; line 11
+    ADD          i64  ; line 11
+    PUSH_CONST   69  ; line 11
+    SUB          i64  ; line 11
+    CAST         i32  ; line 11
+    RET           ; line 11
+end function
+
+# declaration_line 14
+function anomalous__flow__calls__difference(left: i64, right: i64) -> i64:
+    STORE_LOCAL  right  ; line 14
+    STORE_LOCAL  left  ; line 14
+    LOAD_LOCAL   right  ; line 14
+    CAST         i64  ; line 14
+    STORE_LOCAL  right  ; line 14
+    LOAD_LOCAL   left  ; line 14
+    CAST         i64  ; line 14
+    STORE_LOCAL  left  ; line 14
+    LOAD_LOCAL   left  ; line 15
+    LOAD_LOCAL   right  ; line 15
+    SUB          i64  ; line 15
+    CAST         i64  ; line 15
+    RET           ; line 15
+end function
+

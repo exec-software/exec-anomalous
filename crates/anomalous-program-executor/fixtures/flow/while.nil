@@ -1,0 +1,61 @@
+# NIL Textual Module
+module root
+
+# declaration_line 3
+function anomalous__flow__while_case__sum_until(limit: i64) -> i64:
+    STORE_LOCAL  limit  ; line 3
+    LOAD_LOCAL   limit  ; line 3
+    CAST         i64  ; line 3
+    STORE_LOCAL  limit  ; line 3
+    PUSH_CONST   0  ; line 4
+    CAST         i64  ; line 4
+    STORE_LOCAL  index  ; line 4
+    PUSH_CONST   0  ; line 5
+    CAST         i64  ; line 5
+    STORE_LOCAL  total  ; line 5
+    LABEL        anomalous__flow__while_case__sum_until__L_while_start_0  ; line 6
+    LOAD_LOCAL   index  ; line 6
+    LOAD_LOCAL   limit  ; line 6
+    CMP_LT        ; line 6
+    JMP_IF_NOT   anomalous__flow__while_case__sum_until__L_while_end_1  ; line 6
+    LOAD_LOCAL   index  ; line 7
+    PUSH_CONST   1  ; line 7
+    ADD          i64  ; line 7
+    CAST         i64  ; line 7
+    STORE_LOCAL  index  ; line 7
+    LOAD_LOCAL   index  ; line 8
+    PUSH_CONST   2  ; line 8
+    CMP_EQ        ; line 8
+    JMP_IF_NOT   anomalous__flow__while_case__sum_until__L_if_end_2  ; line 8
+    JMP          anomalous__flow__while_case__sum_until__L_while_start_0  ; line 9
+    LABEL        anomalous__flow__while_case__sum_until__L_if_end_2  ; line 8
+    LOAD_LOCAL   index  ; line 11
+    PUSH_CONST   6  ; line 11
+    CMP_EQ        ; line 11
+    JMP_IF_NOT   anomalous__flow__while_case__sum_until__L_if_end_4  ; line 11
+    JMP          anomalous__flow__while_case__sum_until__L_while_end_1  ; line 12
+    LABEL        anomalous__flow__while_case__sum_until__L_if_end_4  ; line 11
+    LOAD_LOCAL   total  ; line 14
+    LOAD_LOCAL   index  ; line 14
+    ADD          i64  ; line 14
+    CAST         i64  ; line 14
+    STORE_LOCAL  total  ; line 14
+    JMP          anomalous__flow__while_case__sum_until__L_while_start_0  ; line 6
+    LABEL        anomalous__flow__while_case__sum_until__L_while_end_1  ; line 6
+    LOAD_LOCAL   total  ; line 16
+    CAST         i64  ; line 16
+    RET           ; line 16
+end function
+
+@ai_context("Check bounded while execution with zero iterations continue and break")
+# declaration_line 20
+function main -> i32:
+    PUSH_CONST   0  ; line 21
+    CALL         anomalous__flow__while_case__sum_until 1  ; line 21
+    PUSH_CONST   10  ; line 21
+    CALL         anomalous__flow__while_case__sum_until 1  ; line 21
+    ADD          i64  ; line 21
+    CAST         i32  ; line 21
+    RET           ; line 21
+end function
+

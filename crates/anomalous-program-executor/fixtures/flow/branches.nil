@@ -1,0 +1,66 @@
+# NIL Textual Module
+module root
+
+# declaration_line 3
+function anomalous__flow__branches__choose(value: i64) -> i64:
+    STORE_LOCAL  value  ; line 3
+    LOAD_LOCAL   value  ; line 3
+    CAST         i64  ; line 3
+    STORE_LOCAL  value  ; line 3
+    PUSH_CONST   9  ; line 4
+    CAST         i64  ; line 4
+    STORE_LOCAL  result  ; line 4
+    LOAD_LOCAL   value  ; line 5
+    PUSH_CONST   0  ; line 5
+    CMP_GT        ; line 5
+    JMP_IF_NOT   anomalous__flow__branches__choose__L_if_else_1  ; line 5
+    PUSH_CONST   7  ; line 6
+    CAST         i64  ; line 6
+    STORE_LOCAL  result  ; line 6
+    JMP          anomalous__flow__branches__choose__L_if_end_0  ; line 5
+    LABEL        anomalous__flow__branches__choose__L_if_else_1  ; line 5
+    LOAD_LOCAL   value  ; line 7
+    PUSH_CONST   0  ; line 7
+    CMP_LT        ; line 7
+    JMP_IF_NOT   anomalous__flow__branches__choose__L_if_end_2  ; line 7
+    PUSH_CONST   11  ; line 8
+    CAST         i64  ; line 8
+    STORE_LOCAL  result  ; line 8
+    LABEL        anomalous__flow__branches__choose__L_if_end_2  ; line 7
+    LABEL        anomalous__flow__branches__choose__L_if_end_0  ; line 5
+    LOAD_LOCAL   result  ; line 10
+    CAST         i64  ; line 10
+    RET           ; line 10
+end function
+
+@ai_context("Check integer branch polarity and initialized local joins")
+# declaration_line 14
+function main -> i32:
+    PUSH_CONST   3  ; line 15
+    PUSH_CONST   0  ; line 15
+    CMP_GT        ; line 15
+    JMP_IF_NOT   main__L_ifexpr_else_0  ; line 15
+    PUSH_CONST   5  ; line 15
+    CAST         i32  ; line 15
+    JMP          main__L_ifexpr_end_1  ; line 15
+    LABEL        main__L_ifexpr_else_0  ; line 15
+    PUSH_CONST   8  ; line 15
+    CAST         i32  ; line 15
+    LABEL        main__L_ifexpr_end_1  ; line 15
+    CAST         i64  ; line 15
+    STORE_LOCAL  selected  ; line 15
+    PUSH_CONST   1  ; line 16
+    NEG          i32  ; line 16
+    CALL         anomalous__flow__branches__choose 1  ; line 16
+    PUSH_CONST   0  ; line 16
+    CALL         anomalous__flow__branches__choose 1  ; line 16
+    ADD          i64  ; line 16
+    PUSH_CONST   1  ; line 16
+    CALL         anomalous__flow__branches__choose 1  ; line 16
+    ADD          i64  ; line 16
+    LOAD_LOCAL   selected  ; line 16
+    ADD          i64  ; line 16
+    CAST         i32  ; line 16
+    RET           ; line 16
+end function
+

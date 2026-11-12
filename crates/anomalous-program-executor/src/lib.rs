@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! Experimental profile-1 executor for host qualification (ADR 0104).
+//! Experimental host qualification executors for admitted NIL (ADRs 0104/0105).
 //! This is not a native-integrated or full-corpus-qualified NIL interpreter.
 //! Every entry requires whole-edition admission; storage, dispatch and output
 //! are bounded, and the only effect is an explicit, witness-bound console sink.
@@ -15,6 +15,8 @@ use anomalous_program_manifest::{
     },
 };
 use core::fmt::Write;
+
+pub mod flow;
 
 pub const maximum_output_bytes: usize = 65536;
 
@@ -30,6 +32,9 @@ pub enum error {
     service,
     authority,
     invalid_state,
+    frame_limit,
+    stack_limit,
+    generated_fallthrough,
 }
 
 impl error {
@@ -45,6 +50,9 @@ impl error {
             Self::service => "service",
             Self::authority => "authority",
             Self::invalid_state => "invalid_state",
+            Self::frame_limit => "frame_limit",
+            Self::stack_limit => "stack_limit",
+            Self::generated_fallthrough => "generated_fallthrough",
         }
     }
 }
@@ -176,40 +184,16 @@ impl<'a> machine<'a> {
         if admitted.granted_services() & authority::console_write == 0 {
             return Err(error::authority);
         }
-        let mut output = output_buffer::new();
-        match self.pop()? {
-            value::integer(number) => {
-                write!(&mut output, "{number}").map_err(|_| error::output_limit)?
-            }
-            value::text(escaped) => output.decode(escaped)?,
-        }
-        if newline {
-            output.append(b"\n")?;
-        }
-        let bytes = output.bytes();
-        // The service rejects empty writes; an empty non-newline instruction
-        // has no observable output and therefore makes no service request.
-        if bytes.is_empty() {
-            return Ok(());
-        }
-        validate_console_text(bytes).map_err(|_| error::output_policy)?;
-        let total = self
-            .stats
-            .output_bytes
-            .checked_add(bytes.len())
-            .ok_or(error::output_limit)?;
-        if total > budget.output_bytes {
-            return Err(error::output_limit);
-        }
-        self.stats.console_calls += 1;
-        sink.write(console_request {
-            edition_identity: admitted.identity(),
-            sequence: self.stats.console_calls,
-            bytes,
-        })
-        .map_err(|_| error::service)?;
-        self.stats.output_bytes = total;
-        Ok(())
+        let item = self.pop()?;
+        publish_console(
+            item,
+            newline,
+            admitted.identity(),
+            admitted.granted_services(),
+            budget.output_bytes,
+            &mut self.stats,
+            sink,
+        )
     }
 
     fn run(
@@ -370,6 +354,55 @@ pub fn execute(
         edition_identity: admitted.identity(),
         line: machine.line,
     }
+}
+
+// Shared effect path for both admitted profiles. The only way to construct a
+// request is through complete payload, authority and budget checks here.
+fn publish_console(
+    item: value<'_>,
+    newline: bool,
+    identity: [u8; 32],
+    granted: u64,
+    output_limit: usize,
+    stats: &mut statistics,
+    sink: &mut impl console_sink,
+) -> Result<(), error> {
+    if granted & authority::console_write == 0 {
+        return Err(error::authority);
+    }
+    let mut output = output_buffer::new();
+    match item {
+        value::integer(number) => {
+            write!(&mut output, "{number}").map_err(|_| error::output_limit)?
+        }
+        value::text(escaped) => output.decode(escaped)?,
+    }
+    if newline {
+        output.append(b"\n")?;
+    }
+    let bytes = output.bytes();
+    // The service rejects empty writes; an empty non-newline instruction
+    // has no observable output and therefore makes no service request.
+    if bytes.is_empty() {
+        return Ok(());
+    }
+    validate_console_text(bytes).map_err(|_| error::output_policy)?;
+    let total = stats
+        .output_bytes
+        .checked_add(bytes.len())
+        .ok_or(error::output_limit)?;
+    if total > output_limit {
+        return Err(error::output_limit);
+    }
+    stats.console_calls += 1;
+    sink.write(console_request {
+        edition_identity: identity,
+        sequence: stats.console_calls,
+        bytes,
+    })
+    .map_err(|_| error::service)?;
+    stats.output_bytes = total;
+    Ok(())
 }
 
 fn narrow(number: i64, width: &str) -> Result<i64, error> {

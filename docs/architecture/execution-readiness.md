@@ -1,6 +1,48 @@
 # Native execution and compatibility readiness
 
-## Bounded host NIL execution prerequisite (2026-11-11)
+## Qualified bounded host function/control-flow prerequisite (2026-11-11)
+
+Accepted [ADR 0105](../adr/0105-validate-bounded-function-control-flow-before-host-execution.md)
+adds separate profile-2 admission and host execution. Both envelope headers
+must select profile 2; each profile refuses the other's packages. The new
+validator resolves the whole artifact, unions authority across dead code and
+unused functions, and checks reachable flow independently from every function
+entry. Stack joins require identical shapes and kinds; local loads require
+initialization on every incoming path. Dead instructions receive syntax,
+reference and authority checks without invented operand states.
+
+The private witness holds the immutable edition and validated plan. Iterative
+execution supports static integer/text calls, integer conditions, loops and
+bounded recursion, with at most 16 frames, 256 operand values and 65,536 steps.
+Validation has its own fixed storage and transfer bound. Console payloads are
+fully checked before sink calls; earlier effects are not rolled back on a later
+refusal. Caller-owned host workspaces establish no native stack geometry.
+Profile-1 parsing and the native admission loader are unchanged; no native
+feature or executable integration is added.
+
+All 25 final jobs passed on their first attempts, with an independent audit of
+651 unchanged source files. Host suites pass 648 default-kernel, 731 all-feature
+kernel, 425 xtask, 37 native-runtime, 18 manifest, 31 executor and 22 flow tests;
+the Python harnesses pass six profile-1 and five flow tests. The existing
+126-case profile-1 proof passes unchanged.
+
+The profile-2 proof passes 77 cases: 38 exact semantic comparisons, two exact
+traps, four finite policy contrasts, four candidate bounded cases and 29
+admission refusals, plus eighteen profile-1 raw-syntax refusals. The retained
+reference run captures 97 compiler calls and 45 interpreter calls across 38 root
+fixtures. All 45 candidate corpus attempts remain admission refusals. The full
+unmodified corpus and native mediated-execution gates remain closed.
+
+Fresh TCG native admission, native delivery and Linux regressions pass at
+96/320 MiB. Five retained native admission artifacts are byte-identical to the
+previous KVM-qualified checkpoint, preserving its emitted review; there is no
+fresh KVM run in this increment. Native NIL execution remains zero, and Linux
+still stops at unanswered sequence-12 `mmap` after eleven returns. The
+[Program Flow Executor Log](../../notebook/Development/2026-11-11%20Program%20Flow%20Executor%20Log.md)
+records the final evidence and retained development attempts. The prior
+accepted profile-1 and native evidence below remains separate.
+
+## Previous bounded host NIL execution prerequisite (2026-11-11)
 
 Accepted [ADR 0104](../adr/0104-develop-a-bounded-host-executor-behind-the-corpus-gate.md) adds an experimental `no_std`, unsafe-free executor
 for the admitted profile-1 NIL subset. It consumes the immutable admission
@@ -18,8 +60,9 @@ The unchanged reference suite passes all 38 root fixtures and its auxiliary
 checks. Every one of its 45 interpreter invocations is retained and attempted
 by the candidate; all remain admission refusals, not compatibility passes.
 
-Full corpus qualification remains open, including wider admission, function and
-control-flow semantics, aggregates, faults and service families. Native effect
+This checkpoint did not qualify function or control-flow semantics. The newer
+profile-2 work above addresses a bounded subset; full corpus qualification,
+aggregates, faults and wider service families remain open. Native effect
 mediation and execution are also unqualified. The
 [Host Program Executor Log](../../notebook/Development/2026-11-11%20Host%20Program%20Executor%20Log.md) records the bounded evidence, reproduction
 commands and remaining gates. Linux remains at its unanswered sequence-12

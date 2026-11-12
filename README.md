@@ -25,8 +25,11 @@ desktop, or a security boundary for sensitive workloads.
   unchanged Linux interpreter with constrained userspace policy. They do not
   yet run general Linux applications or Electron.
 - An experimental host-only NIL executor runs admitted integer/text programs
-  with bounded console output. Full corpus qualification and native execution
-  remain separate gates.
+  with bounded console output. A separate profile-2 increment adds validated
+  static calls, branches, loops and bounded recursion, qualified by 25 final
+  checks and a 77-case bounded proof.
+  [ADR 0105](docs/adr/0105-validate-bounded-function-control-flow-before-host-execution.md)
+  keeps full corpus qualification and native execution as separate gates.
 - Host-side libraries explore typed session routing, shared semantic scenes,
   presentation acknowledgement, and recovery.
 - **Eidolon** supplies an independent Python reference codec for lossless

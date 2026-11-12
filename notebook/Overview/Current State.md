@@ -8,7 +8,37 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current host checkpoint — bounded NIL execution
+## Current host checkpoint — bounded functions and control flow
+
+Accepted [ADR 0105](../../docs/adr/0105-validate-bounded-function-control-flow-before-host-execution.md)
+adds a separate host-only profile-2 admission and execution path. It validates
+static function calls, integer branches, loops, typed stack joins and definite
+local initialization before execution. Complete syntax and reference checks,
+plus the authority union, include dead instructions and unused functions.
+Caller-owned workspaces bound validation and iterative execution; recursion
+uses explicit frames. Profile 1 and the native admission path retain their
+existing contracts. No native vessel links this executor.
+
+All 25 final qualification jobs passed on their first attempts; the independent
+audit confirms 651 unchanged source files. The proof passes 77 cases: 38 exact
+semantic comparisons, two exact traps, four finite policy contrasts, four
+candidate bounded cases and 29 admission refusals. It also checks eighteen
+profile-1 raw-syntax refusals.
+All 126 profile-1 differential cases pass unchanged, alongside 22 flow and
+31 executor unit tests.
+All 97 compiler calls and 45 interpreter calls covering the reference suite's
+38 root fixtures are captured. All 45 candidate corpus attempts remain
+admission refusals: neither full interpreter qualification nor native execution
+is established.
+
+Fresh TCG native admission, native delivery and Linux regressions pass at
+96/320 MiB. Five retained native admission artifacts are byte-identical to the
+previous KVM-qualified checkpoint; KVM was not rerun in this increment. Linux
+still stops at its unanswered sequence-12 `mmap` after eleven returns. The
+[Program Flow Executor Log](../Development/2026-11-11%20Program%20Flow%20Executor%20Log.md)
+records the final evidence, retained development attempts and remaining gates.
+
+## Previous host checkpoint — bounded straight-line NIL execution
 
 Accepted [ADR 0104](../../docs/adr/0104-develop-a-bounded-host-executor-behind-the-corpus-gate.md) adds an experimental `no_std`, unsafe-free executor
 for the admitted profile-1 NIL subset. It consumes the immutable admission
@@ -26,8 +56,9 @@ The unchanged reference suite passes all 38 root fixtures and its auxiliary
 checks. Every one of its 45 interpreter invocations is retained and attempted
 by the candidate; all remain admission refusals, not compatibility passes.
 
-Full corpus qualification remains open, including wider admission, function and
-control-flow semantics, aggregates, faults and service families. Native effect
+This checkpoint did not qualify function or control-flow semantics. The newer
+profile-2 work above addresses a bounded subset; full corpus qualification,
+aggregates, faults and wider service families remain open. Native effect
 mediation and execution are also unqualified. The
 [Host Program Executor Log](../Development/2026-11-11%20Host%20Program%20Executor%20Log.md) records the bounded evidence, reproduction
 commands and remaining gates. Linux remains at its unanswered sequence-12

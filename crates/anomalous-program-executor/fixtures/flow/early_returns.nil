@@ -1,0 +1,38 @@
+# NIL Textual Module
+module root
+
+# declaration_line 3
+function anomalous__flow__early_returns__sign(value: i64) -> i64:
+    STORE_LOCAL  value  ; line 3
+    LOAD_LOCAL   value  ; line 3
+    CAST         i64  ; line 3
+    STORE_LOCAL  value  ; line 3
+    LOAD_LOCAL   value  ; line 4
+    PUSH_CONST   0  ; line 4
+    CMP_GT        ; line 4
+    JMP_IF_NOT   anomalous__flow__early_returns__sign__L_if_else_1  ; line 4
+    PUSH_CONST   1  ; line 5
+    CAST         i64  ; line 5
+    RET           ; line 5
+    JMP          anomalous__flow__early_returns__sign__L_if_end_0  ; line 4
+    LABEL        anomalous__flow__early_returns__sign__L_if_else_1  ; line 4
+    PUSH_CONST   1  ; line 7
+    NEG          i32  ; line 7
+    CAST         i64  ; line 7
+    RET           ; line 7
+    LABEL        anomalous__flow__early_returns__sign__L_if_end_0  ; line 4
+    RET          $ny.generated.nonvoid-fallthrough  ; line 3
+end function
+
+@ai_context("Check early returns and unreachable compiler fallthrough markers")
+# declaration_line 12
+function main -> i32:
+    PUSH_CONST   0  ; line 13
+    CALL         anomalous__flow__early_returns__sign 1  ; line 13
+    PUSH_CONST   1  ; line 13
+    CALL         anomalous__flow__early_returns__sign 1  ; line 13
+    ADD          i64  ; line 13
+    CAST         i32  ; line 13
+    RET           ; line 13
+end function
+

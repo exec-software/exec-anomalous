@@ -1,0 +1,366 @@
+//! Iterative host-only execution of the separately admitted control-flow profile.
+//! Storage is caller-owned, fixed-capacity and scrubbed at both ends of a run.
+
+use super::{
+    binary, console_sink, error, execution, maximum_output_bytes, narrow, publish_console,
+    statistics, value,
+};
+use anomalous_program_flow::{admitted_program, kind, operation, program};
+
+pub const maximum_steps: usize = 65536;
+pub const maximum_frames: usize = 16;
+pub const maximum_values: usize = 256;
+pub const maximum_locals: usize = 128;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct limits {
+    pub instructions: usize,
+    /// Includes the main frame. Zero refuses before any instruction executes.
+    pub frames: usize,
+    pub output_bytes: usize,
+}
+
+impl Default for limits {
+    fn default() -> Self {
+        Self {
+            instructions: maximum_steps,
+            frames: maximum_frames,
+            output_bytes: maximum_output_bytes,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct frame<'a> {
+    function: usize,
+    floor: usize,
+    resume: usize,
+    locals: [Option<value<'a>>; maximum_locals],
+}
+
+impl frame<'_> {
+    const fn empty() -> Self {
+        Self {
+            function: 0,
+            floor: 0,
+            resume: 0,
+            locals: [None; maximum_locals],
+        }
+    }
+}
+
+/// No allocation or Rust recursion is used during execution. This storage is
+/// not a qualified native stack layout; a future embedding must place and
+/// measure it explicitly. The witness/edition lifetime bounds all borrowed text.
+pub struct execution_workspace<'a> {
+    frames: [frame<'a>; maximum_frames],
+    frame_count: usize,
+    values: [value<'a>; maximum_values],
+    depth: usize,
+    pc: usize,
+    stats: statistics,
+    line: usize,
+}
+
+impl Default for execution_workspace<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'a> execution_workspace<'a> {
+    pub const fn new() -> Self {
+        Self {
+            frames: [frame::empty(); maximum_frames],
+            frame_count: 0,
+            values: [value::integer(0); maximum_values],
+            depth: 0,
+            pc: 0,
+            stats: statistics {
+                instructions: 0,
+                console_calls: 0,
+                output_bytes: 0,
+            },
+            line: 0,
+        }
+    }
+
+    fn clear(&mut self) {
+        self.frames.fill(frame::empty());
+        self.values.fill(value::integer(0));
+        self.frame_count = 0;
+        self.depth = 0;
+        self.pc = 0;
+        self.stats = statistics::default();
+        self.line = 0;
+    }
+
+    fn current(&self) -> Result<&frame<'a>, error> {
+        self.frames
+            .get(
+                self.frame_count
+                    .checked_sub(1)
+                    .ok_or(error::invalid_state)?,
+            )
+            .ok_or(error::invalid_state)
+    }
+
+    fn current_mut(&mut self) -> Result<&mut frame<'a>, error> {
+        self.frames
+            .get_mut(
+                self.frame_count
+                    .checked_sub(1)
+                    .ok_or(error::invalid_state)?,
+            )
+            .ok_or(error::invalid_state)
+    }
+
+    fn push(&mut self, item: value<'a>) -> Result<(), error> {
+        *self.values.get_mut(self.depth).ok_or(error::stack_limit)? = item;
+        self.depth += 1;
+        Ok(())
+    }
+
+    fn pop(&mut self) -> Result<value<'a>, error> {
+        if self.depth <= self.current()?.floor {
+            return Err(error::invalid_state);
+        }
+        self.depth -= 1;
+        let item = self.values[self.depth];
+        self.values[self.depth] = value::integer(0);
+        Ok(item)
+    }
+
+    fn integer(&mut self) -> Result<i64, error> {
+        match self.pop()? {
+            value::integer(number) => Ok(number),
+            value::text(_) => Err(error::invalid_state),
+        }
+    }
+
+    fn call(
+        &mut self,
+        program: &program<'a>,
+        function: usize,
+        resume: usize,
+        budget: limits,
+    ) -> Result<(), error> {
+        let callee = program
+            .functions()
+            .get(function)
+            .ok_or(error::invalid_state)?;
+        let count = callee.parameter_kinds().len();
+        let floor = self.depth.checked_sub(count).ok_or(error::invalid_state)?;
+        if self.frame_count > 0 && floor < self.current()?.floor {
+            return Err(error::invalid_state);
+        }
+        if self.frame_count >= budget.frames {
+            return Err(error::frame_limit);
+        }
+        for (item, expected) in self.values[floor..self.depth]
+            .iter()
+            .zip(callee.parameter_kinds())
+        {
+            if value_kind(*item) != *expected {
+                return Err(error::invalid_state);
+            }
+        }
+        // Argument order and values are untouched. The program's own reversed
+        // STORE_LOCAL prologue consumes them; any scalar narrowing is a CAST.
+        self.frames[self.frame_count] = frame {
+            function,
+            floor,
+            resume,
+            locals: [None; maximum_locals],
+        };
+        self.frame_count += 1;
+        self.pc = callee.start;
+        Ok(())
+    }
+
+    fn run(
+        &mut self,
+        admitted: &admitted_program<'a, '_>,
+        budget: limits,
+        sink: &mut impl console_sink,
+    ) -> Result<i64, error> {
+        if budget.instructions > maximum_steps
+            || budget.frames > maximum_frames
+            || budget.output_bytes > maximum_output_bytes
+        {
+            return Err(error::invalid_limits);
+        }
+        let program = admitted.program();
+        self.call(program, program.main(), 0, budget)?;
+        loop {
+            let current = self.current()?;
+            let function = program
+                .functions()
+                .get(current.function)
+                .ok_or(error::invalid_state)?;
+            if self.pc < function.start || self.pc >= function.end {
+                return Err(error::invalid_state);
+            }
+            let instruction = program
+                .instructions()
+                .get(self.pc)
+                .ok_or(error::invalid_state)?;
+            self.line = instruction.line;
+            if self.stats.instructions == budget.instructions {
+                return Err(error::instruction_limit);
+            }
+            self.stats.instructions += 1;
+            let next = self.pc + 1;
+            match instruction.operation {
+                operation::integer(number) => self.push(value::integer(number))?,
+                operation::text(index) => {
+                    let text = program
+                        .constants()
+                        .get(index)
+                        .ok_or(error::invalid_state)?
+                        .escaped;
+                    self.push(value::text(text))?;
+                }
+                operation::load(index) => {
+                    let item = self
+                        .current()?
+                        .locals
+                        .get(index)
+                        .and_then(|item| *item)
+                        .ok_or(error::invalid_state)?;
+                    self.push(item)?;
+                }
+                operation::store(index) => {
+                    let item = self.pop()?;
+                    *self
+                        .current_mut()?
+                        .locals
+                        .get_mut(index)
+                        .ok_or(error::invalid_state)? = Some(item);
+                }
+                operation::cast(width) => {
+                    let value = narrow(self.integer()?, width)?;
+                    self.push(value::integer(value))?;
+                }
+                operation::negate(width) => {
+                    let value = narrow(self.integer()?, width)?;
+                    self.push(value::integer(narrow(value.wrapping_neg(), width)?))?;
+                }
+                operation::binary { opcode, width } => {
+                    let right = self.integer()?;
+                    let left = self.integer()?;
+                    self.push(value::integer(binary(opcode, width, left, right)?))?;
+                }
+                operation::compare(opcode) => {
+                    let right = self.integer()?;
+                    let left = self.integer()?;
+                    let result = match opcode {
+                        "CMP_EQ" => left == right,
+                        "CMP_NE" => left != right,
+                        "CMP_LT" => left < right,
+                        "CMP_LE" => left <= right,
+                        "CMP_GT" => left > right,
+                        "CMP_GE" => left >= right,
+                        _ => return Err(error::invalid_state),
+                    };
+                    self.push(value::integer(i64::from(result)))?;
+                }
+                operation::not => {
+                    let value = self.integer()?;
+                    self.push(value::integer(i64::from(value == 0)))?;
+                }
+                operation::pop => {
+                    self.pop()?;
+                }
+                operation::nop | operation::label => {}
+                operation::jump(target) => {
+                    self.pc = target;
+                    continue;
+                }
+                operation::branch { target, nonzero } => {
+                    let condition = self.integer()?;
+                    if (condition != 0) == nonzero {
+                        self.pc = target;
+                        continue;
+                    }
+                }
+                operation::call(target) => {
+                    self.call(program, target, next, budget)?;
+                    continue;
+                }
+                operation::generated_fallthrough => return Err(error::generated_fallthrough),
+                operation::console { newline } => {
+                    let item = self.pop()?;
+                    publish_console(
+                        item,
+                        newline,
+                        admitted.identity(),
+                        admitted.granted_services(),
+                        budget.output_bytes,
+                        &mut self.stats,
+                        sink,
+                    )?;
+                }
+                operation::ret => {
+                    let frame = self.current()?;
+                    let function = program
+                        .functions()
+                        .get(frame.function)
+                        .ok_or(error::invalid_state)?;
+                    let count = usize::from(function.return_kind.is_some());
+                    if self.depth.checked_sub(frame.floor) != Some(count) {
+                        return Err(error::invalid_state);
+                    }
+                    if let Some(expected) = function.return_kind
+                        && value_kind(self.values[frame.floor]) != expected
+                    {
+                        return Err(error::invalid_state);
+                    }
+                    if self.frame_count == 1 {
+                        return match (count, self.values[frame.floor]) {
+                            (1, value::integer(result)) => Ok(result),
+                            _ => Err(error::invalid_state),
+                        };
+                    }
+                    let resume = frame.resume;
+                    self.frame_count -= 1;
+                    self.frames[self.frame_count] = frame::empty();
+                    self.pc = resume;
+                    continue;
+                }
+            }
+            self.pc = next;
+        }
+    }
+}
+
+fn value_kind(value: value<'_>) -> kind {
+    match value {
+        value::integer(_) => kind::integer,
+        value::text(_) => kind::text,
+    }
+}
+
+/// Execute only a profile-2 witness. Every return, arithmetic error, policy
+/// refusal or service refusal clears the internal frame/value storage. Earlier
+/// acknowledged sink effects remain committed; there is no automatic retry.
+pub fn execute<'a>(
+    admitted: &admitted_program<'a, '_>,
+    budget: limits,
+    workspace: &mut execution_workspace<'a>,
+    sink: &mut impl console_sink,
+) -> execution {
+    workspace.clear();
+    let outcome = workspace.run(admitted, budget, sink);
+    let result = execution {
+        outcome,
+        statistics: workspace.stats,
+        edition_identity: admitted.identity(),
+        line: workspace.line,
+    };
+    workspace.clear();
+    result
+}
+
+#[cfg(test)]
+mod tests;

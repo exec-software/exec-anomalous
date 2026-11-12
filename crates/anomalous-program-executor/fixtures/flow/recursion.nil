@@ -1,0 +1,36 @@
+# NIL Textual Module
+module root
+
+# declaration_line 3
+function anomalous__flow__recursion__factorial(count: i64) -> i64:
+    STORE_LOCAL  count  ; line 3
+    LOAD_LOCAL   count  ; line 3
+    CAST         i64  ; line 3
+    STORE_LOCAL  count  ; line 3
+    LOAD_LOCAL   count  ; line 4
+    PUSH_CONST   1  ; line 4
+    CMP_LE        ; line 4
+    JMP_IF_NOT   anomalous__flow__recursion__factorial__L_if_end_0  ; line 4
+    PUSH_CONST   1  ; line 5
+    CAST         i64  ; line 5
+    RET           ; line 5
+    LABEL        anomalous__flow__recursion__factorial__L_if_end_0  ; line 4
+    LOAD_LOCAL   count  ; line 7
+    LOAD_LOCAL   count  ; line 7
+    PUSH_CONST   1  ; line 7
+    SUB          i64  ; line 7
+    CALL         anomalous__flow__recursion__factorial 1  ; line 7
+    MUL          i64  ; line 7
+    CAST         i64  ; line 7
+    RET           ; line 7
+end function
+
+@ai_context("Check bounded recursion and restoration of caller operand stacks")
+# declaration_line 11
+function main -> i32:
+    PUSH_CONST   5  ; line 12
+    CALL         anomalous__flow__recursion__factorial 1  ; line 12
+    CAST         i32  ; line 12
+    RET           ; line 12
+end function
+

@@ -1,0 +1,51 @@
+# NIL Textual Module
+module root
+
+# String constants
+const S1 = "yes"
+const S2 = "no"
+
+# declaration_line 3
+function anomalous__flow__text_void__choose(value: i64) -> text:
+    STORE_LOCAL  value  ; line 3
+    LOAD_LOCAL   value  ; line 3
+    CAST         i64  ; line 3
+    STORE_LOCAL  value  ; line 3
+    LOAD_LOCAL   value  ; line 4
+    PUSH_CONST   0  ; line 4
+    CMP_GT        ; line 4
+    JMP_IF_NOT   anomalous__flow__text_void__choose__L_if_end_0  ; line 4
+    PUSH_CONST_STR S1  ; line 5
+    RET           ; line 5
+    LABEL        anomalous__flow__text_void__choose__L_if_end_0  ; line 4
+    PUSH_CONST_STR S2  ; line 7
+    RET           ; line 7
+end function
+
+# declaration_line 10
+function anomalous__flow__text_void__echo(message: text) -> text:
+    STORE_LOCAL  message  ; line 10
+    LOAD_LOCAL   message  ; line 11
+    RET           ; line 11
+end function
+
+# declaration_line 14
+function anomalous__flow__text_void__announce(message: text) -> void:
+    STORE_LOCAL  message  ; line 14
+    LOAD_LOCAL   message  ; line 15
+    CALL         println 1  ; line 15
+    RET           ; line 14
+end function
+
+@ai_context("Check borrowed text results and explicit void console calls")
+# declaration_line 19
+function main -> i32:
+    PUSH_CONST   1  ; line 20
+    CALL         anomalous__flow__text_void__choose 1  ; line 20
+    CALL         anomalous__flow__text_void__echo 1  ; line 20
+    CALL         anomalous__flow__text_void__announce 1  ; line 20
+    PUSH_CONST   0  ; line 21
+    CAST         i32  ; line 21
+    RET           ; line 21
+end function
+
