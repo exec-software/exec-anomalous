@@ -331,7 +331,9 @@ check:
 	cargo test --package anomalous-editor-contract
 	cargo test --package anomalous-editor-contract --features remote_editor
 	cargo test --package anomalous-native-runtime
-	cargo test --package anomalous-program-manifest
+	cargo test --package anomalous-program-manifest --all-features
+	cargo test --package anomalous-program-executor
+	python3 scripts/program_execution_proof.py --self-test
 	cargo test --package anomalous-document-protocol
 	cargo test --package anomalous-document-protocol --features remote_workspace
 	cargo test --package anomalous-elf-adapter
@@ -459,7 +461,9 @@ check:
 	cargo clippy --package anomalous-editor-contract --all-targets --features remote_editor -- -D warnings
 	cargo clippy --package anomalous-editor-contract --target x86_64-unknown-none --features remote_editor -- -D warnings
 	cargo clippy --package anomalous-native-runtime --all-targets -- -D warnings
-	cargo clippy --package anomalous-program-manifest --all-targets -- -D warnings
+	cargo clippy --package anomalous-program-manifest --all-targets --all-features -- -D warnings
+	cargo clippy --package anomalous-program-executor --all-targets -- -D warnings
+	cargo clippy --package anomalous-program-executor --target x86_64-unknown-none -- -D warnings
 	cargo clippy --package anomalous-program-manifest --target x86_64-unknown-none -- -D warnings
 	cargo clippy --package anomalous-document-protocol --all-targets -- -D warnings
 	cargo clippy --package anomalous-document-protocol --all-targets --features remote_workspace -- -D warnings

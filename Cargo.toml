@@ -5,6 +5,7 @@ members = [
     "crates/anomalous-editor-contract",
     "crates/anomalous-native-runtime",
     "crates/anomalous-program-manifest",
+    "crates/anomalous-program-executor",
     "crates/anomalous-document-protocol",
     "crates/anomalous-elf-adapter",
     "crates/anomalous-veil-protocol",

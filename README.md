@@ -24,6 +24,9 @@ desktop, or a security boundary for sensitive workloads.
 - Linux ELF planning and interpreter/service-boundary proofs exercise an
   unchanged Linux interpreter with constrained userspace policy. They do not
   yet run general Linux applications or Electron.
+- An experimental host-only NIL executor runs admitted integer/text programs
+  with bounded console output. Full corpus qualification and native execution
+  remain separate gates.
 - Host-side libraries explore typed session routing, shared semantic scenes,
   presentation acknowledgement, and recovery.
 - **Eidolon** supplies an independent Python reference codec for lossless

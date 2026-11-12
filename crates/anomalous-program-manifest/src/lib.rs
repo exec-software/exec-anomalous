@@ -10,6 +10,8 @@
 use sha2::{Digest, Sha256};
 
 mod derive;
+#[cfg(feature = "execution_view")]
+pub mod execution_view;
 pub use derive::{derivation, derive};
 
 pub const maximum_edition_bytes: usize = 64 * 1024;

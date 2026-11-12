@@ -170,6 +170,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "anomalous-program-executor"
+version = "0.1.0"
+dependencies = [
+ "anomalous-native-runtime",
+ "anomalous-program-manifest",
+]
+
+[[package]]
 name = "anomalous-program-manifest"
 version = "0.1.0"
 dependencies = [

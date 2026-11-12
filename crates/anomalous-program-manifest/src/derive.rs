@@ -89,21 +89,7 @@ impl<'a> function_state<'a> {
         if self.returned {
             return Err(error::syntax);
         }
-        let body = instruction_body(line)?;
-        // The supported compiler forms never quote instruction operands. This
-        // avoids treating a quoted semicolon or escaped symbol as a comment.
-        if body.bytes().any(|byte| matches!(byte, b'"' | b'\\' | b',')) {
-            return Err(error::unsupported);
-        }
-        let mut operands = [""; 6];
-        let mut count = 0;
-        for operand in body.split_ascii_whitespace() {
-            if count == operands.len() {
-                return Err(error::unsupported);
-            }
-            operands[count] = operand;
-            count += 1;
-        }
+        let (operands, count) = instruction_fields(line)?;
         let fields = &operands[..count];
         match fields {
             ["PUSH_CONST", value] => {
@@ -414,6 +400,25 @@ fn signed_decimal(value: &str) -> Result<(), error> {
     }
     value.parse::<i64>().map_err(|_| error::syntax)?;
     Ok(())
+}
+
+// Shared by admission and the witness-only execution view. This does not
+// validate the stack or grant authority by itself.
+pub(crate) fn instruction_fields(line: &str) -> Result<([&str; 6], usize), error> {
+    let body = instruction_body(line)?;
+    if body.bytes().any(|byte| matches!(byte, b'"' | b'\\' | b',')) {
+        return Err(error::unsupported);
+    }
+    let mut operands = [""; 6];
+    let mut count = 0;
+    for operand in body.split_ascii_whitespace() {
+        if count == operands.len() {
+            return Err(error::unsupported);
+        }
+        operands[count] = operand;
+        count += 1;
+    }
+    Ok((operands, count))
 }
 
 fn instruction_body(line: &str) -> Result<&str, error> {

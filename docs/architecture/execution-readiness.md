@@ -1,5 +1,30 @@
 # Native execution and compatibility readiness
 
+## Bounded host NIL execution prerequisite (2026-11-11)
+
+Accepted [ADR 0104](../adr/0104-develop-a-bounded-host-executor-behind-the-corpus-gate.md) adds an experimental `no_std`, unsafe-free executor
+for the admitted profile-1 NIL subset. It consumes the immutable admission
+witness, runs `main`, preserves full-width integer results and mediates every
+console request through explicit identity, authority and output limits. It is
+host-only; no native vessel links the executor.
+
+All 24 final qualification jobs pass on 631 unchanged source files. The rebuilt
+native admission loader also passes TCG/KVM regressions, with 18,666 RX bytes
+and a 13,440-byte conservative stack estimate inside its existing profile.
+The bounded differential proof passes 126 cases: 100 exact semantic matches,
+20 matching arithmetic refusals and six explicit output-policy refusals. The
+three complete compiler fixtures return 42, 0 and 79, with exact console bytes.
+The unchanged reference suite passes all 38 root fixtures and its auxiliary
+checks. Every one of its 45 interpreter invocations is retained and attempted
+by the candidate; all remain admission refusals, not compatibility passes.
+
+Full corpus qualification remains open, including wider admission, function and
+control-flow semantics, aggregates, faults and service families. Native effect
+mediation and execution are also unqualified. The
+[Host Program Executor Log](../../notebook/Development/2026-11-11%20Host%20Program%20Executor%20Log.md) records the bounded evidence, reproduction
+commands and remaining gates. Linux remains at its unanswered sequence-12
+`mmap` boundary.
+
 ## Qualified native compiler-to-manifest admission (2026-11-11)
 
 Accepted [ADR 0103](../adr/0103-admit-compiler-produced-manifests-in-a-native-loader.md)
@@ -19,8 +44,8 @@ sequence-12 mmap boundary. Eight focused compiler tests passed.
 The measured 18,874-byte loader uses five RX pages, a 128 KiB arena and a guarded
 32 KiB stack. The reviewed stack sum is 13,424 bytes for this exact artifact.
 The kernel shares the qualified ownership/delivery lifecycle and does not parse
-NIL. No NIL edition executes yet; interpreter corpus qualification and mediated
-execution are next. The
+NIL. No NIL edition executes in that native loader; interpreter corpus qualification
+and mediated execution remain separate. The
 [Native Manifest Loader Log](../../notebook/Development/2026-11-11%20Native%20Manifest%20Loader%20Log.md)
 records artifact identities, limitations and retained attempts.
 
