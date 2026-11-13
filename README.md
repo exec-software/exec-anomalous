@@ -39,8 +39,10 @@ desktop, or a security boundary for sensitive workloads.
   checks. [Profile 4](docs/adr/0108-add-bounded-computed-text-and-hexadecimal-integers.md)
   adds bounded computed text and signed hexadecimal integers.
   [Profile 5](docs/adr/0109-add-bounded-immutable-typed-arrays.md) adds immutable
-  typed arrays, lengths and indexed reads. Eight of 45 unchanged raw corpus
-  invocations match; full corpus qualification and native
+  typed arrays, lengths and indexed reads.
+  [Profile 6](docs/adr/0110-add-bounded-internal-callable-values.md) adds typed
+  internal function references and local indirect calls. Nine of 45 unchanged
+  raw corpus invocations match; full corpus qualification and native
   execution remain gated.
 - Host-side libraries explore typed session routing, shared semantic scenes,
   presentation acknowledgement, and recovery.

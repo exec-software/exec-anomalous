@@ -8,7 +8,28 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current host checkpoint — immutable typed arrays
+## Current host checkpoint — internal callable values
+
+[ADR 0110](../../docs/adr/0110-add-bounded-internal-callable-values.md)
+adds explicitly selected profile 6 for typed internal function references and
+calls through registered locals. Opaque handles retain targets and exact
+signature identities; equal-signature targets can merge or be reassigned.
+Locals take precedence over same-named direct functions and builtins, and every
+reachable local call requires a definitely initialized callable. Existing
+argument, frame, fuel, authority and cleanup rules apply. No callable parameters,
+results, captures, foreign targets or text-derived dispatch are admitted.
+
+The new 103-case proof passes. Nine of 45 unchanged raw corpus invocations match,
+including six of 38 roots; `paragraphs.matrix` is newly supported in full. The
+remaining 36 are unmet coverage, and production still refuses all 45. The
+[Internal Callable Values Log](../Development/2026-11-13%20Internal%20Callable%20Values%20Log.md)
+records qualification and remaining gates. Native NIL execution and full corpus
+qualification remain closed; this adds no Linux compatibility behavior. All 38
+final qualification jobs pass on 698 unchanged source files. Independent audits
+confirm all seven proof suites, native artifact continuity and original-checkout
+preservation.
+
+## Previous host checkpoint — immutable typed arrays
 
 [ADR 0109](../../docs/adr/0109-add-bounded-immutable-typed-arrays.md)
 adds explicitly selected profile 5 for homogeneous integer/text arrays, lengths

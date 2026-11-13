@@ -112,6 +112,16 @@ pub fn validate_array<'a, 'w>(
     validate_profile(edition, ceiling, workspace, parse_profile::array)
 }
 
+/// Validate raw bytes using the explicitly selected profile-6 callable grammar.
+/// Only absence of main intent differs from production profile-6 admission.
+pub fn validate_callable<'a, 'w>(
+    edition: &'a [u8],
+    ceiling: u64,
+    workspace: &'w mut validation_workspace<'a>,
+) -> Result<checked_edition<'a, 'w>, error> {
+    validate_profile(edition, ceiling, workspace, parse_profile::callable)
+}
+
 fn validate_profile<'a, 'w>(
     edition: &'a [u8],
     ceiling: u64,

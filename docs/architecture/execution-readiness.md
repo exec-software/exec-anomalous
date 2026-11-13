@@ -1,5 +1,31 @@
 # Native execution and compatibility readiness
 
+## Bounded internal callable values (2026-11-13)
+
+[ADR 0110](../adr/0110-add-bounded-internal-callable-values.md) adds explicit
+profile 6 for `PUSH_FN_PTR` to internal declarations and `CALL` through registered
+locals. Private typed handles carry a target and exact signature identity;
+ordinary text cannot forge one. Different targets with equal signatures can
+merge at CFG joins. Local resolution precedes direct/builtin resolution, and
+uninitialized or noncallable locals refuse without fallback.
+
+Indirect dispatch uses the existing bounded iterative frames and verifies
+argument order/kinds, caller floor, arity and target signature. Complete
+whole-file console authority still applies, including unused target bodies;
+a shadowed builtin spelling does not independently derive an effect. Existing
+cleanup clears callable values at every execution boundary. Captures, callable
+parameters/results, foreign targets and native execution remain outside this
+profile.
+
+The new 103-case proof passes. Nine of 45 unchanged raw corpus invocations match,
+including six of 38 roots; the complete `paragraphs.matrix` edition is newly
+supported. The other 36 remain unmet coverage; all 45 production attempts refuse.
+The [Internal Callable Values Log](../../notebook/Development/2026-11-13%20Internal%20Callable%20Values%20Log.md)
+records qualification evidence. Full corpus qualification and native execution
+remain closed gates. All 38 final jobs pass on 698 unchanged source files, with
+independent proof and artifact audits. Native admission bytes and Linux-loader
+behavior remain unchanged.
+
 ## Bounded immutable typed arrays (2026-11-13)
 
 [ADR 0109](../adr/0109-add-bounded-immutable-typed-arrays.md) adds explicit

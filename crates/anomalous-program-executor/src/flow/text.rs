@@ -41,7 +41,7 @@ impl text_arena {
 
     fn length(&self, item: value<'_>) -> Result<usize, error> {
         match item {
-            value::integer(_) | value::array(_) => Err(error::invalid_state),
+            value::integer(_) | value::array(_) | value::function(_) => Err(error::invalid_state),
             value::computed_text(span) => Ok(self.bytes(span)?.len()),
             value::text(escaped) => {
                 let mut length = 0usize;
@@ -56,7 +56,7 @@ impl text_arena {
 
     fn copy(&mut self, item: value<'_>, cursor: &mut usize) -> Result<(), error> {
         match item {
-            value::integer(_) | value::array(_) => Err(error::invalid_state),
+            value::integer(_) | value::array(_) | value::function(_) => Err(error::invalid_state),
             value::computed_text(span) => {
                 let length = self.bytes(span)?.len();
                 let end = cursor.checked_add(length).ok_or(error::invalid_state)?;

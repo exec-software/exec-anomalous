@@ -23,12 +23,21 @@ pub const maximum_text_bytes: usize = 65536;
 pub const maximum_arrays: usize = 128;
 pub const maximum_array_elements: usize = 1024;
 
+/// A function-table identity and its validated canonical signature. Never an
+/// address or a name derived from text; values remain private to one run.
+#[derive(Clone, Copy)]
+struct function_handle {
+    target: usize,
+    signature: u8,
+}
+
 #[derive(Clone, Copy)]
 enum value<'a> {
     integer(i64),
     text(&'a str),
     computed_text(text_span),
     array(array_handle),
+    function(function_handle),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -159,7 +168,9 @@ impl<'a> execution_workspace<'a> {
     fn integer(&mut self) -> Result<i64, error> {
         match self.pop()? {
             value::integer(number) => Ok(number),
-            value::text(_) | value::computed_text(_) | value::array(_) => Err(error::invalid_state),
+            value::text(_) | value::computed_text(_) | value::array(_) | value::function(_) => {
+                Err(error::invalid_state)
+            }
         }
     }
 
@@ -246,6 +257,16 @@ impl<'a> execution_workspace<'a> {
                         .ok_or(error::invalid_state)?
                         .escaped;
                     self.push(value::text(text))?;
+                }
+                operation::function(target) => {
+                    let callee = program
+                        .functions()
+                        .get(target)
+                        .ok_or(error::invalid_state)?;
+                    self.push(value::function(function_handle {
+                        target,
+                        signature: callee.signature(),
+                    }))?;
                 }
                 operation::concat => {
                     let right = self.pop()?;
@@ -344,6 +365,26 @@ impl<'a> execution_workspace<'a> {
                         continue;
                     }
                 }
+                operation::call_local { local, arguments } => {
+                    let Some(value::function(handle)) =
+                        self.current()?.locals.get(local).and_then(|item| *item)
+                    else {
+                        return Err(error::invalid_state);
+                    };
+                    let callee = program
+                        .functions()
+                        .get(handle.target)
+                        .ok_or(error::invalid_state)?;
+                    if callee.signature() != handle.signature
+                        || callee.parameter_kinds().len() != arguments
+                    {
+                        return Err(error::invalid_state);
+                    }
+                    // Read the caller-local target before changing frames. The
+                    // common call path checks operand kinds, floor and limits.
+                    self.call(program, handle.target, next, budget)?;
+                    continue;
+                }
                 operation::call(target) => {
                     self.call(program, target, next, budget)?;
                     continue;
@@ -352,7 +393,7 @@ impl<'a> execution_workspace<'a> {
                 operation::console { newline } => {
                     let item = self.pop()?;
                     match item {
-                        value::array(_) => return Err(error::invalid_state),
+                        value::array(_) | value::function(_) => return Err(error::invalid_state),
                         value::computed_text(span) => publish_decoded_console(
                             self.text.bytes(span)?,
                             newline,
@@ -420,10 +461,11 @@ fn value_kind(value: value<'_>) -> kind {
         value::integer(_) => kind::integer,
         value::text(_) | value::computed_text(_) => kind::text,
         value::array(handle) => handle.kind(),
+        value::function(handle) => kind::function(handle.signature),
     }
 }
 
-/// Execute only a validated control-flow witness (profile 2, 3, 4 or 5).
+/// Execute only a validated control-flow witness (profile 2 through 6).
 /// Every return, arithmetic error, policy
 /// refusal or service refusal clears the internal frame/value storage. Earlier
 /// acknowledged sink effects remain committed; there is no automatic retry.
@@ -479,3 +521,6 @@ mod text_tests;
 
 #[cfg(test)]
 mod array_tests;
+
+#[cfg(test)]
+mod callable_tests;

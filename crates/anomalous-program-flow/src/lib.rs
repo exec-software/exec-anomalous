@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! Host-only profile-2 and explicitly selected profile-3/profile-4/profile-5 admission.
+//! Host-only profile-2 and explicitly selected profile-3 through profile-6 admission.
 //! All syntax and references are checked before
 //! reachable CFG validation; even dead instructions contribute authority.
 //! The immutable plan is accessible only through a complete validation witness.
@@ -34,6 +34,7 @@ enum parse_profile {
     scalar,
     text,
     array,
+    callable,
 }
 
 #[derive(Clone, Copy)]
@@ -60,15 +61,23 @@ impl parse_profile {
             Self::scalar => scalar::derivation_profile,
             Self::text => text::derivation_profile,
             Self::array => array::derivation_profile,
+            Self::callable => callable::derivation_profile,
         }
     }
 
     const fn scalar_forms(self) -> bool {
-        matches!(self, Self::scalar | Self::text | Self::array)
+        matches!(
+            self,
+            Self::scalar | Self::text | Self::array | Self::callable
+        )
     }
 
     const fn text_forms(self) -> bool {
-        matches!(self, Self::text | Self::array)
+        matches!(self, Self::text | Self::array | Self::callable)
+    }
+
+    const fn array_forms(self) -> bool {
+        matches!(self, Self::array | Self::callable)
     }
 }
 
@@ -147,6 +156,31 @@ pub mod array {
     }
 }
 
+/// Explicit opt-in for typed references to declared internal functions.
+/// Earlier entry points retain their original grammar and call resolution.
+pub mod callable {
+    use super::{admitted_program, error, parse_profile, validation_workspace};
+
+    pub const derivation_profile: u32 = 6;
+
+    /// Validates completely before publishing any output bytes.
+    pub fn encode<'a>(
+        edition: &'a [u8],
+        output: &mut [u8],
+        workspace: &mut validation_workspace<'a>,
+    ) -> Result<usize, error> {
+        super::encode_profile(edition, output, workspace, parse_profile::callable)
+    }
+
+    pub fn admit<'a, 'w>(
+        image: &'a [u8],
+        ceiling: u64,
+        workspace: &'w mut validation_workspace<'a>,
+    ) -> Result<admitted_program<'a, 'w>, error> {
+        super::admit_profile(image, ceiling, workspace, parse_profile::callable)
+    }
+}
+
 /// Raw host language checks, deliberately separate from manifest admission.
 #[cfg(feature = "host_conformance")]
 pub mod conformance;
@@ -157,6 +191,8 @@ pub enum kind {
     text,
     array_integer,
     array_text,
+    /// Canonical representative function index for an exact declared signature.
+    function(u8),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -190,6 +226,11 @@ pub enum operation {
         nonzero: bool,
     },
     call(usize),
+    function(usize),
+    call_local {
+        local: usize,
+        arguments: usize,
+    },
     ret,
     generated_fallthrough,
     console {
@@ -221,6 +262,8 @@ pub struct function<'a> {
     parameters: [kind; maximum_parameters],
     parameter_names: [&'a str; maximum_parameters],
     parameter_count: usize,
+    signature_key: u32,
+    signature: u8,
     local_names: [&'a str; maximum_locals],
     local_stored: [bool; maximum_locals],
 }
@@ -236,12 +279,19 @@ impl function<'_> {
             parameters: [kind::integer; maximum_parameters],
             parameter_names: [""; maximum_parameters],
             parameter_count: 0,
+            signature_key: 0,
+            signature: 0,
             local_names: [""; maximum_locals],
             local_stored: [false; maximum_locals],
         }
     }
     pub fn parameter_kinds(&self) -> &[kind] {
         &self.parameters[..self.parameter_count]
+    }
+    /// Index of the first function with this exact declared signature.
+    /// Unlike scalar operand kinds, this identity distinguishes i32 from i64.
+    pub const fn signature(&self) -> u8 {
+        self.signature
     }
 }
 
@@ -329,6 +379,20 @@ impl flow_state {
     fn integer(&mut self) -> Result<(), error> {
         if self.pop()? != kind::integer {
             return Err(error::syntax);
+        }
+        Ok(())
+    }
+    fn call(&mut self, function: &function<'_>, arguments: usize) -> Result<(), error> {
+        if arguments != function.parameter_count {
+            return Err(error::syntax);
+        }
+        let base = self.depth.checked_sub(arguments).ok_or(error::syntax)?;
+        if self.stack[base..self.depth] != *function.parameter_kinds() {
+            return Err(error::syntax);
+        }
+        self.depth = base;
+        if let Some(kind) = function.return_kind {
+            self.push(kind)?;
         }
         Ok(())
     }
@@ -558,7 +622,7 @@ impl<'a> validation_workspace<'a> {
         {
             return Err(error::intent);
         }
-        self.resolve()?;
+        self.resolve(profile)?;
         self.validate_flow()
     }
 
@@ -570,7 +634,7 @@ impl<'a> validation_workspace<'a> {
         profile: parse_profile,
     ) -> Result<usize, error> {
         local_identifier(name, profile)?;
-        if builtin(name).is_some() {
+        if builtin(name).is_some() && profile != parse_profile::callable {
             return Err(error::unsupported);
         }
         let function = &mut self.plan.functions[owner];
@@ -635,7 +699,7 @@ impl<'a> validation_workspace<'a> {
                 width: "i64",
             },
             ["STR_CONCAT"] if profile.text_forms() => operation::concat,
-            ["NEW_ARRAY_LITERAL", count, element] if profile == parse_profile::array => {
+            ["NEW_ARRAY_LITERAL", count, element] if profile.array_forms() => {
                 let count = unsigned(count)?;
                 if count > maximum_array_literal_values {
                     return Err(error::limit);
@@ -647,8 +711,13 @@ impl<'a> validation_workspace<'a> {
                 };
                 operation::array_literal { count, element }
             }
-            ["LEN"] if profile == parse_profile::array => operation::array_len,
-            ["GET_INDEX"] if profile == parse_profile::array => operation::array_get,
+            ["LEN"] if profile.array_forms() => operation::array_len,
+            ["GET_INDEX"] if profile.array_forms() => operation::array_get,
+            ["PUSH_FN_PTR", name] if profile == parse_profile::callable => {
+                identifier(name)?;
+                self.references[pc] = (name, 0);
+                operation::function(0)
+            }
             [opcode] if comparison(opcode).is_some() => {
                 operation::compare(comparison(opcode).unwrap())
             }
@@ -693,6 +762,16 @@ impl<'a> validation_workspace<'a> {
                     }
                 }
             }
+            ["CALL", name, count] if profile == parse_profile::callable => {
+                local_identifier(name, profile)?;
+                let count = unsigned(count)?;
+                if count > maximum_parameters {
+                    return Err(error::limit);
+                }
+                self.references[pc] = (name, count);
+                // Resolve after the complete function's locals are known.
+                operation::call(0)
+            }
             ["CALL", name, count] => {
                 identifier(name)?;
                 let count = unsigned(count)?;
@@ -730,10 +809,20 @@ impl<'a> validation_workspace<'a> {
         Ok(())
     }
 
-    fn resolve(&mut self) -> Result<(), error> {
+    fn resolve(&mut self, profile: parse_profile) -> Result<(), error> {
+        for index in 0..self.plan.function_count {
+            let key = self.plan.functions[index].signature_key;
+            let canonical = self.plan.functions[..index]
+                .iter()
+                .position(|function| function.signature_key == key)
+                .unwrap_or(index);
+            self.plan.functions[index].signature =
+                u8::try_from(canonical).map_err(|_| error::limit)?;
+        }
         for function in self.plan.functions() {
             for name in function.local_names[..function.local_count]
                 .iter()
+                .filter(|_| profile != parse_profile::callable)
                 .chain(function.parameter_names[..function.parameter_count].iter())
             {
                 if builtin(name).is_some()
@@ -766,17 +855,45 @@ impl<'a> validation_workspace<'a> {
                 let old = self.plan.instructions[pc].operation;
                 self.plan.instructions[pc].operation = match old {
                     operation::call(_) => {
+                        let local = if profile == parse_profile::callable {
+                            self.plan.functions[owner].local_names
+                                [..self.plan.functions[owner].local_count]
+                                .iter()
+                                .position(|local| *local == name)
+                        } else {
+                            None
+                        };
                         let target = self
                             .plan
                             .functions()
                             .iter()
-                            .position(|function| function.name == name)
-                            .ok_or(error::unsupported)?;
-                        if self.plan.functions[target].parameter_count != count {
-                            return Err(error::syntax);
+                            .position(|function| function.name == name);
+                        if let Some(local) = local {
+                            operation::call_local {
+                                local,
+                                arguments: count,
+                            }
+                        } else if let Some(target) = target {
+                            if self.plan.functions[target].parameter_count != count {
+                                return Err(error::syntax);
+                            }
+                            operation::call(target)
+                        } else if let Some(newline) = builtin(name) {
+                            if count != 1 {
+                                return Err(error::unsupported);
+                            }
+                            operation::console { newline }
+                        } else {
+                            return Err(error::unsupported);
                         }
-                        operation::call(target)
                     }
+                    operation::function(_) => operation::function(
+                        self.plan
+                            .functions()
+                            .iter()
+                            .position(|function| function.name == name)
+                            .ok_or(error::unsupported)?,
+                    ),
                     operation::jump(_) | operation::branch { .. } => {
                         let label = self.labels[..self.label_count]
                             .iter()
@@ -796,6 +913,12 @@ impl<'a> validation_workspace<'a> {
                     }
                     _ => old,
                 };
+                if matches!(
+                    self.plan.instructions[pc].operation,
+                    operation::console { .. }
+                ) {
+                    self.plan.authority |= authority::console_write;
+                }
                 if matches!(old, operation::label) {
                     self.block_start[pc] = true;
                 }
@@ -898,6 +1021,9 @@ impl<'a> validation_workspace<'a> {
                 match self.plan.instructions[pc].operation {
                     operation::integer(_) => state.push(kind::integer)?,
                     operation::text(_) => state.push(kind::text)?,
+                    operation::function(target) => {
+                        state.push(kind::function(self.plan.functions[target].signature))?;
+                    }
                     operation::concat => {
                         if state.pop()? != kind::text || state.pop()? != kind::text {
                             return Err(error::syntax);
@@ -964,15 +1090,18 @@ impl<'a> validation_workspace<'a> {
                     operation::nop | operation::label => {}
                     operation::call(target) => {
                         let function = &self.plan.functions[target];
-                        let count = function.parameter_count;
-                        let base = state.depth.checked_sub(count).ok_or(error::syntax)?;
-                        if state.stack[base..state.depth] != *function.parameter_kinds() {
+                        state.call(function, function.parameter_count)?;
+                    }
+                    operation::call_local { local, arguments } => {
+                        let Some(kind::function(signature)) = state.locals[local] else {
                             return Err(error::syntax);
-                        }
-                        state.depth = base;
-                        if let Some(kind) = function.return_kind {
-                            state.push(kind)?;
-                        }
+                        };
+                        let function = self
+                            .plan
+                            .functions()
+                            .get(usize::from(signature))
+                            .ok_or(error::syntax)?;
+                        state.call(function, arguments)?;
                     }
                     operation::jump(target) => {
                         self.enqueue(target, &state)?;
@@ -1235,8 +1364,8 @@ fn value_kind(value: &str, profile: parse_profile) -> Result<kind, error> {
     match value {
         "i32" | "i64" => Ok(kind::integer),
         "text" => Ok(kind::text),
-        "array<i64>" if profile == parse_profile::array => Ok(kind::array_integer),
-        "array<text>" if profile == parse_profile::array => Ok(kind::array_text),
+        "array<i64>" if profile.array_forms() => Ok(kind::array_integer),
+        "array<text>" if profile.array_forms() => Ok(kind::array_text),
         _ => Err(error::unsupported),
     }
 }
@@ -1362,6 +1491,10 @@ fn parse_function(header: &str, profile: parse_profile) -> Result<function<'_>, 
     } else {
         Some(value_kind(result, profile)?)
     };
+    // Eight three-bit parameter codes, then a three-bit result and four-bit
+    // arity fit in 31 bits. Keep i32 and i64 distinct despite operand-kind
+    // normalization; no callable or nested signature types are admitted.
+    function.signature_key = signature_type_code(result)? << 24;
     let (name, arguments) = if let Some((name, rest)) = left.split_once('(') {
         (name, Some(rest.strip_suffix(')').ok_or(error::syntax)?))
     } else {
@@ -1387,10 +1520,24 @@ fn parse_function(header: &str, profile: parse_profile) -> Result<function<'_>, 
             }
             function.parameter_names[function.parameter_count] = name;
             function.parameters[function.parameter_count] = value_kind(trim(kind), profile)?;
+            function.signature_key |=
+                signature_type_code(trim(kind))? << (3 * function.parameter_count);
             function.parameter_count += 1;
         }
     }
+    function.signature_key |= (function.parameter_count as u32) << 27;
     Ok(function)
+}
+fn signature_type_code(value: &str) -> Result<u32, error> {
+    match value {
+        "i32" => Ok(0),
+        "i64" => Ok(1),
+        "text" => Ok(2),
+        "array<i64>" => Ok(3),
+        "array<text>" => Ok(4),
+        "void" => Ok(5),
+        _ => Err(error::unsupported),
+    }
 }
 fn string_constant(value: &str) -> Result<&str, error> {
     let escaped = value
@@ -1441,3 +1588,6 @@ mod text_tests;
 
 #[cfg(test)]
 mod array_tests;
+
+#[cfg(test)]
+mod callable_tests;
