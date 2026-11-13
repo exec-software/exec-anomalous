@@ -44,6 +44,7 @@ pub enum error {
     array_limit,
     record_limit,
     global_uninitialized,
+    enum_shape,
 }
 
 impl error {
@@ -66,6 +67,7 @@ impl error {
             Self::array_limit => "array_limit",
             Self::record_limit => "record_limit",
             Self::global_uninitialized => "global_uninitialized",
+            Self::enum_shape => "enum_shape",
         }
     }
 }

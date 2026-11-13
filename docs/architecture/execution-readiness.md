@@ -1,5 +1,34 @@
 # Native execution and compatibility readiness
 
+## Bounded nominal enums (2026-11-13)
+
+[ADR 0113](../adr/0113-add-bounded-nominal-unit-and-integer-enums.md) adds
+explicit profile 9 for declared unit/integer enum variants, typed construction,
+tag tests and payload extraction. Up to 64 layouts, 32 variants per layout and
+256 total variants retain exact nominal identity. Helpers and indirect callable
+signatures preserve that identity through arguments and returns. Enum context
+cannot provide main-function intent or authority.
+
+Private immutable values store a full signed-i64 payload inline without a
+cumulative allocation quota. Same-enum branches may join different variants;
+extraction checks exact actual payload shape before consuming the owner.
+Missing or discarded payloads return `enum_shape`, an explicit stricter policy
+than the general VM's prefix extraction. Existing caller-floor, fuel, stack,
+output and complete cleanup rules remain in force. Generic/nested enums,
+Option/Result alias families, forged tags and enum mutation remain outside
+this bounded profile.
+
+The new 149-case proof passes alongside all nine earlier suites. Fifteen of
+45 unchanged raw corpus invocations match, including 10 of 38 roots; the
+complete `names-and-case.matrix` and `value-position-then.matrix` editions are
+newly supported. The other 30 remain unmet coverage; all 45 production attempts
+independently refuse. The
+[Nominal Enums Log](../../notebook/Development/2026-11-13%20Nominal%20Enums%20Log.md)
+records evidence and limits. Full corpus qualification and native execution
+remain closed gates. All 47 final jobs pass on 718 unchanged source files,
+with independent proof and artifact audits. Native admission bytes and
+Linux-loader behavior remain unchanged.
+
 ## Bounded module globals and integer text (2026-11-13)
 
 [ADR 0112](../adr/0112-add-bounded-module-globals-and-integer-text.md) adds

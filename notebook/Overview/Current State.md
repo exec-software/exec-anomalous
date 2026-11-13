@@ -8,7 +8,26 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current host checkpoint — module globals and integer text
+## Current host checkpoint — nominal enums
+
+[ADR 0113](../../docs/adr/0113-add-bounded-nominal-unit-and-integer-enums.md)
+adds explicitly selected profile 9 for declared variants with unit or full
+signed-integer payloads. Opaque inline values preserve nominal identity through
+locals, branches and direct/indirect helper calls. Exact payload-shape checks
+prevent a missing payload from exposing an older stack operand. Enum-scoped
+context remains separate from authored main intent.
+
+The new 149-case proof passes. Fifteen of 45 unchanged raw invocations match,
+including 10 of 38 roots; `names-and-case.matrix` and
+`value-position-then.matrix` are newly supported in full. The remaining 30
+are unmet coverage, and production refuses all 45. The
+[Nominal Enums Log](../Development/2026-11-13%20Nominal%20Enums%20Log.md)
+records evidence and remaining gates. This adds no native NIL execution or
+Linux compatibility behavior. All 47 final jobs pass on 718 unchanged source
+files. Independent audits confirm all ten proof suites, 188 oracle guards,
+native artifact continuity and original-checkout preservation.
+
+## Previous host checkpoint — module globals and integer text
 
 [ADR 0112](../../docs/adr/0112-add-bounded-module-globals-and-integer-text.md)
 adds explicitly selected profile 8 for shared per-execution integer globals and

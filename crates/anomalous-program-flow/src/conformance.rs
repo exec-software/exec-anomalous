@@ -142,6 +142,16 @@ pub fn validate_globals<'a, 'w>(
     validate_profile(edition, ceiling, workspace, parse_profile::globals)
 }
 
+/// Validate profile-9 nominal unit/i64 enums without production admission.
+/// Exact selected-variant extraction shape remains a checked runtime policy.
+pub fn validate_enums<'a, 'w>(
+    edition: &'a [u8],
+    ceiling: u64,
+    workspace: &'w mut validation_workspace<'a>,
+) -> Result<checked_edition<'a, 'w>, error> {
+    validate_profile(edition, ceiling, workspace, parse_profile::enums)
+}
+
 fn validate_profile<'a, 'w>(
     edition: &'a [u8],
     ceiling: u64,

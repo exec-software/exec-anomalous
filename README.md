@@ -46,7 +46,9 @@ desktop, or a security boundary for sensitive workloads.
   records with shared mutable integer fields and typed helper arguments/results.
   [Profile 8](docs/adr/0112-add-bounded-module-globals-and-integer-text.md) adds
   per-execution integer globals and bounded integer-to-text conversion.
-  Thirteen of 45 unchanged raw corpus invocations match; full corpus qualification
+  [Profile 9](docs/adr/0113-add-bounded-nominal-unit-and-integer-enums.md) adds
+  nominal unit/integer enums, typed tag tests and checked payload extraction.
+  Fifteen of 45 unchanged raw corpus invocations match; full corpus qualification
   and native execution remain gated.
 - Host-side libraries explore typed session routing, shared semantic scenes,
   presentation acknowledgement, and recovery.

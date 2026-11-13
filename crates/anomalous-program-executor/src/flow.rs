@@ -11,6 +11,8 @@ mod array;
 use array::{array_arena, array_handle};
 mod record;
 use record::{record_arena, record_handle};
+mod enumeration;
+use enumeration::enum_value;
 mod text;
 use text::{text_arena, text_span};
 
@@ -44,6 +46,7 @@ enum value<'a> {
     array(array_handle),
     function(function_handle),
     record(record_handle),
+    enumeration(enum_value),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -184,7 +187,8 @@ impl<'a> execution_workspace<'a> {
             | value::computed_text(_)
             | value::array(_)
             | value::function(_)
-            | value::record(_) => Err(error::invalid_state),
+            | value::record(_)
+            | value::enumeration(_) => Err(error::invalid_state),
         }
     }
 
@@ -309,6 +313,47 @@ impl<'a> execution_workspace<'a> {
                         .get_mut(..program.global_names().len())
                         .and_then(|slots| slots.get_mut(index))
                         .ok_or(error::invalid_state)? = Some(number);
+                }
+                operation::enum_new { layout, variant } => {
+                    let declaration = program
+                        .enum_layouts()
+                        .get(usize::from(layout))
+                        .and_then(|layout| layout.variants().get(usize::from(variant)))
+                        .ok_or(error::invalid_state)?;
+                    let payload = if declaration.has_payload {
+                        Some(self.integer()?)
+                    } else {
+                        None
+                    };
+                    self.push(value::enumeration(enum_value::new(
+                        program, layout, variant, payload,
+                    )?))?;
+                }
+                operation::enum_is { layout, variant } => {
+                    if self.depth <= self.current()?.floor {
+                        return Err(error::invalid_state);
+                    }
+                    let value::enumeration(item) = self.values[self.depth - 1] else {
+                        return Err(error::invalid_state);
+                    };
+                    let matches = item.matches(program, layout, variant)?;
+                    self.pop()?;
+                    self.push(value::integer(i64::from(matches)))?;
+                }
+                operation::enum_unwrap { layout, payload } => {
+                    if self.depth <= self.current()?.floor {
+                        return Err(error::invalid_state);
+                    }
+                    let value::enumeration(item) = self.values[self.depth - 1] else {
+                        return Err(error::invalid_state);
+                    };
+                    // Check exact shape before consuming anything. A unit value
+                    // cannot expose an older caller operand as a missing payload.
+                    let number = item.unwrap(program, layout, payload)?;
+                    self.pop()?;
+                    if let Some(number) = number {
+                        self.push(value::integer(number))?;
+                    }
                 }
                 operation::record_new(layout) => {
                     if self.depth == maximum_values {
@@ -452,7 +497,10 @@ impl<'a> execution_workspace<'a> {
                 operation::console { newline } => {
                     let item = self.pop()?;
                     match item {
-                        value::array(_) | value::function(_) | value::record(_) => {
+                        value::array(_)
+                        | value::function(_)
+                        | value::record(_)
+                        | value::enumeration(_) => {
                             return Err(error::invalid_state);
                         }
                         value::computed_text(span) => publish_decoded_console(
@@ -524,10 +572,11 @@ fn value_kind(value: value<'_>) -> kind {
         value::array(handle) => handle.kind(),
         value::function(handle) => kind::function(handle.signature),
         value::record(handle) => kind::record(handle.layout()),
+        value::enumeration(item) => kind::enumeration(item.layout()),
     }
 }
 
-/// Execute only a validated control-flow witness (profile 2 through 6).
+/// Execute only a validated control-flow witness (profiles 2 through 9).
 /// Every return, arithmetic error, policy
 /// refusal or service refusal clears the internal frame/value storage. Earlier
 /// acknowledged sink effects remain committed; there is no automatic retry.
@@ -592,3 +641,6 @@ mod record_tests;
 
 #[cfg(test)]
 mod global_tests;
+
+#[cfg(test)]
+mod enum_tests;

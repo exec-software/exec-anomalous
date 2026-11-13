@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! Host-only profile-2 and explicitly selected profile-3 through profile-8 admission.
+//! Host-only profile-2 and explicitly selected profile-3 through profile-9 admission.
 //! All syntax and references are checked before
 //! reachable CFG validation; even dead instructions contribute authority.
 //! The immutable plan is accessible only through a complete validation witness.
@@ -31,6 +31,9 @@ pub const maximum_record_layouts: usize = 64;
 pub const maximum_record_fields: usize = 32;
 pub const maximum_declared_record_fields: usize = 256;
 pub const maximum_global_slots: usize = 128;
+pub const maximum_enum_layouts: usize = 64;
+pub const maximum_enum_variants: usize = 32;
+pub const maximum_declared_enum_variants: usize = 256;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum parse_profile {
@@ -41,6 +44,7 @@ enum parse_profile {
     callable,
     record,
     globals,
+    enums,
 }
 
 #[derive(Clone, Copy)]
@@ -70,36 +74,50 @@ impl parse_profile {
             Self::callable => callable::derivation_profile,
             Self::record => record::derivation_profile,
             Self::globals => globals::derivation_profile,
+            Self::enums => enums::derivation_profile,
         }
     }
 
     const fn scalar_forms(self) -> bool {
         matches!(
             self,
-            Self::scalar | Self::text | Self::array | Self::callable | Self::record | Self::globals
+            Self::scalar
+                | Self::text
+                | Self::array
+                | Self::callable
+                | Self::record
+                | Self::globals
+                | Self::enums
         )
     }
 
     const fn text_forms(self) -> bool {
         matches!(
             self,
-            Self::text | Self::array | Self::callable | Self::record | Self::globals
+            Self::text | Self::array | Self::callable | Self::record | Self::globals | Self::enums
         )
     }
 
     const fn array_forms(self) -> bool {
         matches!(
             self,
-            Self::array | Self::callable | Self::record | Self::globals
+            Self::array | Self::callable | Self::record | Self::globals | Self::enums
         )
     }
 
     const fn callable_forms(self) -> bool {
-        matches!(self, Self::callable | Self::record | Self::globals)
+        matches!(
+            self,
+            Self::callable | Self::record | Self::globals | Self::enums
+        )
     }
 
     const fn record_forms(self) -> bool {
-        matches!(self, Self::record | Self::globals)
+        matches!(self, Self::record | Self::globals | Self::enums)
+    }
+
+    const fn global_forms(self) -> bool {
+        matches!(self, Self::globals | Self::enums)
     }
 }
 
@@ -251,6 +269,30 @@ pub mod globals {
     }
 }
 
+/// Explicit opt-in for nominal unit/i64 enums with checked extraction shape.
+pub mod enums {
+    use super::{admitted_program, error, parse_profile, validation_workspace};
+
+    pub const derivation_profile: u32 = 9;
+
+    /// Validates completely before publishing any output bytes.
+    pub fn encode<'a>(
+        edition: &'a [u8],
+        output: &mut [u8],
+        workspace: &mut validation_workspace<'a>,
+    ) -> Result<usize, error> {
+        super::encode_profile(edition, output, workspace, parse_profile::enums)
+    }
+
+    pub fn admit<'a, 'w>(
+        image: &'a [u8],
+        ceiling: u64,
+        workspace: &'w mut validation_workspace<'a>,
+    ) -> Result<admitted_program<'a, 'w>, error> {
+        super::admit_profile(image, ceiling, workspace, parse_profile::enums)
+    }
+}
+
 /// Raw host language checks, deliberately separate from manifest admission.
 #[cfg(feature = "host_conformance")]
 pub mod conformance;
@@ -264,6 +306,7 @@ pub enum kind {
     /// Canonical representative function index for an exact declared signature.
     function(u8),
     record(u8),
+    enumeration(u8),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -282,6 +325,18 @@ pub enum operation {
     /// Global field-name identity; membership is proved against the receiver.
     record_get(u8),
     record_set(u8),
+    enum_new {
+        layout: u8,
+        variant: u8,
+    },
+    enum_is {
+        layout: u8,
+        variant: u8,
+    },
+    enum_unwrap {
+        layout: u8,
+        payload: bool,
+    },
     load(usize),
     store(usize),
     global_load(usize),
@@ -372,6 +427,40 @@ pub struct function<'a> {
     local_stored: [bool; maximum_locals],
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct enum_variant<'a> {
+    pub name: &'a str,
+    pub has_payload: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct enum_layout<'a> {
+    pub name: &'a str,
+    context: Option<&'a str>,
+    variants: [enum_variant<'a>; maximum_enum_variants],
+    variant_count: usize,
+}
+
+impl<'a> enum_layout<'a> {
+    const fn empty() -> Self {
+        Self {
+            name: "",
+            context: None,
+            variants: [enum_variant {
+                name: "",
+                has_payload: false,
+            }; maximum_enum_variants],
+            variant_count: 0,
+        }
+    }
+    pub const fn context(&self) -> Option<&'a str> {
+        self.context
+    }
+    pub fn variants(&self) -> &[enum_variant<'a>] {
+        &self.variants[..self.variant_count]
+    }
+}
+
 impl function<'_> {
     const fn empty() -> Self {
         Self {
@@ -413,6 +502,9 @@ pub struct program<'a> {
     declared_field_count: usize,
     global_names: [&'a str; maximum_global_slots],
     global_count: usize,
+    enumerations: [enum_layout<'a>; maximum_enum_layouts],
+    enumeration_count: usize,
+    declared_variant_count: usize,
     main: usize,
     intent: &'a str,
     authority: u64,
@@ -441,6 +533,9 @@ impl<'a> program<'a> {
             declared_field_count: 0,
             global_names: [""; maximum_global_slots],
             global_count: 0,
+            enumerations: [enum_layout::empty(); maximum_enum_layouts],
+            enumeration_count: 0,
+            declared_variant_count: 0,
             main: usize::MAX,
             intent: "",
             authority: 0,
@@ -468,6 +563,9 @@ impl<'a> program<'a> {
     /// a corresponding store; runtime checks their per-execution initialization.
     pub fn global_names(&self) -> &[&'a str] {
         &self.global_names[..self.global_count]
+    }
+    pub fn enum_layouts(&self) -> &[enum_layout<'a>] {
+        &self.enumerations[..self.enumeration_count]
     }
 }
 
@@ -582,6 +680,8 @@ impl<'a> validation_workspace<'a> {
         self.plan.field_name_count = 0;
         self.plan.declared_field_count = 0;
         self.plan.global_count = 0;
+        self.plan.enumeration_count = 0;
+        self.plan.declared_variant_count = 0;
         self.plan.main = usize::MAX;
         self.plan.intent = "";
         self.plan.authority = 0;
@@ -620,9 +720,42 @@ impl<'a> validation_workspace<'a> {
         let mut pending_context: Option<&'a str> = None;
         let mut active: Option<usize> = None;
         let mut active_record: Option<usize> = None;
+        let mut enum_section = false;
+        let mut active_enum: Option<usize> = None;
         for (line_number, raw) in lines {
             let line = trim(raw);
             if line.is_empty() {
+                continue;
+            }
+            if let Some(owner) = active_enum {
+                if line == "end enum" {
+                    active_enum = None;
+                } else {
+                    let (name, has_payload) = if let Some((name, payload)) = line.split_once(':') {
+                        if trim(payload) != "i64" {
+                            return Err(error::unsupported);
+                        }
+                        (trim(name), true)
+                    } else {
+                        (line, false)
+                    };
+                    identifier(name)?;
+                    let layout = &mut self.plan.enumerations[owner];
+                    if layout.name.len() + 2 + name.len() > maximum_name_bytes {
+                        return Err(error::limit);
+                    }
+                    if layout.variants().iter().any(|variant| variant.name == name) {
+                        return Err(error::syntax);
+                    }
+                    if layout.variant_count == maximum_enum_variants
+                        || self.plan.declared_variant_count == maximum_declared_enum_variants
+                    {
+                        return Err(error::limit);
+                    }
+                    layout.variants[layout.variant_count] = enum_variant { name, has_payload };
+                    layout.variant_count += 1;
+                    self.plan.declared_variant_count += 1;
+                }
                 continue;
             }
             if let Some(owner) = active_record {
@@ -710,6 +843,11 @@ impl<'a> validation_workspace<'a> {
                     .record_layouts()
                     .iter()
                     .any(|layout| layout.name == name)
+                    || self
+                        .plan
+                        .enum_layouts()
+                        .iter()
+                        .any(|layout| layout.name == name)
                 {
                     return Err(error::syntax);
                 }
@@ -726,6 +864,47 @@ impl<'a> validation_workspace<'a> {
                 active_record = Some(index);
                 continue;
             }
+            if let Some(name) = line
+                .strip_prefix("enum ")
+                .filter(|_| profile == parse_profile::enums)
+            {
+                if !enum_section || declaration || self.plan.function_count != 0 {
+                    return Err(error::syntax);
+                }
+                record_identifier(name)?;
+                let terminal = name.rsplit("::").next().ok_or(error::syntax)?;
+                if reserved_record_name(name)
+                    || terminal.eq_ignore_ascii_case("option")
+                    || terminal.eq_ignore_ascii_case("result")
+                {
+                    return Err(error::unsupported);
+                }
+                if self
+                    .plan
+                    .enum_layouts()
+                    .iter()
+                    .any(|layout| layout.name == name)
+                    || self
+                        .plan
+                        .record_layouts()
+                        .iter()
+                        .any(|layout| layout.name == name)
+                {
+                    return Err(error::syntax);
+                }
+                if self.plan.enumeration_count == maximum_enum_layouts {
+                    return Err(error::limit);
+                }
+                let index = self.plan.enumeration_count;
+                self.plan.enumerations[index] = enum_layout {
+                    name,
+                    context: pending_context.take(),
+                    ..enum_layout::empty()
+                };
+                self.plan.enumeration_count += 1;
+                active_enum = Some(index);
+                continue;
+            }
             if let Some(header) = line.strip_prefix("function ") {
                 if !declaration {
                     return Err(error::syntax);
@@ -734,7 +913,12 @@ impl<'a> validation_workspace<'a> {
                 if index == maximum_functions {
                     return Err(error::limit);
                 }
-                let mut function = parse_function(header, profile, self.plan.record_layouts())?;
+                let mut function = parse_function(
+                    header,
+                    profile,
+                    self.plan.record_layouts(),
+                    self.plan.enum_layouts(),
+                )?;
                 if self
                     .plan
                     .functions()
@@ -810,6 +994,13 @@ impl<'a> validation_workspace<'a> {
                 records = true;
                 continue;
             }
+            if line == "# Enum definitions" && profile == parse_profile::enums {
+                if enum_section || self.plan.function_count != 0 {
+                    return Err(error::syntax);
+                }
+                enum_section = true;
+                continue;
+            }
             if line == "# String constants" {
                 if constants || self.plan.function_count != 0 {
                     return Err(error::syntax);
@@ -843,6 +1034,7 @@ impl<'a> validation_workspace<'a> {
         if !module
             || active.is_some()
             || active_record.is_some()
+            || active_enum.is_some()
             || declaration
             || pending_context.is_some()
         {
@@ -915,9 +1107,7 @@ impl<'a> validation_workspace<'a> {
             }
             ["LOAD_LOCAL", name] => operation::load(self.local(owner, name, false, profile)?),
             ["STORE_LOCAL", name] => operation::store(self.local(owner, name, true, profile)?),
-            [opcode @ ("LOAD_GLOBAL" | "STORE_GLOBAL"), name, "i64"]
-                if profile == parse_profile::globals =>
-            {
+            [opcode @ ("LOAD_GLOBAL" | "STORE_GLOBAL"), name, "i64"] if profile.global_forms() => {
                 // Explicit module slots never share lookup rules with locals,
                 // functions, record types, constants or console builtin names.
                 record_identifier(name)?;
@@ -944,7 +1134,7 @@ impl<'a> validation_workspace<'a> {
                     operation::global_store(index)
                 }
             }
-            ["CAST", "text"] if profile == parse_profile::globals => operation::integer_text,
+            ["CAST", "text"] if profile.global_forms() => operation::integer_text,
             ["CAST", value] => operation::cast(width(value)?),
             ["NEG", value] => operation::negate(width(value)?),
             [opcode, value] if binary(opcode).is_some() => operation::binary {
@@ -978,6 +1168,32 @@ impl<'a> validation_workspace<'a> {
                 identifier(name)?;
                 self.references[pc] = (name, 0);
                 operation::function(0)
+            }
+            ["NEW_VARIANT", tag, count, name, payload] if profile == parse_profile::enums => {
+                let payload = enum_payload(payload)?;
+                enum_arity(count, payload)?;
+                let layout = self.enum_reference(name)?;
+                let variant = self.enum_variant_reference(tag, layout, payload)?;
+                operation::enum_new { layout, variant }
+            }
+            ["IS_VARIANT", tag, name, payload] if profile == parse_profile::enums => {
+                let payload = enum_payload(payload)?;
+                let layout = self.enum_reference(name)?;
+                let variant = self.enum_variant_reference(tag, layout, payload)?;
+                operation::enum_is { layout, variant }
+            }
+            ["UNWRAP_VARIANT", count, name, payload] if profile == parse_profile::enums => {
+                let payload = enum_payload(payload)?;
+                enum_arity(count, payload)?;
+                let layout = self.enum_reference(name)?;
+                if !self.plan.enumerations[usize::from(layout)]
+                    .variants()
+                    .iter()
+                    .any(|variant| variant.has_payload == payload)
+                {
+                    return Err(error::unsupported);
+                }
+                operation::enum_unwrap { layout, payload }
             }
             ["NEW_STRUCT", name] if profile.record_forms() => {
                 record_identifier(name)?;
@@ -1093,6 +1309,32 @@ impl<'a> validation_workspace<'a> {
         };
         self.plan.instruction_count += 1;
         Ok(())
+    }
+
+    fn enum_reference(&self, name: &str) -> Result<u8, error> {
+        record_identifier(name)?;
+        self.plan
+            .enum_layouts()
+            .iter()
+            .position(|layout| layout.name == name)
+            .map(|index| index as u8)
+            .ok_or(error::unsupported)
+    }
+
+    fn enum_variant_reference(&self, tag: &str, layout: u8, payload: bool) -> Result<u8, error> {
+        record_identifier(tag)?;
+        let (name, variant) = tag.rsplit_once("::").ok_or(error::syntax)?;
+        let declared = self.enum_reference(name)?;
+        let declaration = &self.plan.enumerations[usize::from(declared)];
+        let index = declaration
+            .variants()
+            .iter()
+            .position(|item| item.name == variant)
+            .ok_or(error::unsupported)?;
+        if declared != layout || declaration.variants[index].has_payload != payload {
+            return Err(error::syntax);
+        }
+        Ok(index as u8)
     }
 
     fn resolve(&mut self, profile: parse_profile) -> Result<(), error> {
@@ -1322,6 +1564,31 @@ impl<'a> validation_workspace<'a> {
                         state.push(kind::function(self.plan.functions[target].signature))?;
                     }
                     operation::record_new(layout) => state.push(kind::record(layout))?,
+                    operation::enum_new { layout, variant } => {
+                        if self.plan.enumerations[usize::from(layout)].variants
+                            [usize::from(variant)]
+                        .has_payload
+                        {
+                            state.integer()?;
+                        }
+                        state.push(kind::enumeration(layout))?;
+                    }
+                    operation::enum_is { layout, .. } => {
+                        if state.pop()? != kind::enumeration(layout) {
+                            return Err(error::syntax);
+                        }
+                        state.push(kind::integer)?;
+                    }
+                    operation::enum_unwrap { layout, payload } => {
+                        if state.pop()? != kind::enumeration(layout) {
+                            return Err(error::syntax);
+                        }
+                        // Same-enum joins and parameters intentionally retain
+                        // nominal type only; execution checks exact payload shape.
+                        if payload {
+                            state.push(kind::integer)?;
+                        }
+                    }
                     operation::record_get(field) | operation::record_set(field) => {
                         let write = matches!(
                             self.plan.instructions[pc].operation,
@@ -1685,6 +1952,7 @@ fn value_kind(
     value: &str,
     profile: parse_profile,
     records: &[record_layout<'_>],
+    enumerations: &[enum_layout<'_>],
 ) -> Result<kind, error> {
     match value {
         "i32" | "i64" => Ok(kind::integer),
@@ -1695,6 +1963,12 @@ fn value_kind(
             .iter()
             .position(|record| record.name == value)
             .map(|index| kind::record(index as u8))
+            .or_else(|| {
+                enumerations
+                    .iter()
+                    .position(|layout| layout.name == value)
+                    .map(|index| kind::enumeration(index as u8))
+            })
             .ok_or(error::unsupported),
         _ => Err(error::unsupported),
     }
@@ -1816,6 +2090,7 @@ fn parse_function<'a>(
     header: &'a str,
     profile: parse_profile,
     records: &[record_layout<'a>],
+    enumerations: &[enum_layout<'a>],
 ) -> Result<function<'a>, error> {
     let (left, result) = header.split_once(" -> ").ok_or(error::unsupported)?;
     let result = result.strip_suffix(':').ok_or(error::syntax)?;
@@ -1823,11 +2098,12 @@ fn parse_function<'a>(
     function.return_kind = if result == "void" {
         None
     } else {
-        Some(value_kind(result, profile, records)?)
+        Some(value_kind(result, profile, records, enumerations)?)
     };
-    // Fixed exact type codes preserve i32/i64 and each nominal record identity.
+    // Fixed exact type codes preserve i32/i64 and each nominal record/enum identity.
     // Arity is compared separately so unused parameter bytes cannot alias types.
-    function.signature_types[maximum_parameters] = signature_type_code(result, records)?;
+    function.signature_types[maximum_parameters] =
+        signature_type_code(result, records, enumerations)?;
     let (name, arguments) = if let Some((name, rest)) = left.split_once('(') {
         (name, Some(rest.strip_suffix(')').ok_or(error::syntax)?))
     } else {
@@ -1853,15 +2129,19 @@ fn parse_function<'a>(
             }
             function.parameter_names[function.parameter_count] = name;
             function.parameters[function.parameter_count] =
-                value_kind(trim(kind), profile, records)?;
+                value_kind(trim(kind), profile, records, enumerations)?;
             function.signature_types[function.parameter_count] =
-                signature_type_code(trim(kind), records)?;
+                signature_type_code(trim(kind), records, enumerations)?;
             function.parameter_count += 1;
         }
     }
     Ok(function)
 }
-fn signature_type_code(value: &str, records: &[record_layout<'_>]) -> Result<u8, error> {
+fn signature_type_code(
+    value: &str,
+    records: &[record_layout<'_>],
+    enumerations: &[enum_layout<'_>],
+) -> Result<u8, error> {
     match value {
         "i32" => Ok(0),
         "i64" => Ok(1),
@@ -1873,8 +2153,31 @@ fn signature_type_code(value: &str, records: &[record_layout<'_>]) -> Result<u8,
             .iter()
             .position(|record| record.name == value)
             .map(|index| 6 + index as u8)
+            .or_else(|| {
+                enumerations
+                    .iter()
+                    .position(|layout| layout.name == value)
+                    .map(|index| 6 + maximum_record_layouts as u8 + index as u8)
+            })
             .ok_or(error::unsupported),
     }
+}
+fn enum_payload(value: &str) -> Result<bool, error> {
+    match value {
+        "void" => Ok(false),
+        "i64" => Ok(true),
+        _ => Err(error::unsupported),
+    }
+}
+fn enum_arity(value: &str, payload: bool) -> Result<(), error> {
+    let count = unsigned(value)?;
+    if count > 1 {
+        return Err(error::unsupported);
+    }
+    if count != usize::from(payload) {
+        return Err(error::syntax);
+    }
+    Ok(())
 }
 fn record_identifier(value: &str) -> Result<(), error> {
     if value.len() > maximum_name_bytes {
@@ -1954,3 +2257,6 @@ mod record_tests;
 
 #[cfg(test)]
 mod globals_tests;
+
+#[cfg(test)]
+mod enums_tests;
