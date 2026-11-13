@@ -8,5 +8,9 @@ rust-version.workspace = true
 description = "Experimental bounded profile-2 and profile-3 program admission and control-flow validation"
 publish = false
 
+[features]
+default = []
+host_conformance = []
+
 [dependencies]
 anomalous-program-manifest.workspace = true

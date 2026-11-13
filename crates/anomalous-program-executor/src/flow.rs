@@ -180,7 +180,9 @@ impl<'a> execution_workspace<'a> {
 
     fn run(
         &mut self,
-        admitted: &admitted_program<'a, '_>,
+        program: &program<'a>,
+        identity: [u8; 32],
+        granted: u64,
         budget: limits,
         sink: &mut impl console_sink,
     ) -> Result<i64, error> {
@@ -190,7 +192,6 @@ impl<'a> execution_workspace<'a> {
         {
             return Err(error::invalid_limits);
         }
-        let program = admitted.program();
         self.call(program, program.main(), 0, budget)?;
         loop {
             let current = self.current()?;
@@ -294,8 +295,8 @@ impl<'a> execution_workspace<'a> {
                     publish_console(
                         item,
                         newline,
-                        admitted.identity(),
-                        admitted.granted_services(),
+                        identity,
+                        granted,
                         budget.output_bytes,
                         &mut self.stats,
                         sink,
@@ -351,12 +352,32 @@ pub fn execute<'a>(
     workspace: &mut execution_workspace<'a>,
     sink: &mut impl console_sink,
 ) -> execution {
+    execute_checked(
+        admitted.program(),
+        admitted.identity(),
+        admitted.granted_services(),
+        budget,
+        workspace,
+        sink,
+    )
+}
+
+// Both public entry points require their own unforgeable witness. Keep this
+// plan-taking implementation private to the crate: a plan is not admission.
+pub(crate) fn execute_checked<'a>(
+    program: &program<'a>,
+    identity: [u8; 32],
+    granted: u64,
+    budget: limits,
+    workspace: &mut execution_workspace<'a>,
+    sink: &mut impl console_sink,
+) -> execution {
     workspace.clear();
-    let outcome = workspace.run(admitted, budget, sink);
+    let outcome = workspace.run(program, identity, granted, budget, sink);
     let result = execution {
         outcome,
         statistics: workspace.stats,
-        edition_identity: admitted.identity(),
+        edition_identity: identity,
         line: workspace.line,
     };
     workspace.clear();
@@ -368,3 +389,6 @@ mod tests;
 
 #[cfg(test)]
 mod scalar_tests;
+
+#[cfg(all(test, feature = "host_conformance"))]
+mod conformance_tests;

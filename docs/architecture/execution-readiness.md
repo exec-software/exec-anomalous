@@ -1,5 +1,33 @@
 # Native execution and compatibility readiness
 
+## Host conformance separated from production admission (2026-11-13)
+
+[ADR 0107](../adr/0107-separate-host-conformance-from-production-admission.md)
+adds the opt-in `host_conformance` feature and a distinct raw `checked_edition`.
+It uses the profile-3 grammar and the same whole-file authority, reference and
+CFG checks, allowing only absence of authored-main intent. Present annotations
+remain strict. Production encoding/admission always requires intent, and a raw
+witness cannot enter production dispatch or become a production package.
+The feature explicitly refuses freestanding builds.
+
+The new proof records 27 boundary cases and independently attempts both paths
+on every unchanged corpus edition. Four of 45 raw interpreter invocations match
+reference output and exit status: one root case and three auxiliary selections
+of the same second edition. The other 41 refuse (32 unsupported forms and nine
+edition limits/formats). Production admission still refuses all 45, with its
+previous refusal inventory. The original 126-, 77- and 61-case proofs pass
+unchanged. Refusals receive no semantic coverage credit.
+
+Raw host execution shares private bounded dispatch, storage clearing and
+identity-bound console mediation with the admitted path. It adds no wire
+profile, native loader operation or service family. The new proof keeps raw
+semantics and production admission in separate ledgers over identical complete
+upstream editions. Full interpreter qualification and native execution remain
+closed gates.
+All 29 final qualification jobs pass on 678 unchanged source files; independent
+audits confirm the evidence and original checkout preservation. The [Host Conformance Boundary Log](../../notebook/Development/2026-11-13%20Host%20Conformance%20Boundary%20Log.md)
+records measured coverage and qualification evidence.
+
 ## Qualified bounded compiler scalar control-flow prerequisite (2026-11-12)
 
 Accepted [ADR 0106](../adr/0106-admit-bounded-compiler-scalar-control-flow.md)

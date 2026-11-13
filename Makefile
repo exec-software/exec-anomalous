@@ -334,9 +334,12 @@ check:
 	cargo test --package anomalous-program-manifest --all-features
 	cargo test --package anomalous-program-executor
 	cargo test --package anomalous-program-flow
+	cargo test --package anomalous-program-flow --features host_conformance
+	cargo test --package anomalous-program-executor --features host_conformance
 	python3 scripts/program_execution_proof.py --self-test
 	python3 scripts/program_flow_proof.py --self-test
 	python3 scripts/program_scalar_flow_proof.py --self-test
+	python3 scripts/program_conformance_proof.py --self-test
 	cargo test --package anomalous-document-protocol
 	cargo test --package anomalous-document-protocol --features remote_workspace
 	cargo test --package anomalous-elf-adapter
@@ -466,8 +469,10 @@ check:
 	cargo clippy --package anomalous-native-runtime --all-targets -- -D warnings
 	cargo clippy --package anomalous-program-manifest --all-targets --all-features -- -D warnings
 	cargo clippy --package anomalous-program-flow --all-targets -- -D warnings
+	cargo clippy --package anomalous-program-flow --all-targets --features host_conformance -- -D warnings
 	cargo clippy --package anomalous-program-flow --target x86_64-unknown-none -- -D warnings
 	cargo clippy --package anomalous-program-executor --all-targets -- -D warnings
+	cargo clippy --package anomalous-program-executor --all-targets --features host_conformance -- -D warnings
 	cargo clippy --package anomalous-program-executor --target x86_64-unknown-none -- -D warnings
 	cargo clippy --package anomalous-program-manifest --target x86_64-unknown-none -- -D warnings
 	cargo clippy --package anomalous-document-protocol --all-targets -- -D warnings

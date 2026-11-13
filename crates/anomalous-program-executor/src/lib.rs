@@ -4,8 +4,10 @@
 
 //! Experimental host qualification executors for admitted NIL (ADRs 0104–0106).
 //! This is not a native-integrated or full-corpus-qualified NIL interpreter.
-//! Every entry requires whole-edition admission; storage, dispatch and output
-//! are bounded, and the only effect is an explicit, witness-bound console sink.
+//! Production entries require whole-edition admission. The opt-in host conformance
+//! entry accepts a distinct raw validation witness, never a production package.
+//! Storage, dispatch and output are bounded; the only effect is an explicit,
+//! witness-bound console sink.
 
 use anomalous_native_runtime::{maximum_write_bytes, validate_console_text};
 use anomalous_program_manifest::{
@@ -17,6 +19,9 @@ use anomalous_program_manifest::{
 use core::fmt::Write;
 
 pub mod flow;
+
+#[cfg(feature = "host_conformance")]
+pub mod conformance;
 
 pub const maximum_output_bytes: usize = 65536;
 

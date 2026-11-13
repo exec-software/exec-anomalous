@@ -33,6 +33,10 @@ desktop, or a security boundary for sensitive workloads.
   [Profile 3](docs/adr/0106-admit-bounded-compiler-scalar-control-flow.md) adds
   bounded compiler temporary locals and scalar range-loop forms, qualified by
   27 final checks and a 61-case bounded proof.
+  [Host conformance](docs/adr/0107-separate-host-conformance-from-production-admission.md)
+  separately validates and executes raw scalar editions without manufacturing
+  authored intent; production admission retains its required intent and authority
+  checks. Full corpus qualification and native execution remain gated.
 - Host-side libraries explore typed session routing, shared semantic scenes,
   presentation acknowledgement, and recovery.
 - **Eidolon** supplies an independent Python reference codec for lossless

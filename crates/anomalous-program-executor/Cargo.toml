@@ -8,6 +8,13 @@ rust-version.workspace = true
 description = "Experimental bounded host qualification core for admitted NIL"
 publish = false
 
+[features]
+host_conformance = ["anomalous-program-flow/host_conformance"]
+
+[[example]]
+name = "program_conformance_probe"
+required-features = ["host_conformance"]
+
 [dependencies]
 anomalous-program-manifest = { workspace = true, features = ["execution_view"] }
 anomalous-native-runtime.workspace = true

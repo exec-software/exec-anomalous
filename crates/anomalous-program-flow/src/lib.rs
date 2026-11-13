@@ -5,7 +5,11 @@
 //! Host-only profile-2 and explicitly selected profile-3 admission.
 //! All syntax and references are checked before
 //! reachable CFG validation; even dead instructions contribute authority.
-//! The immutable plan is accessible only through a complete admission witness.
+//! The immutable plan is accessible only through a complete validation witness.
+//! The opt-in host conformance path does not create production admission.
+
+#[cfg(all(feature = "host_conformance", target_os = "none"))]
+compile_error!("host_conformance is unavailable for freestanding targets");
 
 pub use anomalous_program_manifest::{
     authority, error, image_header_bytes, manifest_header_bytes, maximum_edition_bytes,
@@ -27,6 +31,23 @@ pub const maximum_name_bytes: usize = 128;
 enum parse_profile {
     flow,
     scalar,
+}
+
+#[derive(Clone, Copy)]
+enum validation_purpose {
+    production,
+    #[cfg(feature = "host_conformance")]
+    conformance,
+}
+
+impl validation_purpose {
+    const fn requires_intent(self) -> bool {
+        match self {
+            Self::production => true,
+            #[cfg(feature = "host_conformance")]
+            Self::conformance => false,
+        }
+    }
 }
 
 impl parse_profile {
@@ -62,6 +83,10 @@ pub mod scalar {
         super::admit_profile(image, ceiling, workspace, parse_profile::scalar)
     }
 }
+
+/// Raw host language checks, deliberately separate from manifest admission.
+#[cfg(feature = "host_conformance")]
+pub mod conformance;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum kind {
@@ -237,7 +262,7 @@ impl flow_state {
 }
 
 /// Caller-owned fixed storage. Failed validation cannot expose a plan; a live
-/// admitted witness immutably borrows the workspace and prevents its reuse.
+/// validation witness immutably borrows the workspace and prevents its reuse.
 pub struct validation_workspace<'a> {
     plan: program<'a>,
     references: [(&'a str, usize); maximum_instructions],
@@ -299,7 +324,12 @@ impl<'a> validation_workspace<'a> {
         self.queue_length = 0;
     }
 
-    fn parse(&mut self, edition: &'a [u8], profile: parse_profile) -> Result<(), error> {
+    fn parse(
+        &mut self,
+        edition: &'a [u8],
+        profile: parse_profile,
+        purpose: validation_purpose,
+    ) -> Result<(), error> {
         self.reset();
         if edition.is_empty() || edition.len() > maximum_edition_bytes {
             return Err(error::edition);
@@ -365,7 +395,7 @@ impl<'a> validation_workspace<'a> {
                     return Err(error::syntax);
                 }
                 if function.name == "main" {
-                    if !intent_pending
+                    if (purpose.requires_intent() && !intent_pending)
                         || self.plan.main != usize::MAX
                         || function.parameter_count != 0
                         || function.return_kind != Some(kind::integer)
@@ -450,7 +480,9 @@ impl<'a> validation_workspace<'a> {
         if !module || active.is_some() || declaration || intent_pending {
             return Err(error::syntax);
         }
-        if self.plan.main == usize::MAX || self.plan.intent.is_empty() {
+        if self.plan.main == usize::MAX
+            || (purpose.requires_intent() && self.plan.intent.is_empty())
+        {
             return Err(error::intent);
         }
         self.resolve()?;
@@ -891,7 +923,7 @@ fn encode_profile<'a>(
     workspace: &mut validation_workspace<'a>,
     profile: parse_profile,
 ) -> Result<usize, error> {
-    workspace.parse(edition, profile)?;
+    workspace.parse(edition, profile, validation_purpose::production)?;
     let intent = workspace.plan.intent.as_bytes();
     let manifest_length = manifest_header_bytes + intent.len();
     let edition_offset = image_header_bytes + manifest_length;
@@ -1002,7 +1034,7 @@ fn admit_profile<'a, 'w>(
     if identity.as_slice() != &manifest[32..64] {
         return Err(error::identity);
     }
-    workspace.parse(edition, profile)?;
+    workspace.parse(edition, profile, validation_purpose::production)?;
     if required != workspace.plan.authority || intent != workspace.plan.intent {
         return Err(error::mismatch);
     }

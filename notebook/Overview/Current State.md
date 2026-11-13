@@ -1,6 +1,6 @@
 ---
 title: "Anomalous — Current State"
-date: 2026-11-12
+date: 2026-11-13
 tags: [status, milestone, boot, kernel, memory, interrupts, input, shell, session, display, desktop, privacy, waiting, circle, ring3, scheduler, supervision, rites, x86-64]
 status: active
 domain: foundations
@@ -8,7 +8,30 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current host checkpoint — compiler scalar control flow
+## Current host checkpoint — separate conformance and admission
+
+[ADR 0107](../../docs/adr/0107-separate-host-conformance-from-production-admission.md)
+separates raw language experiments from production manifest admission. The
+opt-in host feature validates unchanged editions into a distinct checked witness;
+missing main intent is represented as absence. Existing present-annotation,
+whole-file authority, CFG and resource checks remain mandatory. Production
+packaging and dispatch retain their admitted witness and required authored
+intent. The raw feature refuses freestanding compilation.
+
+The new proof passes 27 boundary cases. Four of 45 unchanged raw corpus
+invocations match reference output and exit status: one of 38 root cases plus
+three auxiliary executions of the same second edition. The remaining 41 remain
+unmet coverage. Production independently refuses all 45 with the prior policy
+outcomes; the existing 126-, 77- and 61-case proofs pass unchanged.
+
+The [Host Conformance Boundary Log](../Development/2026-11-13%20Host%20Conformance%20Boundary%20Log.md)
+records separate raw and production corpus ledgers. No native NIL execution,
+new kernel feature or Linux service advancement is claimed. Full unmodified
+corpus qualification and native integration remain separate gates.
+All 29 final qualification jobs pass on 678 unchanged source files; independent
+audits confirm the evidence and original checkout preservation.
+
+## Previous host checkpoint — compiler scalar control flow
 
 Accepted [ADR 0106](../../docs/adr/0106-admit-bounded-compiler-scalar-control-flow.md)
 adds explicit host-only profile 3 while preserving profile 2's accepted grammar
