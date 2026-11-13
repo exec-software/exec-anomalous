@@ -1,5 +1,31 @@
 # Native execution and compatibility readiness
 
+## Bounded immutable typed arrays (2026-11-13)
+
+[ADR 0109](../adr/0109-add-bounded-immutable-typed-arrays.md) adds explicit
+profile 5 for homogeneous `i64`/`text` literals, `LEN` and `GET_INDEX`, with
+canonical array helper signatures. Distinct kinds prevent scalar operations
+and console formatting on handles. Production admission retains authored intent;
+the separate raw validator shares complete syntax, authority and CFG checks.
+
+The caller-owned machine retains 128 descriptors and 1,024 cumulative scalar
+elements, at most 256 per literal, until execution ends. Aliases and returned
+arrays remain valid alongside computed text; empty literals consume descriptors.
+Preflight checks precede allocation, exhaustion is explicit and every exit
+scrubs storage. Out-of-range reads return typed defaults under the pinned
+reference's default bounds semantics. Mutation and raw pointers remain outside
+this profile.
+
+The new 87-case proof passes, and all five earlier proofs pass unchanged. Eight
+of 45 raw corpus invocations match, including five of 38 root cases; 37 remain
+unmet coverage. The complete `control-flow.matrix` edition now runs unchanged.
+Production still refuses all 45 independently. The
+[Typed Arrays Log](../../notebook/Development/2026-11-13%20Typed%20Arrays%20Log.md)
+records qualification evidence and remaining limits. Full corpus qualification
+and native execution remain closed gates. All 35 final jobs pass on 692
+unchanged source files, with independent proof and artifact audits. Native
+admission bytes and Linux-loader behavior remain unchanged.
+
 ## Bounded computed text and hexadecimal integers (2026-11-13)
 
 [ADR 0108](../adr/0108-add-bounded-computed-text-and-hexadecimal-integers.md)

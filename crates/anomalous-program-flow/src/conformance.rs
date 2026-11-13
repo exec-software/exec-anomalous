@@ -101,6 +101,17 @@ pub fn validate_text<'a, 'w>(
     validate_profile(edition, ceiling, workspace, parse_profile::text)
 }
 
+/// Validate raw bytes using the explicitly selected profile-5 array grammar.
+/// Only absence of main intent differs from production profile-5 admission.
+/// This path cannot emit a package or produce a production admission witness.
+pub fn validate_array<'a, 'w>(
+    edition: &'a [u8],
+    ceiling: u64,
+    workspace: &'w mut validation_workspace<'a>,
+) -> Result<checked_edition<'a, 'w>, error> {
+    validate_profile(edition, ceiling, workspace, parse_profile::array)
+}
+
 fn validate_profile<'a, 'w>(
     edition: &'a [u8],
     ceiling: u64,

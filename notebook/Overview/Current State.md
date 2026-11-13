@@ -8,7 +8,29 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current host checkpoint — computed text and hexadecimal integers
+## Current host checkpoint — immutable typed arrays
+
+[ADR 0109](../../docs/adr/0109-add-bounded-immutable-typed-arrays.md)
+adds explicitly selected profile 5 for homogeneous integer/text arrays, lengths
+and indexed reads. Private handles preserve aliases and helper returns, including
+computed text elements. Fixed storage allows 128 descriptors and 1,024 cumulative
+elements per run, with at most 256 per literal. Out-of-range reads follow the
+pinned default semantics: zero or empty text. Every execution boundary clears
+all array and text storage. Earlier profiles and production intent requirements
+retain their contracts.
+
+The new 87-case proof records 36 exact semantic matches, one matching fault,
+seven finite policy contrasts and 43 validation refusals. Eight of 45 unchanged
+raw corpus invocations match, including five of 38 roots; the complete
+`control-flow.matrix` edition is newly supported. The remaining 37 refusals are
+unmet coverage, and all 45 still refuse production admission. The
+[Typed Arrays Log](../Development/2026-11-13%20Typed%20Arrays%20Log.md) records
+qualification and remaining gates. This adds no native NIL execution or Linux
+compatibility behavior. All 35 final qualification jobs pass on 692 unchanged
+source files; independent audits confirm all six proof suites, native artifact
+continuity and original-checkout preservation.
+
+## Previous host checkpoint — computed text and hexadecimal integers
 
 [ADR 0108](../../docs/adr/0108-add-bounded-computed-text-and-hexadecimal-integers.md)
 adds explicitly selected profile 4. Text/text concatenation creates immutable

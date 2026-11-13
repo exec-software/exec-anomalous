@@ -7,6 +7,8 @@ use super::{
 };
 use anomalous_program_flow::{admitted_program, kind, operation, program};
 
+mod array;
+use array::{array_arena, array_handle};
 mod text;
 use text::{text_arena, text_span};
 
@@ -17,12 +19,16 @@ pub const maximum_locals: usize = 128;
 /// Cumulative decoded concatenation bytes per execution, with no reclamation
 /// until the run ends. Literals remain borrowed and do not consume this arena.
 pub const maximum_text_bytes: usize = 65536;
+/// Immutable arrays retain descriptors and elements until the execution ends.
+pub const maximum_arrays: usize = 128;
+pub const maximum_array_elements: usize = 1024;
 
 #[derive(Clone, Copy)]
 enum value<'a> {
     integer(i64),
     text(&'a str),
     computed_text(text_span),
+    array(array_handle),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -74,6 +80,7 @@ pub struct execution_workspace<'a> {
     stats: statistics,
     line: usize,
     text: text_arena,
+    arrays: array_arena<'a>,
 }
 
 impl Default for execution_workspace<'_> {
@@ -97,6 +104,7 @@ impl<'a> execution_workspace<'a> {
             },
             line: 0,
             text: text_arena::new(),
+            arrays: array_arena::new(),
         }
     }
 
@@ -109,6 +117,7 @@ impl<'a> execution_workspace<'a> {
         self.stats = statistics::default();
         self.line = 0;
         self.text.clear();
+        self.arrays.clear();
     }
 
     fn current(&self) -> Result<&frame<'a>, error> {
@@ -150,7 +159,7 @@ impl<'a> execution_workspace<'a> {
     fn integer(&mut self) -> Result<i64, error> {
         match self.pop()? {
             value::integer(number) => Ok(number),
-            value::text(_) | value::computed_text(_) => Err(error::invalid_state),
+            value::text(_) | value::computed_text(_) | value::array(_) => Err(error::invalid_state),
         }
     }
 
@@ -244,6 +253,34 @@ impl<'a> execution_workspace<'a> {
                     let span = self.text.concatenate(left, right)?;
                     self.push(value::computed_text(span))?;
                 }
+                operation::array_literal { count, element } => {
+                    let start = self.depth.checked_sub(count).ok_or(error::invalid_state)?;
+                    if start < self.current()?.floor {
+                        return Err(error::invalid_state);
+                    }
+                    if start >= maximum_values {
+                        return Err(error::stack_limit);
+                    }
+                    let handle = self
+                        .arrays
+                        .allocate(&self.values[start..self.depth], element)?;
+                    self.values[start..self.depth].fill(value::integer(0));
+                    self.depth = start;
+                    self.push(value::array(handle))?;
+                }
+                operation::array_len => {
+                    let value::array(handle) = self.pop()? else {
+                        return Err(error::invalid_state);
+                    };
+                    self.push(value::integer(self.arrays.length(handle)?))?;
+                }
+                operation::array_get => {
+                    let index = self.integer()?;
+                    let value::array(handle) = self.pop()? else {
+                        return Err(error::invalid_state);
+                    };
+                    self.push(self.arrays.get(handle, index)?)?;
+                }
                 operation::load(index) => {
                     let item = self
                         .current()?
@@ -315,6 +352,7 @@ impl<'a> execution_workspace<'a> {
                 operation::console { newline } => {
                     let item = self.pop()?;
                     match item {
+                        value::array(_) => return Err(error::invalid_state),
                         value::computed_text(span) => publish_decoded_console(
                             self.text.bytes(span)?,
                             newline,
@@ -381,10 +419,11 @@ fn value_kind(value: value<'_>) -> kind {
     match value {
         value::integer(_) => kind::integer,
         value::text(_) | value::computed_text(_) => kind::text,
+        value::array(handle) => handle.kind(),
     }
 }
 
-/// Execute only a validated control-flow witness (profile 2, 3 or 4).
+/// Execute only a validated control-flow witness (profile 2, 3, 4 or 5).
 /// Every return, arithmetic error, policy
 /// refusal or service refusal clears the internal frame/value storage. Earlier
 /// acknowledged sink effects remain committed; there is no automatic retry.
@@ -437,3 +476,6 @@ mod conformance_tests;
 
 #[cfg(test)]
 mod text_tests;
+
+#[cfg(test)]
+mod array_tests;

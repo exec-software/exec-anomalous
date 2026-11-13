@@ -37,8 +37,10 @@ desktop, or a security boundary for sensitive workloads.
   separately validates and executes raw scalar editions without manufacturing
   authored intent; production admission retains its required intent and authority
   checks. [Profile 4](docs/adr/0108-add-bounded-computed-text-and-hexadecimal-integers.md)
-  adds bounded computed text and signed hexadecimal integers. Seven of 45
-  unchanged raw corpus invocations match; full corpus qualification and native
+  adds bounded computed text and signed hexadecimal integers.
+  [Profile 5](docs/adr/0109-add-bounded-immutable-typed-arrays.md) adds immutable
+  typed arrays, lengths and indexed reads. Eight of 45 unchanged raw corpus
+  invocations match; full corpus qualification and native
   execution remain gated.
 - Host-side libraries explore typed session routing, shared semantic scenes,
   presentation acknowledgement, and recovery.

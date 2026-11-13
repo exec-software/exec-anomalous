@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! Host-only profile-2 and explicitly selected profile-3/profile-4 admission.
+//! Host-only profile-2 and explicitly selected profile-3/profile-4/profile-5 admission.
 //! All syntax and references are checked before
 //! reachable CFG validation; even dead instructions contribute authority.
 //! The immutable plan is accessible only through a complete validation witness.
@@ -22,6 +22,7 @@ pub const maximum_constants: usize = 128;
 pub const maximum_instructions: usize = 4096;
 pub const maximum_locals: usize = 128;
 pub const maximum_stack_values: usize = 256;
+pub const maximum_array_literal_values: usize = maximum_stack_values;
 pub const maximum_parameters: usize = 8;
 pub const maximum_basic_blocks: usize = 256;
 pub const maximum_validation_transfers: usize = 1 << 20;
@@ -32,6 +33,7 @@ enum parse_profile {
     flow,
     scalar,
     text,
+    array,
 }
 
 #[derive(Clone, Copy)]
@@ -57,11 +59,16 @@ impl parse_profile {
             Self::flow => derivation_profile,
             Self::scalar => scalar::derivation_profile,
             Self::text => text::derivation_profile,
+            Self::array => array::derivation_profile,
         }
     }
 
     const fn scalar_forms(self) -> bool {
-        matches!(self, Self::scalar | Self::text)
+        matches!(self, Self::scalar | Self::text | Self::array)
+    }
+
+    const fn text_forms(self) -> bool {
+        matches!(self, Self::text | Self::array)
     }
 }
 
@@ -115,6 +122,31 @@ pub mod text {
     }
 }
 
+/// Explicit opt-in for immutable, typed integer/text array literals and reads.
+/// Existing entry points retain their original grammar and signature types.
+pub mod array {
+    use super::{admitted_program, error, parse_profile, validation_workspace};
+
+    pub const derivation_profile: u32 = 5;
+
+    /// Validates completely before publishing any output bytes.
+    pub fn encode<'a>(
+        edition: &'a [u8],
+        output: &mut [u8],
+        workspace: &mut validation_workspace<'a>,
+    ) -> Result<usize, error> {
+        super::encode_profile(edition, output, workspace, parse_profile::array)
+    }
+
+    pub fn admit<'a, 'w>(
+        image: &'a [u8],
+        ceiling: u64,
+        workspace: &'w mut validation_workspace<'a>,
+    ) -> Result<admitted_program<'a, 'w>, error> {
+        super::admit_profile(image, ceiling, workspace, parse_profile::array)
+    }
+}
+
 /// Raw host language checks, deliberately separate from manifest admission.
 #[cfg(feature = "host_conformance")]
 pub mod conformance;
@@ -123,6 +155,8 @@ pub mod conformance;
 pub enum kind {
     integer,
     text,
+    array_integer,
+    array_text,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -130,6 +164,13 @@ pub enum operation {
     integer(i64),
     text(usize),
     concat,
+    /// The element is always scalar `integer` or `text` in a validated plan.
+    array_literal {
+        count: usize,
+        element: kind,
+    },
+    array_len,
+    array_get,
     load(usize),
     store(usize),
     binary {
@@ -417,7 +458,7 @@ impl<'a> validation_workspace<'a> {
                 if index == maximum_functions {
                     return Err(error::limit);
                 }
-                let mut function = parse_function(header)?;
+                let mut function = parse_function(header, profile)?;
                 if self
                     .plan
                     .functions()
@@ -587,13 +628,27 @@ impl<'a> validation_workspace<'a> {
             },
             // The reference's untyped ADD is also overloaded for arrays and
             // floats. Reachable CFG validation proves both operands integer;
-            // this profile has no array or floating values. Dead code keeps
+            // array and floating addition remain unsupported. Dead code keeps
             // its syntax/reference checks without invented operand states.
             ["ADD"] if profile.scalar_forms() => operation::binary {
                 opcode: "ADD",
                 width: "i64",
             },
-            ["STR_CONCAT"] if profile == parse_profile::text => operation::concat,
+            ["STR_CONCAT"] if profile.text_forms() => operation::concat,
+            ["NEW_ARRAY_LITERAL", count, element] if profile == parse_profile::array => {
+                let count = unsigned(count)?;
+                if count > maximum_array_literal_values {
+                    return Err(error::limit);
+                }
+                let element = match *element {
+                    "i64" => kind::integer,
+                    "text" => kind::text,
+                    _ => return Err(error::unsupported),
+                };
+                operation::array_literal { count, element }
+            }
+            ["LEN"] if profile == parse_profile::array => operation::array_len,
+            ["GET_INDEX"] if profile == parse_profile::array => operation::array_get,
             [opcode] if comparison(opcode).is_some() => {
                 operation::compare(comparison(opcode).unwrap())
             }
@@ -849,6 +904,36 @@ impl<'a> validation_workspace<'a> {
                         }
                         state.push(kind::text)?;
                     }
+                    operation::array_literal { count, element } => {
+                        let base = state.depth.checked_sub(count).ok_or(error::syntax)?;
+                        if state.stack[base..state.depth]
+                            .iter()
+                            .any(|kind| *kind != element)
+                        {
+                            return Err(error::syntax);
+                        }
+                        state.depth = base;
+                        state.push(match element {
+                            kind::integer => kind::array_integer,
+                            kind::text => kind::array_text,
+                            _ => return Err(error::syntax),
+                        })?;
+                    }
+                    operation::array_len => {
+                        if !matches!(state.pop()?, kind::array_integer | kind::array_text) {
+                            return Err(error::syntax);
+                        }
+                        state.push(kind::integer)?;
+                    }
+                    operation::array_get => {
+                        state.integer()?;
+                        let element = match state.pop()? {
+                            kind::array_integer => kind::integer,
+                            kind::array_text => kind::text,
+                            _ => return Err(error::syntax),
+                        };
+                        state.push(element)?;
+                    }
                     operation::load(index) => {
                         state.push(state.locals[index].ok_or(error::syntax)?)?
                     }
@@ -868,8 +953,13 @@ impl<'a> validation_workspace<'a> {
                         state.integer()?;
                         state.push(kind::integer)?;
                     }
-                    operation::pop | operation::console { .. } => {
+                    operation::pop => {
                         state.pop()?;
+                    }
+                    operation::console { .. } => {
+                        if !matches!(state.pop()?, kind::integer | kind::text) {
+                            return Err(error::syntax);
+                        }
                     }
                     operation::nop | operation::label => {}
                     operation::call(target) => {
@@ -1141,10 +1231,12 @@ fn width(value: &str) -> Result<&'static str, error> {
         _ => Err(error::unsupported),
     }
 }
-fn value_kind(value: &str) -> Result<kind, error> {
+fn value_kind(value: &str, profile: parse_profile) -> Result<kind, error> {
     match value {
         "i32" | "i64" => Ok(kind::integer),
         "text" => Ok(kind::text),
+        "array<i64>" if profile == parse_profile::array => Ok(kind::array_integer),
+        "array<text>" if profile == parse_profile::array => Ok(kind::array_text),
         _ => Err(error::unsupported),
     }
 }
@@ -1189,7 +1281,7 @@ fn decimal(value: &str) -> Result<i64, error> {
 }
 
 fn integer_literal(value: &str, profile: parse_profile) -> Result<i64, error> {
-    if profile != parse_profile::text {
+    if !profile.text_forms() {
         return decimal(value);
     }
     let unsigned = value
@@ -1261,14 +1353,14 @@ fn instruction_fields(line: &str) -> Result<([&str; 6], usize), error> {
     }
     Ok((fields, count))
 }
-fn parse_function(header: &str) -> Result<function<'_>, error> {
+fn parse_function(header: &str, profile: parse_profile) -> Result<function<'_>, error> {
     let (left, result) = header.split_once(" -> ").ok_or(error::unsupported)?;
     let result = result.strip_suffix(':').ok_or(error::syntax)?;
     let mut function = function::empty();
     function.return_kind = if result == "void" {
         None
     } else {
-        Some(value_kind(result)?)
+        Some(value_kind(result, profile)?)
     };
     let (name, arguments) = if let Some((name, rest)) = left.split_once('(') {
         (name, Some(rest.strip_suffix(')').ok_or(error::syntax)?))
@@ -1294,7 +1386,7 @@ fn parse_function(header: &str) -> Result<function<'_>, error> {
                 return Err(error::unsupported);
             }
             function.parameter_names[function.parameter_count] = name;
-            function.parameters[function.parameter_count] = value_kind(trim(kind))?;
+            function.parameters[function.parameter_count] = value_kind(trim(kind), profile)?;
             function.parameter_count += 1;
         }
     }
@@ -1346,3 +1438,6 @@ mod scalar_tests;
 
 #[cfg(test)]
 mod text_tests;
+
+#[cfg(test)]
+mod array_tests;

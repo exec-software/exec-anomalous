@@ -41,6 +41,7 @@ pub enum error {
     stack_limit,
     generated_fallthrough,
     text_limit,
+    array_limit,
 }
 
 impl error {
@@ -60,6 +61,7 @@ impl error {
             Self::stack_limit => "stack_limit",
             Self::generated_fallthrough => "generated_fallthrough",
             Self::text_limit => "text_limit",
+            Self::array_limit => "array_limit",
         }
     }
 }
