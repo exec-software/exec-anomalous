@@ -4,8 +4,9 @@
 use crate::{console_sink, execution, flow};
 use anomalous_program_flow::conformance::checked_edition;
 
-/// Execute a raw scalar, text, array or callable validation witness with the same bounded dispatch and
-/// explicit console service as production-admitted host experiments. Absence of
+/// Execute a raw scalar, text, array, callable or record validation witness
+/// with the same bounded dispatch and explicit console service as production-
+/// admitted host experiments. Absence of
 /// authored intent is allowed only by this separate validation/execution route.
 /// This API grants no native task authority and is unavailable for freestanding
 /// targets. A raw witness cannot be passed to the production entry:

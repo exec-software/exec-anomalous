@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! Host-only profile-2 and explicitly selected profile-3 through profile-6 admission.
+//! Host-only profile-2 and explicitly selected profile-3 through profile-7 admission.
 //! All syntax and references are checked before
 //! reachable CFG validation; even dead instructions contribute authority.
 //! The immutable plan is accessible only through a complete validation witness.
@@ -27,6 +27,9 @@ pub const maximum_parameters: usize = 8;
 pub const maximum_basic_blocks: usize = 256;
 pub const maximum_validation_transfers: usize = 1 << 20;
 pub const maximum_name_bytes: usize = 128;
+pub const maximum_record_layouts: usize = 64;
+pub const maximum_record_fields: usize = 32;
+pub const maximum_declared_record_fields: usize = 256;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum parse_profile {
@@ -35,6 +38,7 @@ enum parse_profile {
     text,
     array,
     callable,
+    record,
 }
 
 #[derive(Clone, Copy)]
@@ -62,22 +66,30 @@ impl parse_profile {
             Self::text => text::derivation_profile,
             Self::array => array::derivation_profile,
             Self::callable => callable::derivation_profile,
+            Self::record => record::derivation_profile,
         }
     }
 
     const fn scalar_forms(self) -> bool {
         matches!(
             self,
-            Self::scalar | Self::text | Self::array | Self::callable
+            Self::scalar | Self::text | Self::array | Self::callable | Self::record
         )
     }
 
     const fn text_forms(self) -> bool {
-        matches!(self, Self::text | Self::array | Self::callable)
+        matches!(
+            self,
+            Self::text | Self::array | Self::callable | Self::record
+        )
     }
 
     const fn array_forms(self) -> bool {
-        matches!(self, Self::array | Self::callable)
+        matches!(self, Self::array | Self::callable | Self::record)
+    }
+
+    const fn callable_forms(self) -> bool {
+        matches!(self, Self::callable | Self::record)
     }
 }
 
@@ -181,6 +193,30 @@ pub mod callable {
     }
 }
 
+/// Explicit opt-in for nominal mutable records with declared i64 fields.
+pub mod record {
+    use super::{admitted_program, error, parse_profile, validation_workspace};
+
+    pub const derivation_profile: u32 = 7;
+
+    /// Validates completely before publishing any output bytes.
+    pub fn encode<'a>(
+        edition: &'a [u8],
+        output: &mut [u8],
+        workspace: &mut validation_workspace<'a>,
+    ) -> Result<usize, error> {
+        super::encode_profile(edition, output, workspace, parse_profile::record)
+    }
+
+    pub fn admit<'a, 'w>(
+        image: &'a [u8],
+        ceiling: u64,
+        workspace: &'w mut validation_workspace<'a>,
+    ) -> Result<admitted_program<'a, 'w>, error> {
+        super::admit_profile(image, ceiling, workspace, parse_profile::record)
+    }
+}
+
 /// Raw host language checks, deliberately separate from manifest admission.
 #[cfg(feature = "host_conformance")]
 pub mod conformance;
@@ -193,6 +229,7 @@ pub enum kind {
     array_text,
     /// Canonical representative function index for an exact declared signature.
     function(u8),
+    record(u8),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -207,6 +244,10 @@ pub enum operation {
     },
     array_len,
     array_get,
+    record_new(u8),
+    /// Global field-name identity; membership is proved against the receiver.
+    record_get(u8),
+    record_set(u8),
     load(usize),
     store(usize),
     binary {
@@ -252,6 +293,32 @@ pub struct constant<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct record_layout<'a> {
+    pub name: &'a str,
+    context: Option<&'a str>,
+    fields: [u8; maximum_record_fields],
+    field_count: usize,
+}
+
+impl<'a> record_layout<'a> {
+    const fn empty() -> Self {
+        Self {
+            name: "",
+            context: None,
+            fields: [0; maximum_record_fields],
+            field_count: 0,
+        }
+    }
+    pub const fn context(&self) -> Option<&'a str> {
+        self.context
+    }
+    /// Global field-name IDs in this layout's declaration order.
+    pub fn field_ids(&self) -> &[u8] {
+        &self.fields[..self.field_count]
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct function<'a> {
     pub name: &'a str,
     pub start: usize,
@@ -262,7 +329,7 @@ pub struct function<'a> {
     parameters: [kind; maximum_parameters],
     parameter_names: [&'a str; maximum_parameters],
     parameter_count: usize,
-    signature_key: u32,
+    signature_types: [u8; maximum_parameters + 1],
     signature: u8,
     local_names: [&'a str; maximum_locals],
     local_stored: [bool; maximum_locals],
@@ -279,7 +346,7 @@ impl function<'_> {
             parameters: [kind::integer; maximum_parameters],
             parameter_names: [""; maximum_parameters],
             parameter_count: 0,
-            signature_key: 0,
+            signature_types: [0; maximum_parameters + 1],
             signature: 0,
             local_names: [""; maximum_locals],
             local_stored: [false; maximum_locals],
@@ -302,6 +369,11 @@ pub struct program<'a> {
     instruction_count: usize,
     constants: [constant<'a>; maximum_constants],
     constant_count: usize,
+    records: [record_layout<'a>; maximum_record_layouts],
+    record_count: usize,
+    field_names: [&'a str; maximum_declared_record_fields],
+    field_name_count: usize,
+    declared_field_count: usize,
     main: usize,
     intent: &'a str,
     authority: u64,
@@ -323,6 +395,11 @@ impl<'a> program<'a> {
                 line: 0,
             }; maximum_constants],
             constant_count: 0,
+            records: [record_layout::empty(); maximum_record_layouts],
+            record_count: 0,
+            field_names: [""; maximum_declared_record_fields],
+            field_name_count: 0,
+            declared_field_count: 0,
             main: usize::MAX,
             intent: "",
             authority: 0,
@@ -339,6 +416,12 @@ impl<'a> program<'a> {
     }
     pub const fn main(&self) -> usize {
         self.main
+    }
+    pub fn record_layouts(&self) -> &[record_layout<'a>] {
+        &self.records[..self.record_count]
+    }
+    pub fn record_field_names(&self) -> &[&'a str] {
+        &self.field_names[..self.field_name_count]
     }
 }
 
@@ -449,6 +532,9 @@ impl<'a> validation_workspace<'a> {
         self.plan.function_count = 0;
         self.plan.instruction_count = 0;
         self.plan.constant_count = 0;
+        self.plan.record_count = 0;
+        self.plan.field_name_count = 0;
+        self.plan.declared_field_count = 0;
         self.plan.main = usize::MAX;
         self.plan.intent = "";
         self.plan.authority = 0;
@@ -482,12 +568,59 @@ impl<'a> validation_workspace<'a> {
         if lines.next().map(|(_, line)| line) != Some("# NIL Textual Module") {
             return Err(error::syntax);
         }
-        let (mut module, mut constants, mut declaration, mut intent_pending) =
+        let (mut module, mut constants, mut declaration, mut records) =
             (false, false, false, false);
+        let mut pending_context: Option<&'a str> = None;
         let mut active: Option<usize> = None;
+        let mut active_record: Option<usize> = None;
         for (line_number, raw) in lines {
             let line = trim(raw);
             if line.is_empty() {
+                continue;
+            }
+            if let Some(owner) = active_record {
+                if line == "end struct" {
+                    active_record = None;
+                } else {
+                    let (name, field_type) = line.split_once(':').ok_or(error::syntax)?;
+                    let name = trim(name);
+                    identifier(name)?;
+                    if trim(field_type) != "i64" {
+                        return Err(error::unsupported);
+                    }
+                    let layout = &self.plan.records[owner];
+                    if layout
+                        .field_ids()
+                        .iter()
+                        .any(|id| self.plan.field_names[usize::from(*id)] == name)
+                    {
+                        return Err(error::syntax);
+                    }
+                    if layout.field_count == maximum_record_fields
+                        || self.plan.declared_field_count == maximum_declared_record_fields
+                    {
+                        return Err(error::limit);
+                    }
+                    let field = match self
+                        .plan
+                        .record_field_names()
+                        .iter()
+                        .position(|field| *field == name)
+                    {
+                        Some(index) => index,
+                        None => {
+                            let index = self.plan.field_name_count;
+                            self.plan.field_names[index] = name;
+                            self.plan.field_name_count += 1;
+                            index
+                        }
+                    };
+                    let layout = &mut self.plan.records[owner];
+                    layout.fields[layout.field_count] =
+                        u8::try_from(field).map_err(|_| error::limit)?;
+                    layout.field_count += 1;
+                    self.plan.declared_field_count += 1;
+                }
                 continue;
             }
             if let Some(owner) = active {
@@ -514,6 +647,38 @@ impl<'a> validation_workspace<'a> {
                 module = true;
                 continue;
             }
+            if let Some(name) = line
+                .strip_prefix("struct ")
+                .filter(|_| profile == parse_profile::record)
+            {
+                if !records || declaration || self.plan.function_count != 0 {
+                    return Err(error::syntax);
+                }
+                record_identifier(name)?;
+                if reserved_record_name(name) {
+                    return Err(error::unsupported);
+                }
+                if self
+                    .plan
+                    .record_layouts()
+                    .iter()
+                    .any(|layout| layout.name == name)
+                {
+                    return Err(error::syntax);
+                }
+                if self.plan.record_count == maximum_record_layouts {
+                    return Err(error::limit);
+                }
+                let index = self.plan.record_count;
+                self.plan.records[index] = record_layout {
+                    name,
+                    context: pending_context.take(),
+                    ..record_layout::empty()
+                };
+                self.plan.record_count += 1;
+                active_record = Some(index);
+                continue;
+            }
             if let Some(header) = line.strip_prefix("function ") {
                 if !declaration {
                     return Err(error::syntax);
@@ -522,7 +687,7 @@ impl<'a> validation_workspace<'a> {
                 if index == maximum_functions {
                     return Err(error::limit);
                 }
-                let mut function = parse_function(header, profile)?;
+                let mut function = parse_function(header, profile, self.plan.record_layouts())?;
                 if self
                     .plan
                     .functions()
@@ -532,7 +697,7 @@ impl<'a> validation_workspace<'a> {
                     return Err(error::syntax);
                 }
                 if function.name == "main" {
-                    if (purpose.requires_intent() && !intent_pending)
+                    if (purpose.requires_intent() && pending_context.is_none())
                         || self.plan.main != usize::MAX
                         || function.parameter_count != 0
                         || function.return_kind != Some(kind::integer)
@@ -540,7 +705,10 @@ impl<'a> validation_workspace<'a> {
                         return Err(error::intent);
                     }
                     self.plan.main = index;
-                } else if intent_pending {
+                    if let Some(context) = pending_context {
+                        self.plan.intent = context;
+                    }
+                } else if pending_context.is_some() {
                     return Err(error::intent);
                 }
                 function.start = self.plan.instruction_count;
@@ -548,7 +716,7 @@ impl<'a> validation_workspace<'a> {
                 self.plan.function_count += 1;
                 active = Some(index);
                 declaration = false;
-                intent_pending = false;
+                pending_context = None;
                 continue;
             }
             if declaration {
@@ -560,7 +728,9 @@ impl<'a> validation_workspace<'a> {
                 continue;
             }
             if line.starts_with('@') {
-                if intent_pending || !self.plan.intent.is_empty() {
+                if pending_context.is_some()
+                    || (!self.plan.intent.is_empty() && profile != parse_profile::record)
+                {
                     return Err(error::intent);
                 }
                 let intent = line
@@ -577,12 +747,21 @@ impl<'a> validation_workspace<'a> {
                 if intent.len() > maximum_intent_bytes {
                     return Err(error::limit);
                 }
-                self.plan.intent = intent;
-                intent_pending = true;
+                if profile != parse_profile::record {
+                    self.plan.intent = intent;
+                }
+                pending_context = Some(intent);
                 continue;
             }
-            if intent_pending {
+            if pending_context.is_some() {
                 return Err(error::intent);
+            }
+            if line == "# Struct definitions" && profile == parse_profile::record {
+                if records || self.plan.function_count != 0 {
+                    return Err(error::syntax);
+                }
+                records = true;
+                continue;
             }
             if line == "# String constants" {
                 if constants || self.plan.function_count != 0 {
@@ -614,7 +793,12 @@ impl<'a> validation_workspace<'a> {
             }
             return Err(error::unsupported);
         }
-        if !module || active.is_some() || declaration || intent_pending {
+        if !module
+            || active.is_some()
+            || active_record.is_some()
+            || declaration
+            || pending_context.is_some()
+        {
             return Err(error::syntax);
         }
         if self.plan.main == usize::MAX
@@ -634,7 +818,7 @@ impl<'a> validation_workspace<'a> {
         profile: parse_profile,
     ) -> Result<usize, error> {
         local_identifier(name, profile)?;
-        if builtin(name).is_some() && profile != parse_profile::callable {
+        if builtin(name).is_some() && !profile.callable_forms() {
             return Err(error::unsupported);
         }
         let function = &mut self.plan.functions[owner];
@@ -713,10 +897,35 @@ impl<'a> validation_workspace<'a> {
             }
             ["LEN"] if profile.array_forms() => operation::array_len,
             ["GET_INDEX"] if profile.array_forms() => operation::array_get,
-            ["PUSH_FN_PTR", name] if profile == parse_profile::callable => {
+            ["PUSH_FN_PTR", name] if profile.callable_forms() => {
                 identifier(name)?;
                 self.references[pc] = (name, 0);
                 operation::function(0)
+            }
+            ["NEW_STRUCT", name] if profile == parse_profile::record => {
+                record_identifier(name)?;
+                let index = self
+                    .plan
+                    .record_layouts()
+                    .iter()
+                    .position(|layout| layout.name == *name)
+                    .ok_or(error::unsupported)?;
+                operation::record_new(u8::try_from(index).map_err(|_| error::limit)?)
+            }
+            [opcode @ ("GET_FIELD" | "SET_FIELD"), name] if profile == parse_profile::record => {
+                identifier(name)?;
+                let index = self
+                    .plan
+                    .record_field_names()
+                    .iter()
+                    .position(|field| *field == *name)
+                    .ok_or(error::unsupported)?;
+                let field = u8::try_from(index).map_err(|_| error::limit)?;
+                if *opcode == "GET_FIELD" {
+                    operation::record_get(field)
+                } else {
+                    operation::record_set(field)
+                }
             }
             [opcode] if comparison(opcode).is_some() => {
                 operation::compare(comparison(opcode).unwrap())
@@ -762,7 +971,7 @@ impl<'a> validation_workspace<'a> {
                     }
                 }
             }
-            ["CALL", name, count] if profile == parse_profile::callable => {
+            ["CALL", name, count] if profile.callable_forms() => {
                 local_identifier(name, profile)?;
                 let count = unsigned(count)?;
                 if count > maximum_parameters {
@@ -811,10 +1020,13 @@ impl<'a> validation_workspace<'a> {
 
     fn resolve(&mut self, profile: parse_profile) -> Result<(), error> {
         for index in 0..self.plan.function_count {
-            let key = self.plan.functions[index].signature_key;
+            let key = self.plan.functions[index].signature_types;
+            let arity = self.plan.functions[index].parameter_count;
             let canonical = self.plan.functions[..index]
                 .iter()
-                .position(|function| function.signature_key == key)
+                .position(|function| {
+                    function.signature_types == key && function.parameter_count == arity
+                })
                 .unwrap_or(index);
             self.plan.functions[index].signature =
                 u8::try_from(canonical).map_err(|_| error::limit)?;
@@ -822,7 +1034,7 @@ impl<'a> validation_workspace<'a> {
         for function in self.plan.functions() {
             for name in function.local_names[..function.local_count]
                 .iter()
-                .filter(|_| profile != parse_profile::callable)
+                .filter(|_| !profile.callable_forms())
                 .chain(function.parameter_names[..function.parameter_count].iter())
             {
                 if builtin(name).is_some()
@@ -855,7 +1067,7 @@ impl<'a> validation_workspace<'a> {
                 let old = self.plan.instructions[pc].operation;
                 self.plan.instructions[pc].operation = match old {
                     operation::call(_) => {
-                        let local = if profile == parse_profile::callable {
+                        let local = if profile.callable_forms() {
                             self.plan.functions[owner].local_names
                                 [..self.plan.functions[owner].local_count]
                                 .iter()
@@ -1023,6 +1235,30 @@ impl<'a> validation_workspace<'a> {
                     operation::text(_) => state.push(kind::text)?,
                     operation::function(target) => {
                         state.push(kind::function(self.plan.functions[target].signature))?;
+                    }
+                    operation::record_new(layout) => state.push(kind::record(layout))?,
+                    operation::record_get(field) | operation::record_set(field) => {
+                        let write = matches!(
+                            self.plan.instructions[pc].operation,
+                            operation::record_set(_)
+                        );
+                        if write {
+                            state.integer()?;
+                        }
+                        let kind::record(layout) = state.pop()? else {
+                            return Err(error::syntax);
+                        };
+                        if !self.plan.records[usize::from(layout)]
+                            .field_ids()
+                            .contains(&field)
+                        {
+                            return Err(error::syntax);
+                        }
+                        state.push(if write {
+                            kind::record(layout)
+                        } else {
+                            kind::integer
+                        })?;
                     }
                     operation::concat => {
                         if state.pop()? != kind::text || state.pop()? != kind::text {
@@ -1360,12 +1596,21 @@ fn width(value: &str) -> Result<&'static str, error> {
         _ => Err(error::unsupported),
     }
 }
-fn value_kind(value: &str, profile: parse_profile) -> Result<kind, error> {
+fn value_kind(
+    value: &str,
+    profile: parse_profile,
+    records: &[record_layout<'_>],
+) -> Result<kind, error> {
     match value {
         "i32" | "i64" => Ok(kind::integer),
         "text" => Ok(kind::text),
         "array<i64>" if profile.array_forms() => Ok(kind::array_integer),
         "array<text>" if profile.array_forms() => Ok(kind::array_text),
+        _ if profile == parse_profile::record => records
+            .iter()
+            .position(|record| record.name == value)
+            .map(|index| kind::record(index as u8))
+            .ok_or(error::unsupported),
         _ => Err(error::unsupported),
     }
 }
@@ -1482,19 +1727,22 @@ fn instruction_fields(line: &str) -> Result<([&str; 6], usize), error> {
     }
     Ok((fields, count))
 }
-fn parse_function(header: &str, profile: parse_profile) -> Result<function<'_>, error> {
+fn parse_function<'a>(
+    header: &'a str,
+    profile: parse_profile,
+    records: &[record_layout<'a>],
+) -> Result<function<'a>, error> {
     let (left, result) = header.split_once(" -> ").ok_or(error::unsupported)?;
     let result = result.strip_suffix(':').ok_or(error::syntax)?;
     let mut function = function::empty();
     function.return_kind = if result == "void" {
         None
     } else {
-        Some(value_kind(result, profile)?)
+        Some(value_kind(result, profile, records)?)
     };
-    // Eight three-bit parameter codes, then a three-bit result and four-bit
-    // arity fit in 31 bits. Keep i32 and i64 distinct despite operand-kind
-    // normalization; no callable or nested signature types are admitted.
-    function.signature_key = signature_type_code(result)? << 24;
+    // Fixed exact type codes preserve i32/i64 and each nominal record identity.
+    // Arity is compared separately so unused parameter bytes cannot alias types.
+    function.signature_types[maximum_parameters] = signature_type_code(result, records)?;
     let (name, arguments) = if let Some((name, rest)) = left.split_once('(') {
         (name, Some(rest.strip_suffix(')').ok_or(error::syntax)?))
     } else {
@@ -1519,16 +1767,16 @@ fn parse_function(header: &str, profile: parse_profile) -> Result<function<'_>, 
                 return Err(error::unsupported);
             }
             function.parameter_names[function.parameter_count] = name;
-            function.parameters[function.parameter_count] = value_kind(trim(kind), profile)?;
-            function.signature_key |=
-                signature_type_code(trim(kind))? << (3 * function.parameter_count);
+            function.parameters[function.parameter_count] =
+                value_kind(trim(kind), profile, records)?;
+            function.signature_types[function.parameter_count] =
+                signature_type_code(trim(kind), records)?;
             function.parameter_count += 1;
         }
     }
-    function.signature_key |= (function.parameter_count as u32) << 27;
     Ok(function)
 }
-fn signature_type_code(value: &str) -> Result<u32, error> {
+fn signature_type_code(value: &str, records: &[record_layout<'_>]) -> Result<u8, error> {
     match value {
         "i32" => Ok(0),
         "i64" => Ok(1),
@@ -1536,8 +1784,32 @@ fn signature_type_code(value: &str) -> Result<u32, error> {
         "array<i64>" => Ok(3),
         "array<text>" => Ok(4),
         "void" => Ok(5),
-        _ => Err(error::unsupported),
+        _ => records
+            .iter()
+            .position(|record| record.name == value)
+            .map(|index| 6 + index as u8)
+            .ok_or(error::unsupported),
     }
+}
+fn record_identifier(value: &str) -> Result<(), error> {
+    if value.len() > maximum_name_bytes {
+        return Err(error::limit);
+    }
+    for segment in value.split("::") {
+        identifier(segment)?;
+    }
+    Ok(())
+}
+fn reserved_record_name(value: &str) -> bool {
+    // Mirror the pinned loader's reserved nominal-name vocabulary. In
+    // particular, bool has runtime primitive validation before schema lookup.
+    [
+        "void", "any", "anything", "bool", "boolean", "flag", "char", "text", "string", "str",
+        "int", "float", "double", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f32",
+        "f64", "isize", "usize", "pointer", "array", "slice",
+    ]
+    .iter()
+    .any(|reserved| value.eq_ignore_ascii_case(reserved))
 }
 fn string_constant(value: &str) -> Result<&str, error> {
     let escaped = value
@@ -1591,3 +1863,6 @@ mod array_tests;
 
 #[cfg(test)]
 mod callable_tests;
+
+#[cfg(test)]
+mod record_tests;

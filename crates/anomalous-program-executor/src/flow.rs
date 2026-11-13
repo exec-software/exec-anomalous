@@ -9,6 +9,8 @@ use anomalous_program_flow::{admitted_program, kind, operation, program};
 
 mod array;
 use array::{array_arena, array_handle};
+mod record;
+use record::{record_arena, record_handle};
 mod text;
 use text::{text_arena, text_span};
 
@@ -22,6 +24,9 @@ pub const maximum_text_bytes: usize = 65536;
 /// Immutable arrays retain descriptors and elements until the execution ends.
 pub const maximum_arrays: usize = 128;
 pub const maximum_array_elements: usize = 1024;
+/// Mutable records retain descriptors and zero-initialized i64 fields for a run.
+pub const maximum_records: usize = 128;
+pub const maximum_record_fields: usize = 1024;
 
 /// A function-table identity and its validated canonical signature. Never an
 /// address or a name derived from text; values remain private to one run.
@@ -38,6 +43,7 @@ enum value<'a> {
     computed_text(text_span),
     array(array_handle),
     function(function_handle),
+    record(record_handle),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -90,6 +96,7 @@ pub struct execution_workspace<'a> {
     line: usize,
     text: text_arena,
     arrays: array_arena<'a>,
+    records: record_arena,
 }
 
 impl Default for execution_workspace<'_> {
@@ -114,6 +121,7 @@ impl<'a> execution_workspace<'a> {
             line: 0,
             text: text_arena::new(),
             arrays: array_arena::new(),
+            records: record_arena::new(),
         }
     }
 
@@ -127,6 +135,7 @@ impl<'a> execution_workspace<'a> {
         self.line = 0;
         self.text.clear();
         self.arrays.clear();
+        self.records.clear();
     }
 
     fn current(&self) -> Result<&frame<'a>, error> {
@@ -168,9 +177,11 @@ impl<'a> execution_workspace<'a> {
     fn integer(&mut self) -> Result<i64, error> {
         match self.pop()? {
             value::integer(number) => Ok(number),
-            value::text(_) | value::computed_text(_) | value::array(_) | value::function(_) => {
-                Err(error::invalid_state)
-            }
+            value::text(_)
+            | value::computed_text(_)
+            | value::array(_)
+            | value::function(_)
+            | value::record(_) => Err(error::invalid_state),
         }
     }
 
@@ -273,6 +284,29 @@ impl<'a> execution_workspace<'a> {
                     let left = self.pop()?;
                     let span = self.text.concatenate(left, right)?;
                     self.push(value::computed_text(span))?;
+                }
+                operation::record_new(layout) => {
+                    if self.depth == maximum_values {
+                        return Err(error::stack_limit);
+                    }
+                    let handle = self.records.allocate(program, layout)?;
+                    self.push(value::record(handle))?;
+                }
+                operation::record_get(field) => {
+                    let value::record(handle) = self.pop()? else {
+                        return Err(error::invalid_state);
+                    };
+                    self.push(value::integer(self.records.get(program, handle, field)?))?;
+                }
+                operation::record_set(field) => {
+                    let number = self.integer()?;
+                    if self.depth <= self.current()?.floor {
+                        return Err(error::invalid_state);
+                    }
+                    let value::record(handle) = self.values[self.depth - 1] else {
+                        return Err(error::invalid_state);
+                    };
+                    self.records.set(program, handle, field, number)?;
                 }
                 operation::array_literal { count, element } => {
                     let start = self.depth.checked_sub(count).ok_or(error::invalid_state)?;
@@ -393,7 +427,9 @@ impl<'a> execution_workspace<'a> {
                 operation::console { newline } => {
                     let item = self.pop()?;
                     match item {
-                        value::array(_) | value::function(_) => return Err(error::invalid_state),
+                        value::array(_) | value::function(_) | value::record(_) => {
+                            return Err(error::invalid_state);
+                        }
                         value::computed_text(span) => publish_decoded_console(
                             self.text.bytes(span)?,
                             newline,
@@ -462,6 +498,7 @@ fn value_kind(value: value<'_>) -> kind {
         value::text(_) | value::computed_text(_) => kind::text,
         value::array(handle) => handle.kind(),
         value::function(handle) => kind::function(handle.signature),
+        value::record(handle) => kind::record(handle.layout()),
     }
 }
 
@@ -524,3 +561,6 @@ mod array_tests;
 
 #[cfg(test)]
 mod callable_tests;
+
+#[cfg(test)]
+mod record_tests;

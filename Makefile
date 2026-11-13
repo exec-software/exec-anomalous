@@ -343,6 +343,7 @@ check:
 	python3 scripts/program_text_proof.py --self-test
 	python3 scripts/program_array_proof.py --self-test
 	python3 scripts/program_callable_proof.py --self-test
+	python3 scripts/program_record_proof.py --self-test
 	cargo test --package anomalous-document-protocol
 	cargo test --package anomalous-document-protocol --features remote_workspace
 	cargo test --package anomalous-elf-adapter

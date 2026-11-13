@@ -1,5 +1,33 @@
 # Native execution and compatibility readiness
 
+## Bounded nominal records (2026-11-13)
+
+[ADR 0111](../adr/0111-add-bounded-nominal-integer-records.md) adds explicit
+profile 7 for declared records with `i64` fields, `NEW_STRUCT`, `GET_FIELD` and
+`SET_FIELD`. Copies, arguments and returns preserve shared mutable identity;
+fields default to zero. Helpers and indirect callable signatures retain exact
+nominal types even when layouts have the same fields. Record-scoped annotations
+cannot satisfy main-function production intent.
+
+Validation bounds layouts to 64, fields to 32 per layout and 256 total.
+Execution retains 128 descriptors and 1,024 cumulative field cells per run.
+Construction checks stack and storage capacity before allocation; exhaustion is
+explicit, and every execution boundary clears all record storage. Whole-file
+name checks include dead code, and reachable accesses additionally prove that
+the receiver declares the field. Nested records, text fields, arrays of records,
+classes and pointer-derived identity remain unsupported.
+
+The new 115-case proof passes alongside all seven earlier suites. Twelve of 45
+unchanged raw invocations match, including seven of 38 roots. The three newly
+supported complete editions cover the debug-reading and geometry-point fixtures
+and `record-context.matrix`. The remaining 33 are unmet coverage; all 45
+production attempts independently refuse. The
+[Nominal Records Log](../../notebook/Development/2026-11-13%20Nominal%20Records%20Log.md)
+records evidence and limits. Full corpus qualification and native execution
+remain closed gates. All 41 final jobs pass on 705 unchanged source files, with
+independent proof and artifact audits. Native admission bytes and Linux-loader
+behavior remain unchanged.
+
 ## Bounded internal callable values (2026-11-13)
 
 [ADR 0110](../adr/0110-add-bounded-internal-callable-values.md) adds explicit

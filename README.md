@@ -41,9 +41,11 @@ desktop, or a security boundary for sensitive workloads.
   [Profile 5](docs/adr/0109-add-bounded-immutable-typed-arrays.md) adds immutable
   typed arrays, lengths and indexed reads.
   [Profile 6](docs/adr/0110-add-bounded-internal-callable-values.md) adds typed
-  internal function references and local indirect calls. Nine of 45 unchanged
-  raw corpus invocations match; full corpus qualification and native
-  execution remain gated.
+  internal function references and local indirect calls.
+  [Profile 7](docs/adr/0111-add-bounded-nominal-integer-records.md) adds nominal
+  records with shared mutable integer fields and typed helper arguments/results.
+  Twelve of 45 unchanged raw corpus invocations match; full corpus qualification
+  and native execution remain gated.
 - Host-side libraries explore typed session routing, shared semantic scenes,
   presentation acknowledgement, and recovery.
 - **Eidolon** supplies an independent Python reference codec for lossless

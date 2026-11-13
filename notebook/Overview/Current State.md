@@ -8,7 +8,26 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current host checkpoint — internal callable values
+## Current host checkpoint — nominal records
+
+[ADR 0111](../../docs/adr/0111-add-bounded-nominal-integer-records.md)
+adds explicitly selected profile 7 for declared records with shared mutable
+`i64` fields. Construction initializes fields to zero; copies, arguments and
+returns retain aliases. Reachable reads and writes require the exact declared
+receiver type and field. Nominal helper signatures and callable identities
+remain distinct for differently named records. Record annotations remain
+separate from authored main intent.
+
+The new 115-case proof passes. Twelve of 45 unchanged raw corpus invocations
+match, including seven of 38 roots; three complete record editions are newly
+supported. The other 33 remain unmet coverage, and production refuses all 45.
+The [Nominal Records Log](../Development/2026-11-13%20Nominal%20Records%20Log.md)
+records qualification and remaining gates. This adds no native NIL execution
+or Linux compatibility behavior. All 41 final jobs pass on 705 unchanged source
+files. Independent audits confirm all eight proof suites, 72 oracle guards,
+native artifact continuity and original-checkout preservation.
+
+## Previous host checkpoint — internal callable values
 
 [ADR 0110](../../docs/adr/0110-add-bounded-internal-callable-values.md)
 adds explicitly selected profile 6 for typed internal function references and

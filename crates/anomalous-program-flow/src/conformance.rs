@@ -122,6 +122,16 @@ pub fn validate_callable<'a, 'w>(
     validate_profile(edition, ceiling, workspace, parse_profile::callable)
 }
 
+/// Validate profile-7 raw nominal-record semantics without production admission.
+/// Record-scoped context never supplies missing authored main intent.
+pub fn validate_record<'a, 'w>(
+    edition: &'a [u8],
+    ceiling: u64,
+    workspace: &'w mut validation_workspace<'a>,
+) -> Result<checked_edition<'a, 'w>, error> {
+    validate_profile(edition, ceiling, workspace, parse_profile::record)
+}
+
 fn validate_profile<'a, 'w>(
     edition: &'a [u8],
     ceiling: u64,
