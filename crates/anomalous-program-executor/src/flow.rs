@@ -5,7 +5,7 @@ use super::{
     binary, console_sink, error, execution, maximum_output_bytes, narrow, publish_console,
     publish_decoded_console, statistics,
 };
-use anomalous_program_flow::{admitted_program, kind, operation, program};
+use anomalous_program_flow::{admitted_program, kind, maximum_global_slots, operation, program};
 
 mod array;
 use array::{array_arena, array_handle};
@@ -18,7 +18,7 @@ pub const maximum_steps: usize = 65536;
 pub const maximum_frames: usize = 16;
 pub const maximum_values: usize = 256;
 pub const maximum_locals: usize = 128;
-/// Cumulative decoded concatenation bytes per execution, with no reclamation
+/// Cumulative decoded computed-text bytes per execution, with no reclamation
 /// until the run ends. Literals remain borrowed and do not consume this arena.
 pub const maximum_text_bytes: usize = 65536;
 /// Immutable arrays retain descriptors and elements until the execution ends.
@@ -97,6 +97,7 @@ pub struct execution_workspace<'a> {
     text: text_arena,
     arrays: array_arena<'a>,
     records: record_arena,
+    globals: [Option<i64>; maximum_global_slots],
 }
 
 impl Default for execution_workspace<'_> {
@@ -122,6 +123,7 @@ impl<'a> execution_workspace<'a> {
             text: text_arena::new(),
             arrays: array_arena::new(),
             records: record_arena::new(),
+            globals: [None; maximum_global_slots],
         }
     }
 
@@ -136,6 +138,7 @@ impl<'a> execution_workspace<'a> {
         self.text.clear();
         self.arrays.clear();
         self.records.clear();
+        self.globals.fill(None);
     }
 
     fn current(&self) -> Result<&frame<'a>, error> {
@@ -284,6 +287,28 @@ impl<'a> execution_workspace<'a> {
                     let left = self.pop()?;
                     let span = self.text.concatenate(left, right)?;
                     self.push(value::computed_text(span))?;
+                }
+                operation::integer_text => {
+                    let number = self.integer()?;
+                    let span = self.text.integer(number)?;
+                    self.push(value::computed_text(span))?;
+                }
+                operation::global_load(index) => {
+                    let number = self
+                        .globals
+                        .get(..program.global_names().len())
+                        .and_then(|slots| slots.get(index))
+                        .ok_or(error::invalid_state)?
+                        .ok_or(error::global_uninitialized)?;
+                    self.push(value::integer(number))?;
+                }
+                operation::global_store(index) => {
+                    let number = self.integer()?;
+                    *self
+                        .globals
+                        .get_mut(..program.global_names().len())
+                        .and_then(|slots| slots.get_mut(index))
+                        .ok_or(error::invalid_state)? = Some(number);
                 }
                 operation::record_new(layout) => {
                     if self.depth == maximum_values {
@@ -564,3 +589,6 @@ mod callable_tests;
 
 #[cfg(test)]
 mod record_tests;
+
+#[cfg(test)]
+mod global_tests;

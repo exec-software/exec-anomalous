@@ -1,4 +1,4 @@
-//! Immutable decoded concatenation storage. Handles refer only to committed
+//! Immutable decoded computed-text storage. Handles refer only to committed
 //! bytes of this execution; locals/frames copy handles without copying owners.
 
 use super::{error, maximum_text_bytes, value};
@@ -37,6 +37,37 @@ impl text_arena {
             .get(..self.used)
             .and_then(|bytes| bytes.get(span.start..end))
             .ok_or(error::invalid_state)
+    }
+
+    pub(super) fn integer(&mut self, number: i64) -> Result<text_span, error> {
+        // Signed decimal needs at most 20 ASCII bytes. unsigned_abs preserves
+        // i64::MIN without overflowing or using floating-point conversion.
+        let negative = number < 0;
+        let mut magnitude = number.unsigned_abs();
+        let mut decimal = [0u8; 20];
+        let mut cursor = decimal.len();
+        loop {
+            cursor -= 1;
+            decimal[cursor] = b'0' + (magnitude % 10) as u8;
+            magnitude /= 10;
+            if magnitude == 0 {
+                break;
+            }
+        }
+        if negative {
+            cursor -= 1;
+            decimal[cursor] = b'-';
+        }
+        let length = decimal.len() - cursor;
+        let start = self.used;
+        let end = start.checked_add(length).ok_or(error::text_limit)?;
+        if end > self.storage.len() {
+            return Err(error::text_limit);
+        }
+        // Only complete, capacity-checked decoded bytes become visible.
+        self.storage[start..end].copy_from_slice(&decimal[cursor..]);
+        self.used = end;
+        Ok(text_span { start, length })
     }
 
     fn length(&self, item: value<'_>) -> Result<usize, error> {

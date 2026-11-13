@@ -8,7 +8,25 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current host checkpoint — nominal records
+## Current host checkpoint — module globals and integer text
+
+[ADR 0112](../../docs/adr/0112-add-bounded-module-globals-and-integer-text.md)
+adds explicitly selected profile 8 for shared per-execution integer globals and
+integer-to-text conversion. All global slots start uninitialized; missing loads
+fail, explicit stores update shared state, and initializer helpers run only when
+called. Globals do not affect local or callable name resolution. Decimal text
+uses the existing bounded arena and retains aliases across helper returns.
+
+The new 105-case proof passes. Thirteen of 45 unchanged raw invocations match,
+including eight of 38 roots; `two-books.matrix` is newly supported in full.
+The remaining 32 are unmet coverage, and production refuses all 45. The
+[Module Globals Log](../Development/2026-11-13%20Module%20Globals%20Log.md)
+records qualification and remaining gates. This adds no native NIL execution
+or Linux compatibility behavior. All 44 final jobs pass on 711 unchanged source
+files. Independent audits confirm all nine proof suites, 115 oracle guards,
+native artifact continuity and original-checkout preservation.
+
+## Previous host checkpoint — nominal records
 
 [ADR 0111](../../docs/adr/0111-add-bounded-nominal-integer-records.md)
 adds explicitly selected profile 7 for declared records with shared mutable

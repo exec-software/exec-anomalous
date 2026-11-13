@@ -1,5 +1,32 @@
 # Native execution and compatibility readiness
 
+## Bounded module globals and integer text (2026-11-13)
+
+[ADR 0112](../adr/0112-add-bounded-module-globals-and-integer-text.md) adds
+explicit profile 8 for typed `LOAD_GLOBAL`/`STORE_GLOBAL` and integer-only
+`CAST text`. Up to 128 global slots share state across frames within one run.
+Each begins uninitialized; missing loads fail explicitly, and initializer
+functions run only when called. Global names retain a separate namespace from
+locals, functions, records and builtins. Every execution boundary clears the
+global table and all existing storage.
+
+Integer formatting preserves the complete signed value, including `i64::MIN`,
+in at most 20 decimal ASCII bytes. Results share the existing 65,536-byte
+computed-text arena with concatenation and remain valid through aliases, arrays
+and helper returns. Allocation checks capacity before publishing bytes. Other
+scalar coercions, implicit global fallback and persistent module state remain
+outside the profile.
+
+The new 105-case proof passes. Thirteen of 45 unchanged raw corpus invocations
+match, including eight of 38 roots; the complete `two-books.matrix` edition is
+newly supported. The other 32 remain unmet coverage; all 45 production attempts
+independently refuse. The
+[Module Globals Log](../../notebook/Development/2026-11-13%20Module%20Globals%20Log.md)
+records evidence and limits. Full corpus qualification and native execution
+remain closed gates. All 44 final jobs pass on 711 unchanged source files, with
+independent proof and artifact audits. Native admission bytes and Linux-loader
+behavior remain unchanged.
+
 ## Bounded nominal records (2026-11-13)
 
 [ADR 0111](../adr/0111-add-bounded-nominal-integer-records.md) adds explicit

@@ -31,6 +31,10 @@ required-features = ["host_conformance"]
 name = "program_record_conformance_probe"
 required-features = ["host_conformance"]
 
+[[example]]
+name = "program_global_conformance_probe"
+required-features = ["host_conformance"]
+
 [dependencies]
 anomalous-program-manifest = { workspace = true, features = ["execution_view"] }
 anomalous-native-runtime.workspace = true

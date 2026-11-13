@@ -132,6 +132,16 @@ pub fn validate_record<'a, 'w>(
     validate_profile(edition, ceiling, workspace, parse_profile::record)
 }
 
+/// Validate profile-8 raw module-global and integer-text semantics.
+/// Initialization remains an explicit runtime property, not an inferred store.
+pub fn validate_globals<'a, 'w>(
+    edition: &'a [u8],
+    ceiling: u64,
+    workspace: &'w mut validation_workspace<'a>,
+) -> Result<checked_edition<'a, 'w>, error> {
+    validate_profile(edition, ceiling, workspace, parse_profile::globals)
+}
+
 fn validate_profile<'a, 'w>(
     edition: &'a [u8],
     ceiling: u64,

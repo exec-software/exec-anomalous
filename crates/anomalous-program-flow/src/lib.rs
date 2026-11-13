@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! Host-only profile-2 and explicitly selected profile-3 through profile-7 admission.
+//! Host-only profile-2 and explicitly selected profile-3 through profile-8 admission.
 //! All syntax and references are checked before
 //! reachable CFG validation; even dead instructions contribute authority.
 //! The immutable plan is accessible only through a complete validation witness.
@@ -30,6 +30,7 @@ pub const maximum_name_bytes: usize = 128;
 pub const maximum_record_layouts: usize = 64;
 pub const maximum_record_fields: usize = 32;
 pub const maximum_declared_record_fields: usize = 256;
+pub const maximum_global_slots: usize = 128;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum parse_profile {
@@ -39,6 +40,7 @@ enum parse_profile {
     array,
     callable,
     record,
+    globals,
 }
 
 #[derive(Clone, Copy)]
@@ -67,29 +69,37 @@ impl parse_profile {
             Self::array => array::derivation_profile,
             Self::callable => callable::derivation_profile,
             Self::record => record::derivation_profile,
+            Self::globals => globals::derivation_profile,
         }
     }
 
     const fn scalar_forms(self) -> bool {
         matches!(
             self,
-            Self::scalar | Self::text | Self::array | Self::callable | Self::record
+            Self::scalar | Self::text | Self::array | Self::callable | Self::record | Self::globals
         )
     }
 
     const fn text_forms(self) -> bool {
         matches!(
             self,
-            Self::text | Self::array | Self::callable | Self::record
+            Self::text | Self::array | Self::callable | Self::record | Self::globals
         )
     }
 
     const fn array_forms(self) -> bool {
-        matches!(self, Self::array | Self::callable | Self::record)
+        matches!(
+            self,
+            Self::array | Self::callable | Self::record | Self::globals
+        )
     }
 
     const fn callable_forms(self) -> bool {
-        matches!(self, Self::callable | Self::record)
+        matches!(self, Self::callable | Self::record | Self::globals)
+    }
+
+    const fn record_forms(self) -> bool {
+        matches!(self, Self::record | Self::globals)
     }
 }
 
@@ -217,6 +227,30 @@ pub mod record {
     }
 }
 
+/// Explicit opt-in for module i64 globals and integer-to-text conversion.
+pub mod globals {
+    use super::{admitted_program, error, parse_profile, validation_workspace};
+
+    pub const derivation_profile: u32 = 8;
+
+    /// Validates completely before publishing any output bytes.
+    pub fn encode<'a>(
+        edition: &'a [u8],
+        output: &mut [u8],
+        workspace: &mut validation_workspace<'a>,
+    ) -> Result<usize, error> {
+        super::encode_profile(edition, output, workspace, parse_profile::globals)
+    }
+
+    pub fn admit<'a, 'w>(
+        image: &'a [u8],
+        ceiling: u64,
+        workspace: &'w mut validation_workspace<'a>,
+    ) -> Result<admitted_program<'a, 'w>, error> {
+        super::admit_profile(image, ceiling, workspace, parse_profile::globals)
+    }
+}
+
 /// Raw host language checks, deliberately separate from manifest admission.
 #[cfg(feature = "host_conformance")]
 pub mod conformance;
@@ -250,6 +284,9 @@ pub enum operation {
     record_set(u8),
     load(usize),
     store(usize),
+    global_load(usize),
+    global_store(usize),
+    integer_text,
     binary {
         opcode: &'static str,
         width: &'static str,
@@ -374,6 +411,8 @@ pub struct program<'a> {
     field_names: [&'a str; maximum_declared_record_fields],
     field_name_count: usize,
     declared_field_count: usize,
+    global_names: [&'a str; maximum_global_slots],
+    global_count: usize,
     main: usize,
     intent: &'a str,
     authority: u64,
@@ -400,6 +439,8 @@ impl<'a> program<'a> {
             field_names: [""; maximum_declared_record_fields],
             field_name_count: 0,
             declared_field_count: 0,
+            global_names: [""; maximum_global_slots],
+            global_count: 0,
             main: usize::MAX,
             intent: "",
             authority: 0,
@@ -422,6 +463,11 @@ impl<'a> program<'a> {
     }
     pub fn record_field_names(&self) -> &[&'a str] {
         &self.field_names[..self.field_name_count]
+    }
+    /// Explicit module slots in first textual access order. Loads need not have
+    /// a corresponding store; runtime checks their per-execution initialization.
+    pub fn global_names(&self) -> &[&'a str] {
+        &self.global_names[..self.global_count]
     }
 }
 
@@ -535,6 +581,7 @@ impl<'a> validation_workspace<'a> {
         self.plan.record_count = 0;
         self.plan.field_name_count = 0;
         self.plan.declared_field_count = 0;
+        self.plan.global_count = 0;
         self.plan.main = usize::MAX;
         self.plan.intent = "";
         self.plan.authority = 0;
@@ -649,7 +696,7 @@ impl<'a> validation_workspace<'a> {
             }
             if let Some(name) = line
                 .strip_prefix("struct ")
-                .filter(|_| profile == parse_profile::record)
+                .filter(|_| profile.record_forms())
             {
                 if !records || declaration || self.plan.function_count != 0 {
                     return Err(error::syntax);
@@ -729,7 +776,7 @@ impl<'a> validation_workspace<'a> {
             }
             if line.starts_with('@') {
                 if pending_context.is_some()
-                    || (!self.plan.intent.is_empty() && profile != parse_profile::record)
+                    || (!self.plan.intent.is_empty() && !profile.record_forms())
                 {
                     return Err(error::intent);
                 }
@@ -747,7 +794,7 @@ impl<'a> validation_workspace<'a> {
                 if intent.len() > maximum_intent_bytes {
                     return Err(error::limit);
                 }
-                if profile != parse_profile::record {
+                if !profile.record_forms() {
                     self.plan.intent = intent;
                 }
                 pending_context = Some(intent);
@@ -756,7 +803,7 @@ impl<'a> validation_workspace<'a> {
             if pending_context.is_some() {
                 return Err(error::intent);
             }
-            if line == "# Struct definitions" && profile == parse_profile::record {
+            if line == "# Struct definitions" && profile.record_forms() {
                 if records || self.plan.function_count != 0 {
                     return Err(error::syntax);
                 }
@@ -868,6 +915,36 @@ impl<'a> validation_workspace<'a> {
             }
             ["LOAD_LOCAL", name] => operation::load(self.local(owner, name, false, profile)?),
             ["STORE_LOCAL", name] => operation::store(self.local(owner, name, true, profile)?),
+            [opcode @ ("LOAD_GLOBAL" | "STORE_GLOBAL"), name, "i64"]
+                if profile == parse_profile::globals =>
+            {
+                // Explicit module slots never share lookup rules with locals,
+                // functions, record types, constants or console builtin names.
+                record_identifier(name)?;
+                let index = match self
+                    .plan
+                    .global_names()
+                    .iter()
+                    .position(|global| *global == *name)
+                {
+                    Some(index) => index,
+                    None => {
+                        let index = self.plan.global_count;
+                        if index == maximum_global_slots {
+                            return Err(error::limit);
+                        }
+                        self.plan.global_names[index] = name;
+                        self.plan.global_count += 1;
+                        index
+                    }
+                };
+                if *opcode == "LOAD_GLOBAL" {
+                    operation::global_load(index)
+                } else {
+                    operation::global_store(index)
+                }
+            }
+            ["CAST", "text"] if profile == parse_profile::globals => operation::integer_text,
             ["CAST", value] => operation::cast(width(value)?),
             ["NEG", value] => operation::negate(width(value)?),
             [opcode, value] if binary(opcode).is_some() => operation::binary {
@@ -902,7 +979,7 @@ impl<'a> validation_workspace<'a> {
                 self.references[pc] = (name, 0);
                 operation::function(0)
             }
-            ["NEW_STRUCT", name] if profile == parse_profile::record => {
+            ["NEW_STRUCT", name] if profile.record_forms() => {
                 record_identifier(name)?;
                 let index = self
                     .plan
@@ -912,7 +989,7 @@ impl<'a> validation_workspace<'a> {
                     .ok_or(error::unsupported)?;
                 operation::record_new(u8::try_from(index).map_err(|_| error::limit)?)
             }
-            [opcode @ ("GET_FIELD" | "SET_FIELD"), name] if profile == parse_profile::record => {
+            [opcode @ ("GET_FIELD" | "SET_FIELD"), name] if profile.record_forms() => {
                 identifier(name)?;
                 let index = self
                     .plan
@@ -1232,6 +1309,14 @@ impl<'a> validation_workspace<'a> {
                 }
                 match self.plan.instructions[pc].operation {
                     operation::integer(_) => state.push(kind::integer)?,
+                    operation::global_load(_) => state.push(kind::integer)?,
+                    operation::global_store(_) => {
+                        state.integer()?;
+                    }
+                    operation::integer_text => {
+                        state.integer()?;
+                        state.push(kind::text)?;
+                    }
                     operation::text(_) => state.push(kind::text)?,
                     operation::function(target) => {
                         state.push(kind::function(self.plan.functions[target].signature))?;
@@ -1606,7 +1691,7 @@ fn value_kind(
         "text" => Ok(kind::text),
         "array<i64>" if profile.array_forms() => Ok(kind::array_integer),
         "array<text>" if profile.array_forms() => Ok(kind::array_text),
-        _ if profile == parse_profile::record => records
+        _ if profile.record_forms() => records
             .iter()
             .position(|record| record.name == value)
             .map(|index| kind::record(index as u8))
@@ -1866,3 +1951,6 @@ mod callable_tests;
 
 #[cfg(test)]
 mod record_tests;
+
+#[cfg(test)]
+mod globals_tests;
