@@ -8,7 +8,26 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current host checkpoint — separate conformance and admission
+## Current host checkpoint — computed text and hexadecimal integers
+
+[ADR 0108](../../docs/adr/0108-add-bounded-computed-text-and-hexadecimal-integers.md)
+adds explicitly selected profile 4. Text/text concatenation creates immutable
+values in a bounded decoded arena that survives helper returns and retains
+aliases. Literals decode exactly once; every execution boundary clears the
+arena. Signed-i64 hexadecimal constants follow the pinned reference, including
+negative minimum and explicit overflow refusal. Earlier profiles retain their
+accepted grammar and production intent remains required.
+
+The new 55-case proof covers semantic matches, matching faults, finite resource
+contrasts and validation refusals. Seven of 45 unchanged raw corpus invocations
+match, including four of 38 roots. The remaining 38 are unmet coverage; all 45
+still refuse production admission. The [Computed Text Log](../Development/2026-11-13%20Computed%20Text%20Log.md)
+records qualification and remaining gates. This adds no native NIL execution or
+Linux compatibility behavior. All 32 final qualification jobs pass on 685
+unchanged source files; independent audits verify the five proof suites, native
+artifact continuity and original-checkout preservation.
+
+## Previous host checkpoint — separate conformance and admission
 
 [ADR 0107](../../docs/adr/0107-separate-host-conformance-from-production-admission.md)
 separates raw language experiments from production manifest admission. The

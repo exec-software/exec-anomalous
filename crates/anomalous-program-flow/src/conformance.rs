@@ -19,7 +19,7 @@ use super::{
 /// ```compile_fail
 /// use anomalous_program_flow::conformance::checked_edition;
 /// let unchecked = checked_edition {
-///     edition: b"unvalidated", identity: [0; 32], required: 0,
+///     profile: 4, edition: b"unvalidated", identity: [0; 32], required: 0,
 ///     granted: 0, plan: todo!(),
 /// };
 /// ```
@@ -33,6 +33,7 @@ use super::{
 /// }
 /// ```
 pub struct checked_edition<'a, 'w> {
+    profile: u32,
     edition: &'a [u8],
     identity: [u8; 32],
     required: u64,
@@ -41,6 +42,9 @@ pub struct checked_edition<'a, 'w> {
 }
 
 impl<'a> checked_edition<'a, '_> {
+    pub const fn profile(&self) -> u32 {
+        self.profile
+    }
     pub const fn edition(&self) -> &'a [u8] {
         self.edition
     }
@@ -83,20 +87,37 @@ pub fn validate_scalar<'a, 'w>(
     ceiling: u64,
     workspace: &'w mut validation_workspace<'a>,
 ) -> Result<checked_edition<'a, 'w>, error> {
+    validate_profile(edition, ceiling, workspace, parse_profile::scalar)
+}
+
+/// Validate raw bytes using the explicitly selected profile-4 text grammar.
+/// Only absence of main intent differs from production profile-4 admission.
+/// This path cannot emit a package or produce a production admission witness.
+pub fn validate_text<'a, 'w>(
+    edition: &'a [u8],
+    ceiling: u64,
+    workspace: &'w mut validation_workspace<'a>,
+) -> Result<checked_edition<'a, 'w>, error> {
+    validate_profile(edition, ceiling, workspace, parse_profile::text)
+}
+
+fn validate_profile<'a, 'w>(
+    edition: &'a [u8],
+    ceiling: u64,
+    workspace: &'w mut validation_workspace<'a>,
+    profile: parse_profile,
+) -> Result<checked_edition<'a, 'w>, error> {
     workspace.reset();
     if ceiling & !authority::known != 0 {
         return Err(error::ceiling);
     }
-    workspace.parse(
-        edition,
-        parse_profile::scalar,
-        validation_purpose::conformance,
-    )?;
+    workspace.parse(edition, profile, validation_purpose::conformance)?;
     let required = workspace.plan.authority;
     if required & !ceiling != 0 {
         return Err(error::ceiling);
     }
     Ok(checked_edition {
+        profile: profile.tag(),
         edition,
         identity: sha256(edition),
         required,

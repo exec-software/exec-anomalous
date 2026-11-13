@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! Experimental host qualification executors for admitted NIL (ADRs 0104–0106).
+//! Experimental host qualification executors for admitted NIL (ADRs 0104–0108).
 //! This is not a native-integrated or full-corpus-qualified NIL interpreter.
 //! Production entries require whole-edition admission. The opt-in host conformance
 //! entry accepts a distinct raw validation witness, never a production package.
@@ -40,6 +40,7 @@ pub enum error {
     frame_limit,
     stack_limit,
     generated_fallthrough,
+    text_limit,
 }
 
 impl error {
@@ -58,6 +59,7 @@ impl error {
             Self::frame_limit => "frame_limit",
             Self::stack_limit => "stack_limit",
             Self::generated_fallthrough => "generated_fallthrough",
+            Self::text_limit => "text_limit",
         }
     }
 }
@@ -361,8 +363,8 @@ pub fn execute(
     }
 }
 
-// Shared effect path for both admitted profiles. The only way to construct a
-// request is through complete payload, authority and budget checks here.
+// Shared effect path for admitted and raw checked workloads. A request requires
+// complete payload, authority and budget checks here.
 fn publish_console(
     item: value<'_>,
     newline: bool,
@@ -382,6 +384,36 @@ fn publish_console(
         }
         value::text(escaped) => output.decode(escaped)?,
     }
+    publish_output(&mut output, newline, identity, output_limit, stats, sink)
+}
+
+fn publish_decoded_console(
+    bytes: &[u8],
+    newline: bool,
+    identity: [u8; 32],
+    granted: u64,
+    output_limit: usize,
+    stats: &mut statistics,
+    sink: &mut impl console_sink,
+) -> Result<(), error> {
+    if granted & authority::console_write == 0 {
+        return Err(error::authority);
+    }
+    let mut output = output_buffer::new();
+    output.append(bytes)?;
+    publish_output(&mut output, newline, identity, output_limit, stats, sink)
+}
+
+// Both callers check the witness-bound authority before decoding/copying text.
+// This shared publication path applies the same payload and accounting rules.
+fn publish_output(
+    output: &mut output_buffer,
+    newline: bool,
+    identity: [u8; 32],
+    output_limit: usize,
+    stats: &mut statistics,
+    sink: &mut impl console_sink,
+) -> Result<(), error> {
     if newline {
         output.append(b"\n")?;
     }
@@ -490,29 +522,37 @@ impl output_buffer {
         Ok(())
     }
     fn decode(&mut self, escaped: &str) -> Result<(), error> {
-        let mut chars = escaped.chars();
-        while let Some(mut ch) = chars.next() {
-            if ch == '\\' {
-                ch = match chars.next().ok_or(error::invalid_state)? {
-                    'n' => '\n',
-                    'r' => '\r',
-                    't' => '\t',
-                    'v' => '\u{b}',
-                    'f' => '\u{c}',
-                    '\\' => '\\',
-                    '"' => '"',
-                    // The pinned C++ loader preserves this unknown escape.
-                    'b' => {
-                        self.append(b"\\b")?;
-                        continue;
-                    }
-                    _ => return Err(error::invalid_state),
-                };
-            }
-            self.append(ch.encode_utf8(&mut [0; 4]).as_bytes())?;
-        }
-        Ok(())
+        decode_text(escaped, |bytes| self.append(bytes))
     }
+}
+
+// Decode accepted source spelling once. Computed text never enters this path.
+fn decode_text(
+    escaped: &str,
+    mut append: impl FnMut(&[u8]) -> Result<(), error>,
+) -> Result<(), error> {
+    let mut chars = escaped.chars();
+    while let Some(mut ch) = chars.next() {
+        if ch == '\\' {
+            ch = match chars.next().ok_or(error::invalid_state)? {
+                'n' => '\n',
+                'r' => '\r',
+                't' => '\t',
+                'v' => '\u{b}',
+                'f' => '\u{c}',
+                '\\' => '\\',
+                '"' => '"',
+                // The pinned C++ loader preserves this unknown escape.
+                'b' => {
+                    append(b"\\b")?;
+                    continue;
+                }
+                _ => return Err(error::invalid_state),
+            };
+        }
+        append(ch.encode_utf8(&mut [0; 4]).as_bytes())?;
+    }
+    Ok(())
 }
 
 impl Write for output_buffer {

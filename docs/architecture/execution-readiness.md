@@ -1,5 +1,29 @@
 # Native execution and compatibility readiness
 
+## Bounded computed text and hexadecimal integers (2026-11-13)
+
+[ADR 0108](../adr/0108-add-bounded-computed-text-and-hexadecimal-integers.md)
+adds explicitly selected profile 4 for text/text `STR_CONCAT` and signed-i64
+hexadecimal constants. Earlier profiles keep their grammars and refuse the new
+package tags. Production admission still requires authored main intent; the
+separate raw text validator keeps the same whole-file authority and CFG checks.
+
+Computed text occupies a fixed 65,536-byte cumulative decoded arena. Immutable
+handles survive calls and preserve aliases; no storage is reclaimed until the
+execution boundary. Literal operands decode once, and computed results never
+re-enter the literal decoder. Complete length/capacity checks precede writes,
+resource exhaustion is explicit, and every exit clears all arena bytes. Console
+publication preserves its existing authority, payload, output and failure rules.
+
+The new proof compares 55 boundary cases and all unchanged corpus invocations.
+Seven of 45 raw invocations match reference output and exit status, including
+four of 38 root cases; 38 remain unmet coverage. Production admission independently
+refuses all 45. The [Computed Text Log](../../notebook/Development/2026-11-13%20Computed%20Text%20Log.md)
+records exact evidence and limits. Full corpus qualification and native execution
+remain closed gates. All 32 final qualification jobs pass on 685 unchanged
+source files, with independent proof/artifact audits. The four earlier proofs
+pass unchanged; native admission bytes and Linux behavior remain identical.
+
 ## Host conformance separated from production admission (2026-11-13)
 
 [ADR 0107](../adr/0107-separate-host-conformance-from-production-admission.md)

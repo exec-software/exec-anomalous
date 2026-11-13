@@ -3,14 +3,27 @@
 
 use super::{
     binary, console_sink, error, execution, maximum_output_bytes, narrow, publish_console,
-    statistics, value,
+    publish_decoded_console, statistics,
 };
 use anomalous_program_flow::{admitted_program, kind, operation, program};
+
+mod text;
+use text::{text_arena, text_span};
 
 pub const maximum_steps: usize = 65536;
 pub const maximum_frames: usize = 16;
 pub const maximum_values: usize = 256;
 pub const maximum_locals: usize = 128;
+/// Cumulative decoded concatenation bytes per execution, with no reclamation
+/// until the run ends. Literals remain borrowed and do not consume this arena.
+pub const maximum_text_bytes: usize = 65536;
+
+#[derive(Clone, Copy)]
+enum value<'a> {
+    integer(i64),
+    text(&'a str),
+    computed_text(text_span),
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct limits {
@@ -60,6 +73,7 @@ pub struct execution_workspace<'a> {
     pc: usize,
     stats: statistics,
     line: usize,
+    text: text_arena,
 }
 
 impl Default for execution_workspace<'_> {
@@ -82,6 +96,7 @@ impl<'a> execution_workspace<'a> {
                 output_bytes: 0,
             },
             line: 0,
+            text: text_arena::new(),
         }
     }
 
@@ -93,6 +108,7 @@ impl<'a> execution_workspace<'a> {
         self.pc = 0;
         self.stats = statistics::default();
         self.line = 0;
+        self.text.clear();
     }
 
     fn current(&self) -> Result<&frame<'a>, error> {
@@ -134,7 +150,7 @@ impl<'a> execution_workspace<'a> {
     fn integer(&mut self) -> Result<i64, error> {
         match self.pop()? {
             value::integer(number) => Ok(number),
-            value::text(_) => Err(error::invalid_state),
+            value::text(_) | value::computed_text(_) => Err(error::invalid_state),
         }
     }
 
@@ -222,6 +238,12 @@ impl<'a> execution_workspace<'a> {
                         .escaped;
                     self.push(value::text(text))?;
                 }
+                operation::concat => {
+                    let right = self.pop()?;
+                    let left = self.pop()?;
+                    let span = self.text.concatenate(left, right)?;
+                    self.push(value::computed_text(span))?;
+                }
                 operation::load(index) => {
                     let item = self
                         .current()?
@@ -292,15 +314,35 @@ impl<'a> execution_workspace<'a> {
                 operation::generated_fallthrough => return Err(error::generated_fallthrough),
                 operation::console { newline } => {
                     let item = self.pop()?;
-                    publish_console(
-                        item,
-                        newline,
-                        identity,
-                        granted,
-                        budget.output_bytes,
-                        &mut self.stats,
-                        sink,
-                    )?;
+                    match item {
+                        value::computed_text(span) => publish_decoded_console(
+                            self.text.bytes(span)?,
+                            newline,
+                            identity,
+                            granted,
+                            budget.output_bytes,
+                            &mut self.stats,
+                            sink,
+                        )?,
+                        value::integer(number) => publish_console(
+                            super::value::integer(number),
+                            newline,
+                            identity,
+                            granted,
+                            budget.output_bytes,
+                            &mut self.stats,
+                            sink,
+                        )?,
+                        value::text(escaped) => publish_console(
+                            super::value::text(escaped),
+                            newline,
+                            identity,
+                            granted,
+                            budget.output_bytes,
+                            &mut self.stats,
+                            sink,
+                        )?,
+                    }
                 }
                 operation::ret => {
                     let frame = self.current()?;
@@ -338,11 +380,11 @@ impl<'a> execution_workspace<'a> {
 fn value_kind(value: value<'_>) -> kind {
     match value {
         value::integer(_) => kind::integer,
-        value::text(_) => kind::text,
+        value::text(_) | value::computed_text(_) => kind::text,
     }
 }
 
-/// Execute only a validated control-flow witness (profile 2 or 3).
+/// Execute only a validated control-flow witness (profile 2, 3 or 4).
 /// Every return, arithmetic error, policy
 /// refusal or service refusal clears the internal frame/value storage. Earlier
 /// acknowledged sink effects remain committed; there is no automatic retry.
@@ -392,3 +434,6 @@ mod scalar_tests;
 
 #[cfg(all(test, feature = "host_conformance"))]
 mod conformance_tests;
+
+#[cfg(test)]
+mod text_tests;

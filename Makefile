@@ -340,6 +340,7 @@ check:
 	python3 scripts/program_flow_proof.py --self-test
 	python3 scripts/program_scalar_flow_proof.py --self-test
 	python3 scripts/program_conformance_proof.py --self-test
+	python3 scripts/program_text_proof.py --self-test
 	cargo test --package anomalous-document-protocol
 	cargo test --package anomalous-document-protocol --features remote_workspace
 	cargo test --package anomalous-elf-adapter

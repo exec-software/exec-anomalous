@@ -36,7 +36,10 @@ desktop, or a security boundary for sensitive workloads.
   [Host conformance](docs/adr/0107-separate-host-conformance-from-production-admission.md)
   separately validates and executes raw scalar editions without manufacturing
   authored intent; production admission retains its required intent and authority
-  checks. Full corpus qualification and native execution remain gated.
+  checks. [Profile 4](docs/adr/0108-add-bounded-computed-text-and-hexadecimal-integers.md)
+  adds bounded computed text and signed hexadecimal integers. Seven of 45
+  unchanged raw corpus invocations match; full corpus qualification and native
+  execution remain gated.
 - Host-side libraries explore typed session routing, shared semantic scenes,
   presentation acknowledgement, and recovery.
 - **Eidolon** supplies an independent Python reference codec for lossless

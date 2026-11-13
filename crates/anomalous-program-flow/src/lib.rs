@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! Host-only profile-2 and explicitly selected profile-3 admission.
+//! Host-only profile-2 and explicitly selected profile-3/profile-4 admission.
 //! All syntax and references are checked before
 //! reachable CFG validation; even dead instructions contribute authority.
 //! The immutable plan is accessible only through a complete validation witness.
@@ -31,6 +31,7 @@ pub const maximum_name_bytes: usize = 128;
 enum parse_profile {
     flow,
     scalar,
+    text,
 }
 
 #[derive(Clone, Copy)]
@@ -55,7 +56,12 @@ impl parse_profile {
         match self {
             Self::flow => derivation_profile,
             Self::scalar => scalar::derivation_profile,
+            Self::text => text::derivation_profile,
         }
+    }
+
+    const fn scalar_forms(self) -> bool {
+        matches!(self, Self::scalar | Self::text)
     }
 }
 
@@ -84,6 +90,31 @@ pub mod scalar {
     }
 }
 
+/// Explicit opt-in for signed hexadecimal integers and text/text concatenation.
+/// Existing profile-2 and profile-3 entry points retain their original grammar.
+pub mod text {
+    use super::{admitted_program, error, parse_profile, validation_workspace};
+
+    pub const derivation_profile: u32 = 4;
+
+    /// Validates completely before publishing any output bytes.
+    pub fn encode<'a>(
+        edition: &'a [u8],
+        output: &mut [u8],
+        workspace: &mut validation_workspace<'a>,
+    ) -> Result<usize, error> {
+        super::encode_profile(edition, output, workspace, parse_profile::text)
+    }
+
+    pub fn admit<'a, 'w>(
+        image: &'a [u8],
+        ceiling: u64,
+        workspace: &'w mut validation_workspace<'a>,
+    ) -> Result<admitted_program<'a, 'w>, error> {
+        super::admit_profile(image, ceiling, workspace, parse_profile::text)
+    }
+}
+
 /// Raw host language checks, deliberately separate from manifest admission.
 #[cfg(feature = "host_conformance")]
 pub mod conformance;
@@ -98,6 +129,7 @@ pub enum kind {
 pub enum operation {
     integer(i64),
     text(usize),
+    concat,
     load(usize),
     store(usize),
     binary {
@@ -534,7 +566,7 @@ impl<'a> validation_workspace<'a> {
         let fields = &fields[..count];
         self.references[pc] = ("", 0);
         let operation = match fields {
-            ["PUSH_CONST", value] => operation::integer(decimal(value)?),
+            ["PUSH_CONST", value] => operation::integer(integer_literal(value, profile)?),
             ["PUSH_CONST_STR", name] => {
                 identifier(name)?;
                 operation::text(
@@ -557,10 +589,11 @@ impl<'a> validation_workspace<'a> {
             // floats. Reachable CFG validation proves both operands integer;
             // this profile has no array or floating values. Dead code keeps
             // its syntax/reference checks without invented operand states.
-            ["ADD"] if profile == parse_profile::scalar => operation::binary {
+            ["ADD"] if profile.scalar_forms() => operation::binary {
                 opcode: "ADD",
                 width: "i64",
             },
+            ["STR_CONCAT"] if profile == parse_profile::text => operation::concat,
             [opcode] if comparison(opcode).is_some() => {
                 operation::compare(comparison(opcode).unwrap())
             }
@@ -810,6 +843,12 @@ impl<'a> validation_workspace<'a> {
                 match self.plan.instructions[pc].operation {
                     operation::integer(_) => state.push(kind::integer)?,
                     operation::text(_) => state.push(kind::text)?,
+                    operation::concat => {
+                        if state.pop()? != kind::text || state.pop()? != kind::text {
+                            return Err(error::syntax);
+                        }
+                        state.push(kind::text)?;
+                    }
                     operation::load(index) => {
                         state.push(state.locals[index].ok_or(error::syntax)?)?
                     }
@@ -1070,7 +1109,7 @@ fn identifier(value: &str) -> Result<(), error> {
 }
 
 fn local_identifier(value: &str, profile: parse_profile) -> Result<(), error> {
-    if profile != parse_profile::scalar || !value.starts_with("$ny.temp.") {
+    if !profile.scalar_forms() || !value.starts_with("$ny.temp.") {
         return identifier(value);
     }
     if value.len() > maximum_name_bytes {
@@ -1147,6 +1186,47 @@ fn decimal(value: &str) -> Result<i64, error> {
         return Err(error::unsupported);
     }
     value.parse().map_err(|_| error::syntax)
+}
+
+fn integer_literal(value: &str, profile: parse_profile) -> Result<i64, error> {
+    if profile != parse_profile::text {
+        return decimal(value);
+    }
+    let unsigned = value
+        .strip_prefix('-')
+        .or_else(|| value.strip_prefix('+'))
+        .unwrap_or(value);
+    let Some(digits) = unsigned
+        .strip_prefix("0x")
+        .or_else(|| unsigned.strip_prefix("0X"))
+    else {
+        // The new radix does not change decimal spelling or decimal errors.
+        return decimal(value);
+    };
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(error::unsupported);
+    }
+    // Accumulate negatively so i64::MIN remains representable. The reference
+    // uses signed stoll with base 0 and requires complete literal consumption;
+    // positive 0x8000000000000000 is out of range, not a bit-pattern cast.
+    let mut result = 0i64;
+    for byte in digits.bytes() {
+        let digit = match byte {
+            b'0'..=b'9' => byte - b'0',
+            b'a'..=b'f' => byte - b'a' + 10,
+            b'A'..=b'F' => byte - b'A' + 10,
+            _ => return Err(error::unsupported),
+        };
+        result = result
+            .checked_mul(16)
+            .and_then(|value| value.checked_sub(i64::from(digit)))
+            .ok_or(error::syntax)?;
+    }
+    if value.starts_with('-') {
+        Ok(result)
+    } else {
+        result.checked_neg().ok_or(error::syntax)
+    }
 }
 fn debug_line(value: &str, allow_zero: bool) -> Result<(), error> {
     let number = unsigned(value)?;
@@ -1263,3 +1343,6 @@ mod tests;
 
 #[cfg(test)]
 mod scalar_tests;
+
+#[cfg(test)]
+mod text_tests;
