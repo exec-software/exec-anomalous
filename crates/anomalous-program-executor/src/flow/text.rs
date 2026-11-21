@@ -73,6 +73,9 @@ impl text_arena {
     fn length(&self, item: value<'_>) -> Result<usize, error> {
         match item {
             value::integer(_)
+            | value::boolean(_)
+            | value::byte(_)
+            | value::float(_)
             | value::array(_)
             | value::function(_)
             | value::record(_)
@@ -92,6 +95,9 @@ impl text_arena {
     fn copy(&mut self, item: value<'_>, cursor: &mut usize) -> Result<(), error> {
         match item {
             value::integer(_)
+            | value::boolean(_)
+            | value::byte(_)
+            | value::float(_)
             | value::array(_)
             | value::function(_)
             | value::record(_)

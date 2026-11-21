@@ -8,7 +8,26 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current host checkpoint — textual source-debug metadata
+## Current host checkpoint — bounded typed scalars
+
+[ADR 0115](../../docs/adr/0115-add-bounded-typed-scalars.md) adds explicitly
+selected profile 11 for distinct boolean, byte and finite binary64 values.
+Explicit casts preserve strict 0/1 booleans, low-eight-bit bytes and float
+identity. Exact helper signatures retain the new kinds through locals, direct
+and indirect calls. Float literals and transported values preserve their exact
+bits, including signed zero; float arithmetic and formatting remain separate.
+
+The new 200-case final proof and its independent audit pass. Seventeen
+of 45 unchanged raw invocations match, including 11 of 38 roots. The complete
+`text-and-types.matrix` edition is newly supported, including its unused typed
+helpers. The other 28 remain unmet coverage; production refuses all 45. Earlier
+profiles keep their grammar and tags. The
+[Typed Scalars Log](../Development/2026-11-20%20Typed%20Scalars%20Log.md)
+records evidence and limits. All 53 fresh jobs pass on 735 unchanged source
+files, including 1,216 boundary cases and 356 oracle checks. Native NIL execution
+remains gated; Linux-loader behavior is unchanged.
+
+## Previous host checkpoint — textual source-debug metadata
 
 [ADR 0114](../../docs/adr/0114-add-bounded-textual-source-debug-metadata.md)
 adds explicitly selected profile 10 for validated source paths and lexical

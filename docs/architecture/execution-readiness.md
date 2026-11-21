@@ -1,5 +1,27 @@
 # Native execution and compatibility readiness
 
+## Bounded typed scalars (2026-11-20)
+
+[ADR 0115](../adr/0115-add-bounded-typed-scalars.md) adds explicit profile 11
+for boolean, byte and finite binary64 values. Validation keeps exact helper
+signatures and distinct operand kinds. Casts explicitly bridge integral kinds;
+booleans require zero or one, bytes retain the low eight bits, and float casts
+are identity only. Literal admission checks complete decimal grammar and finite
+representability. Execution preserves float bits through locals and helper
+calls without adding float arithmetic, formatting or aggregate types.
+
+The 200-case final proof passes with independent exact-bit checks and
+whole-artifact audits. Seventeen of 45 raw corpus invocations match, including
+11 of 38 roots. The additional root is complete `text-and-types.matrix`, with
+all unused helper bodies retained. The other 28 remain unmet coverage, and
+all 45 production attempts refuse under the unchanged intent/authority rules.
+The [Typed Scalars Log](../../notebook/Development/2026-11-20%20Typed%20Scalars%20Log.md)
+records evidence. All 53 fresh jobs pass on 735 unchanged source files, with
+1,216 boundary cases, 356 oracle checks and native artifact continuity. Earlier
+profiles, binary NIL v5, full-corpus and native-execution
+gates retain their separate contracts. Kernel, native admission and Linux guest
+behavior are unchanged by this host profile.
+
 ## Bounded textual source-debug metadata (2026-11-20)
 
 [ADR 0114](../adr/0114-add-bounded-textual-source-debug-metadata.md) adds explicit

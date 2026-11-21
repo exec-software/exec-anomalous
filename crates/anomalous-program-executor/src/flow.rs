@@ -14,6 +14,7 @@ use record::{record_arena, record_handle};
 mod enumeration;
 use enumeration::enum_value;
 mod text;
+mod typed_scalar;
 use text::{text_arena, text_span};
 
 pub const maximum_steps: usize = 65536;
@@ -41,6 +42,10 @@ struct function_handle {
 #[derive(Clone, Copy)]
 enum value<'a> {
     integer(i64),
+    boolean(bool),
+    byte(u8),
+    /// Finite binary64 bits; no runtime floating-point arithmetic.
+    float(u64),
     text(&'a str),
     computed_text(text_span),
     array(array_handle),
@@ -183,7 +188,10 @@ impl<'a> execution_workspace<'a> {
     fn integer(&mut self) -> Result<i64, error> {
         match self.pop()? {
             value::integer(number) => Ok(number),
-            value::text(_)
+            value::boolean(_)
+            | value::byte(_)
+            | value::float(_)
+            | value::text(_)
             | value::computed_text(_)
             | value::array(_)
             | value::function(_)
@@ -268,6 +276,11 @@ impl<'a> execution_workspace<'a> {
             let next = self.pc + 1;
             match instruction.operation {
                 operation::integer(number) => self.push(value::integer(number))?,
+                operation::float(bits) => self.push(value::float(bits))?,
+                operation::scalar_cast(target) => {
+                    let item = self.pop()?;
+                    self.push(typed_scalar::cast(item, target)?)?;
+                }
                 operation::text(index) => {
                     let text = program
                         .constants()
@@ -497,7 +510,10 @@ impl<'a> execution_workspace<'a> {
                 operation::console { newline } => {
                     let item = self.pop()?;
                     match item {
-                        value::array(_)
+                        value::boolean(_)
+                        | value::byte(_)
+                        | value::float(_)
+                        | value::array(_)
                         | value::function(_)
                         | value::record(_)
                         | value::enumeration(_) => {
@@ -568,6 +584,9 @@ impl<'a> execution_workspace<'a> {
 fn value_kind(value: value<'_>) -> kind {
     match value {
         value::integer(_) => kind::integer,
+        value::boolean(_) => kind::boolean,
+        value::byte(_) => kind::byte,
+        value::float(_) => kind::float,
         value::text(_) | value::computed_text(_) => kind::text,
         value::array(handle) => handle.kind(),
         value::function(handle) => kind::function(handle.signature),
@@ -576,7 +595,7 @@ fn value_kind(value: value<'_>) -> kind {
     }
 }
 
-/// Execute only a validated control-flow witness (profiles 2 through 10).
+/// Execute only a validated control-flow witness (profiles 2 through 11).
 /// Every return, arithmetic error, policy
 /// refusal or service refusal clears the internal frame/value storage. Earlier
 /// acknowledged sink effects remain committed; there is no automatic retry.
@@ -647,3 +666,6 @@ mod enum_tests;
 
 #[cfg(test)]
 mod source_debug_tests;
+
+#[cfg(test)]
+mod typed_scalar_tests;

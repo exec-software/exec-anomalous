@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! Host-only profile-2 and explicitly selected profile-3 through profile-10 admission.
+//! Host-only profile-2 and explicitly selected profile-3 through profile-11 admission.
 //! All syntax and references are checked before
 //! reachable CFG validation; even dead instructions contribute authority.
 //! The immutable plan is accessible only through a complete validation witness.
@@ -46,6 +46,7 @@ enum parse_profile {
     globals,
     enums,
     source_debug,
+    typed_scalars,
 }
 
 #[derive(Clone, Copy)]
@@ -77,6 +78,7 @@ impl parse_profile {
             Self::globals => globals::derivation_profile,
             Self::enums => enums::derivation_profile,
             Self::source_debug => source_debug::derivation_profile,
+            Self::typed_scalars => typed_scalars::derivation_profile,
         }
     }
 
@@ -91,6 +93,7 @@ impl parse_profile {
                 | Self::globals
                 | Self::enums
                 | Self::source_debug
+                | Self::typed_scalars
         )
     }
 
@@ -104,6 +107,7 @@ impl parse_profile {
                 | Self::globals
                 | Self::enums
                 | Self::source_debug
+                | Self::typed_scalars
         )
     }
 
@@ -116,29 +120,42 @@ impl parse_profile {
                 | Self::globals
                 | Self::enums
                 | Self::source_debug
+                | Self::typed_scalars
         )
     }
 
     const fn callable_forms(self) -> bool {
         matches!(
             self,
-            Self::callable | Self::record | Self::globals | Self::enums | Self::source_debug
+            Self::callable
+                | Self::record
+                | Self::globals
+                | Self::enums
+                | Self::source_debug
+                | Self::typed_scalars
         )
     }
 
     const fn record_forms(self) -> bool {
         matches!(
             self,
-            Self::record | Self::globals | Self::enums | Self::source_debug
+            Self::record | Self::globals | Self::enums | Self::source_debug | Self::typed_scalars
         )
     }
 
     const fn global_forms(self) -> bool {
-        matches!(self, Self::globals | Self::enums | Self::source_debug)
+        matches!(
+            self,
+            Self::globals | Self::enums | Self::source_debug | Self::typed_scalars
+        )
     }
 
     const fn enum_forms(self) -> bool {
-        matches!(self, Self::enums | Self::source_debug)
+        matches!(self, Self::enums | Self::source_debug | Self::typed_scalars)
+    }
+
+    const fn source_debug_forms(self) -> bool {
+        matches!(self, Self::source_debug | Self::typed_scalars)
     }
 }
 
@@ -317,6 +334,9 @@ pub mod enums {
 /// Explicit profile-10 source locations and lexical bindings; descriptive only.
 pub mod source_debug;
 
+/// Explicit profile-11 boolean, byte and finite binary64 scalar values.
+pub mod typed_scalars;
+
 /// Raw host language checks, deliberately separate from manifest admission.
 #[cfg(feature = "host_conformance")]
 pub mod conformance;
@@ -324,6 +344,9 @@ pub mod conformance;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum kind {
     integer,
+    boolean,
+    byte,
+    float,
     text,
     array_integer,
     array_text,
@@ -333,9 +356,23 @@ pub enum kind {
     enumeration(u8),
 }
 
+/// Explicit profile-11 conversions. Floating-point identity is the only
+/// admitted floating conversion; all other targets consume integral kinds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum scalar_cast {
+    boolean,
+    byte,
+    integer32,
+    integer64,
+    float_identity,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum operation {
     integer(i64),
+    /// Exact finite IEEE-754 binary64 bits, including the sign of zero.
+    float(u64),
+    scalar_cast(scalar_cast),
     text(usize),
     concat,
     /// The element is always scalar `integer` or `text` in a validated plan.
@@ -765,7 +802,7 @@ impl<'a> validation_workspace<'a> {
             if line.is_empty() {
                 continue;
             }
-            if profile == parse_profile::source_debug && source_debug::is_record(line) {
+            if profile.source_debug_forms() && source_debug::is_record(line) {
                 let owner = active.ok_or(error::syntax)?;
                 if pending_debug.is_some() {
                     return Err(error::syntax);
@@ -1147,6 +1184,9 @@ impl<'a> validation_workspace<'a> {
         let fields = &fields[..count];
         self.references[pc] = ("", 0);
         let operation = match fields {
+            ["PUSH_CONST", value] if profile == parse_profile::typed_scalars => {
+                typed_scalars::literal(value)?
+            }
             ["PUSH_CONST", value] => operation::integer(integer_literal(value, profile)?),
             ["PUSH_CONST_STR", name] => {
                 identifier(name)?;
@@ -1188,6 +1228,16 @@ impl<'a> validation_workspace<'a> {
                 }
             }
             ["CAST", "text"] if profile.global_forms() => operation::integer_text,
+            ["CAST", value] if profile == parse_profile::typed_scalars => {
+                operation::scalar_cast(match *value {
+                    "bool" => scalar_cast::boolean,
+                    "u8" => scalar_cast::byte,
+                    "i32" => scalar_cast::integer32,
+                    "i64" => scalar_cast::integer64,
+                    "f64" => scalar_cast::float_identity,
+                    _ => return Err(error::unsupported),
+                })
+            }
             ["CAST", value] => operation::cast(width(value)?),
             ["NEG", value] => operation::negate(width(value)?),
             [opcode, value] if binary(opcode).is_some() => operation::binary {
@@ -1604,6 +1654,25 @@ impl<'a> validation_workspace<'a> {
                 }
                 match self.plan.instructions[pc].operation {
                     operation::integer(_) => state.push(kind::integer)?,
+                    operation::float(_) => state.push(kind::float)?,
+                    operation::scalar_cast(conversion) => {
+                        let source = state.pop()?;
+                        let result = match conversion {
+                            scalar_cast::boolean => kind::boolean,
+                            scalar_cast::byte => kind::byte,
+                            scalar_cast::integer32 | scalar_cast::integer64 => kind::integer,
+                            scalar_cast::float_identity => kind::float,
+                        };
+                        let valid = if result == kind::float {
+                            source == kind::float
+                        } else {
+                            matches!(source, kind::integer | kind::boolean | kind::byte)
+                        };
+                        if !valid {
+                            return Err(error::syntax);
+                        }
+                        state.push(result)?;
+                    }
                     operation::global_load(_) => state.push(kind::integer)?,
                     operation::global_store(_) => {
                         state.integer()?;
@@ -2009,6 +2078,9 @@ fn value_kind(
 ) -> Result<kind, error> {
     match value {
         "i32" | "i64" => Ok(kind::integer),
+        "bool" if profile == parse_profile::typed_scalars => Ok(kind::boolean),
+        "u8" if profile == parse_profile::typed_scalars => Ok(kind::byte),
+        "f64" if profile == parse_profile::typed_scalars => Ok(kind::float),
         "text" => Ok(kind::text),
         "array<i64>" if profile.array_forms() => Ok(kind::array_integer),
         "array<text>" if profile.array_forms() => Ok(kind::array_text),
@@ -2202,6 +2274,10 @@ fn signature_type_code(
         "array<i64>" => Ok(3),
         "array<text>" => Ok(4),
         "void" => Ok(5),
+        // Keep all prior primitive, record and enum identities unchanged.
+        "bool" => Ok(134),
+        "u8" => Ok(135),
+        "f64" => Ok(136),
         _ => records
             .iter()
             .position(|record| record.name == value)
@@ -2316,3 +2392,6 @@ mod enums_tests;
 
 #[cfg(test)]
 mod source_debug_tests;
+
+#[cfg(test)]
+mod typed_scalars_tests;

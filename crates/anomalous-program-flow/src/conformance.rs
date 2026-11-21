@@ -162,6 +162,16 @@ pub fn validate_source_debug<'a, 'w>(
     validate_profile(edition, ceiling, workspace, parse_profile::source_debug)
 }
 
+/// Validate profile-11 typed scalar syntax without production admission.
+/// Only absence of authored main intent differs from production validation.
+pub fn validate_typed_scalars<'a, 'w>(
+    edition: &'a [u8],
+    ceiling: u64,
+    workspace: &'w mut validation_workspace<'a>,
+) -> Result<checked_edition<'a, 'w>, error> {
+    validate_profile(edition, ceiling, workspace, parse_profile::typed_scalars)
+}
+
 fn validate_profile<'a, 'w>(
     edition: &'a [u8],
     ceiling: u64,
