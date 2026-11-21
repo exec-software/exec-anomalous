@@ -54,8 +54,10 @@ desktop, or a security boundary for sensitive workloads.
   and byte values, finite binary64 literals and explicit scalar casts.
   [Profile 12](docs/adr/0116-add-bounded-nested-records.md) adds shared nested
   record fields and exact concrete generic record/enum identities.
-  Eighteen of 45 unchanged raw corpus invocations match; full corpus qualification
-  and native execution remain gated.
+  [Profile 13](docs/adr/0117-admit-canonical-compiler-local-identities.md)
+  recognizes distinct compiler-generated names for shadowed local bindings.
+  Nineteen of 45 unchanged raw corpus invocations match. Full corpus
+  qualification and native execution remain gated.
 - Host-side libraries explore typed session routing, shared semantic scenes,
   presentation acknowledgement, and recovery.
 - **Eidolon** supplies an independent Python reference codec for lossless

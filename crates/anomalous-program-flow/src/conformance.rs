@@ -182,6 +182,16 @@ pub fn validate_nested_records<'a, 'w>(
     validate_profile(edition, ceiling, workspace, parse_profile::nested_records)
 }
 
+/// Validate profile-13 canonical hygienic local names without production admission.
+/// Debug descriptions do not create storage or establish local initialization.
+pub fn validate_hygienic_locals<'a, 'w>(
+    edition: &'a [u8],
+    ceiling: u64,
+    workspace: &'w mut validation_workspace<'a>,
+) -> Result<checked_edition<'a, 'w>, error> {
+    validate_profile(edition, ceiling, workspace, parse_profile::hygienic_locals)
+}
+
 fn validate_profile<'a, 'w>(
     edition: &'a [u8],
     ceiling: u64,

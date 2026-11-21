@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Experimental bounded program admission and control-flow validation for profiles 2 through 12"
+description = "Experimental bounded program admission and control-flow validation for profiles 2 through 13"
 publish = false
 
 [features]

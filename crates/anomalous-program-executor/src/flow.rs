@@ -600,7 +600,7 @@ fn value_kind(value: value<'_>) -> kind {
     }
 }
 
-/// Execute only a validated control-flow witness (profiles 2 through 12).
+/// Execute only a validated control-flow witness (profiles 2 through 13).
 /// Every return, arithmetic error, policy
 /// refusal or service refusal clears the internal frame/value storage. Earlier
 /// acknowledged sink effects remain committed; there is no automatic retry.

@@ -8,7 +8,24 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current host checkpoint — bounded nested records
+## Current host checkpoint — canonical compiler local identities
+
+[ADR 0117](../../docs/adr/0117-admit-canonical-compiler-local-identities.md)
+adds explicitly selected profile 13. Generated local names retain their full
+spelling as function-local storage identities. Repeated source bindings can
+use independent slots, and indirect calls resolve to the exact local name.
+
+The complete `records-and-choices.matrix` edition matches the pinned VM with
+result zero and 34 console bytes. Raw coverage reaches 19 of 45 invocations
+and 13 of 38 roots. All 45 production attempts refuse. The
+[Hygienic Locals Log](../Development/2026-11-21%20Hygienic%20Locals%20Log.md)
+records evidence and limits. All 48 qualification jobs pass on 749 frozen
+source files, including 1,430 boundary cases and 535 reference checks.
+The remaining `aggregates.matrix` edition
+requires mutable indexed storage and allocation. Native NIL execution
+remains gated.
+
+## Previous host checkpoint — bounded nested records
 
 [ADR 0116](../../docs/adr/0116-add-bounded-nested-records.md) adds explicitly
 selected profile 12 for shared nominal record fields and concrete generic
@@ -26,8 +43,7 @@ and tags. The [Nested Records Log](../Development/2026-11-20%20Nested%20Records%
 records evidence and limits. All 56 fresh jobs pass on 742 unchanged source
 files, including 1,377 boundary cases across thirteen language suites and 478
 oracle checks. Native NIL execution remains gated; Linux-loader behavior is
-unchanged. The next focused host slice is canonical compiler-generated local
-identities, targeting the complete `records-and-choices` edition.
+unchanged.
 
 ## Previous host checkpoint — bounded typed scalars
 

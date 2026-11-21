@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! Host-only profile-2 and explicitly selected profile-3 through profile-12 admission.
+//! Host-only profile-2 and explicitly selected profile-3 through profile-13 admission.
 //! All syntax and references are checked before
 //! reachable CFG validation; even dead instructions contribute authority.
 //! The immutable plan is accessible only through a complete validation witness.
@@ -48,6 +48,7 @@ enum parse_profile {
     source_debug,
     typed_scalars,
     nested_records,
+    hygienic_locals,
 }
 
 #[derive(Clone, Copy)]
@@ -81,6 +82,7 @@ impl parse_profile {
             Self::source_debug => source_debug::derivation_profile,
             Self::typed_scalars => typed_scalars::derivation_profile,
             Self::nested_records => nested_records::derivation_profile,
+            Self::hygienic_locals => hygienic_locals::derivation_profile,
         }
     }
 
@@ -97,6 +99,7 @@ impl parse_profile {
                 | Self::source_debug
                 | Self::typed_scalars
                 | Self::nested_records
+                | Self::hygienic_locals
         )
     }
 
@@ -112,6 +115,7 @@ impl parse_profile {
                 | Self::source_debug
                 | Self::typed_scalars
                 | Self::nested_records
+                | Self::hygienic_locals
         )
     }
 
@@ -126,6 +130,7 @@ impl parse_profile {
                 | Self::source_debug
                 | Self::typed_scalars
                 | Self::nested_records
+                | Self::hygienic_locals
         )
     }
 
@@ -139,6 +144,7 @@ impl parse_profile {
                 | Self::source_debug
                 | Self::typed_scalars
                 | Self::nested_records
+                | Self::hygienic_locals
         )
     }
 
@@ -151,6 +157,7 @@ impl parse_profile {
                 | Self::source_debug
                 | Self::typed_scalars
                 | Self::nested_records
+                | Self::hygienic_locals
         )
     }
 
@@ -162,24 +169,36 @@ impl parse_profile {
                 | Self::source_debug
                 | Self::typed_scalars
                 | Self::nested_records
+                | Self::hygienic_locals
         )
     }
 
     const fn enum_forms(self) -> bool {
         matches!(
             self,
-            Self::enums | Self::source_debug | Self::typed_scalars | Self::nested_records
+            Self::enums
+                | Self::source_debug
+                | Self::typed_scalars
+                | Self::nested_records
+                | Self::hygienic_locals
         )
     }
 
     const fn typed_scalar_forms(self) -> bool {
-        matches!(self, Self::typed_scalars | Self::nested_records)
+        matches!(
+            self,
+            Self::typed_scalars | Self::nested_records | Self::hygienic_locals
+        )
+    }
+
+    const fn nested_record_forms(self) -> bool {
+        matches!(self, Self::nested_records | Self::hygienic_locals)
     }
 
     const fn source_debug_forms(self) -> bool {
         matches!(
             self,
-            Self::source_debug | Self::typed_scalars | Self::nested_records
+            Self::source_debug | Self::typed_scalars | Self::nested_records | Self::hygienic_locals
         )
     }
 }
@@ -364,6 +383,9 @@ pub mod typed_scalars;
 
 /// Explicit profile-12 nested records and bounded concrete generic identities.
 pub mod nested_records;
+
+/// Explicit profile-13 canonical compiler-generated local storage identities.
+pub mod hygienic_locals;
 
 /// Raw host language checks, deliberately separate from manifest admission.
 #[cfg(feature = "host_conformance")]
@@ -898,10 +920,10 @@ impl<'a> validation_workspace<'a> {
                     let name = trim(name);
                     identifier(name)?;
                     let field_type = trim(field_type);
-                    if field_type != "i64" && profile != parse_profile::nested_records {
+                    if field_type != "i64" && !profile.nested_record_forms() {
                         return Err(error::unsupported);
                     }
-                    if profile == parse_profile::nested_records {
+                    if profile.nested_record_forms() {
                         // Resolve the exact target after all declarations have
                         // been read; this permits forward and cyclic references.
                         nominal_identifier(field_type, profile)?;
@@ -936,7 +958,7 @@ impl<'a> validation_workspace<'a> {
                     let layout = &mut self.plan.records[owner];
                     layout.fields[layout.field_count] =
                         u8::try_from(field).map_err(|_| error::limit)?;
-                    if profile == parse_profile::nested_records {
+                    if profile.nested_record_forms() {
                         self.record_field_types[self.plan.declared_field_count] = field_type;
                     }
                     layout.field_count += 1;
@@ -1056,7 +1078,7 @@ impl<'a> validation_workspace<'a> {
                 if index == maximum_functions {
                     return Err(error::limit);
                 }
-                if index == 0 && profile == parse_profile::nested_records {
+                if index == 0 && profile.nested_record_forms() {
                     self.resolve_record_fields()?;
                 }
                 let mut function = parse_function(
@@ -1486,18 +1508,16 @@ impl<'a> validation_workspace<'a> {
         payload: bool,
         profile: parse_profile,
     ) -> Result<u8, error> {
-        if profile == parse_profile::nested_records && tag.len() > maximum_name_bytes {
+        if profile.nested_record_forms() && tag.len() > maximum_name_bytes {
             return Err(error::limit);
         }
-        if profile == parse_profile::nested_records
-            && tag.bytes().any(|byte| matches!(byte, b'<' | b'>'))
-        {
+        if profile.nested_record_forms() && tag.bytes().any(|byte| matches!(byte, b'<' | b'>')) {
             return Err(error::unsupported);
         }
         record_identifier(tag)?;
         let (name, variant) = tag.rsplit_once("::").ok_or(error::syntax)?;
         let expected = &self.plan.enumerations[usize::from(layout)];
-        if profile == parse_profile::nested_records && expected.name.contains('<') {
+        if profile.nested_record_forms() && expected.name.contains('<') {
             // The explicit concrete metadata selects the nominal identity.
             // An erased tag is never looked up as an unrelated declaration.
             if name != nested_records::identity(expected.name)? {
@@ -2145,6 +2165,16 @@ fn identifier(value: &str) -> Result<(), error> {
 }
 
 fn local_identifier(value: &str, profile: parse_profile) -> Result<(), error> {
+    if profile == parse_profile::hygienic_locals
+        && let Some(suffix) = value.strip_prefix("$ny.local.")
+    {
+        if value.len() > maximum_name_bytes {
+            return Err(error::limit);
+        }
+        let (counter, name) = suffix.split_once('.').ok_or(error::syntax)?;
+        canonical_local_counter(counter)?;
+        return identifier(name);
+    }
     if !profile.scalar_forms() || !value.starts_with("$ny.temp.") {
         return identifier(value);
     }
@@ -2155,6 +2185,10 @@ fn local_identifier(value: &str, profile: parse_profile) -> Result<(), error> {
     identifier(prefix)?;
     // Retain canonical spelling as identity. The counter is never an index or
     // a quantity, so its bounded decimal bytes need no integer conversion.
+    canonical_local_counter(counter)
+}
+
+fn canonical_local_counter(counter: &str) -> Result<(), error> {
     if counter.is_empty()
         || !counter.bytes().all(|byte| byte.is_ascii_digit())
         || (counter.len() > 1 && counter.starts_with('0'))
@@ -2425,7 +2459,7 @@ fn record_identifier(value: &str) -> Result<(), error> {
     Ok(())
 }
 fn nominal_identifier(value: &str, profile: parse_profile) -> Result<&str, error> {
-    if profile == parse_profile::nested_records {
+    if profile.nested_record_forms() {
         nested_records::identity(value)
     } else {
         record_identifier(value)?;
@@ -2513,3 +2547,6 @@ mod typed_scalars_tests;
 
 #[cfg(test)]
 mod nested_records_tests;
+
+#[cfg(test)]
+mod hygienic_locals_tests;

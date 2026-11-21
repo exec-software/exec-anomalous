@@ -1,5 +1,22 @@
 # Native execution and compatibility readiness
 
+## Canonical compiler local identities (2026-11-21)
+
+[ADR 0117](../adr/0117-admit-canonical-compiler-local-identities.md) adds
+explicit host profile 13 for `$ny.local.<counter>.<name>` storage identities.
+Each complete name resolves to a slot in its own function. Shadowed bindings
+can hold independent values and kinds while local calls use exact callable
+signatures and existing initialization checks.
+
+The unchanged `records-and-choices.matrix` edition matches the pinned VM,
+bringing raw host coverage to 19 of 45 invocations and 13 of 38 roots.
+All 45 production admission attempts refuse. The
+[Hygienic Locals Log](../../notebook/Development/2026-11-21%20Hygienic%20Locals%20Log.md)
+records the complete edition proof and the fixtures that execute shadowed
+storage. All 48 qualification jobs pass, including the 14 language suites,
+fresh native admission boots, and the retained Linux-loader regression.
+Native NIL execution and full corpus qualification remain gated.
+
 ## Bounded nested records (2026-11-20)
 
 [ADR 0116](../adr/0116-add-bounded-nested-records.md) adds explicit profile 12
@@ -19,8 +36,7 @@ records evidence. All 56 fresh jobs pass on 742 unchanged source files, with
 1,377 boundary cases across thirteen language suites, 478 oracle checks and
 native artifact continuity. Earlier profile contracts, binary NIL v5 and native
 execution retain separate gates. This host profile changes no kernel, native
-admission or Linux guest behavior. Canonical hygienic local identities are the
-next focused host slice.
+admission or Linux guest behavior.
 
 ## Bounded typed scalars (2026-11-20)
 
