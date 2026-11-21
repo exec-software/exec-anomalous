@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! Host-only profile-2 and explicitly selected profile-3 through profile-11 admission.
+//! Host-only profile-2 and explicitly selected profile-3 through profile-12 admission.
 //! All syntax and references are checked before
 //! reachable CFG validation; even dead instructions contribute authority.
 //! The immutable plan is accessible only through a complete validation witness.
@@ -47,6 +47,7 @@ enum parse_profile {
     enums,
     source_debug,
     typed_scalars,
+    nested_records,
 }
 
 #[derive(Clone, Copy)]
@@ -79,6 +80,7 @@ impl parse_profile {
             Self::enums => enums::derivation_profile,
             Self::source_debug => source_debug::derivation_profile,
             Self::typed_scalars => typed_scalars::derivation_profile,
+            Self::nested_records => nested_records::derivation_profile,
         }
     }
 
@@ -94,6 +96,7 @@ impl parse_profile {
                 | Self::enums
                 | Self::source_debug
                 | Self::typed_scalars
+                | Self::nested_records
         )
     }
 
@@ -108,6 +111,7 @@ impl parse_profile {
                 | Self::enums
                 | Self::source_debug
                 | Self::typed_scalars
+                | Self::nested_records
         )
     }
 
@@ -121,6 +125,7 @@ impl parse_profile {
                 | Self::enums
                 | Self::source_debug
                 | Self::typed_scalars
+                | Self::nested_records
         )
     }
 
@@ -133,29 +138,49 @@ impl parse_profile {
                 | Self::enums
                 | Self::source_debug
                 | Self::typed_scalars
+                | Self::nested_records
         )
     }
 
     const fn record_forms(self) -> bool {
         matches!(
             self,
-            Self::record | Self::globals | Self::enums | Self::source_debug | Self::typed_scalars
+            Self::record
+                | Self::globals
+                | Self::enums
+                | Self::source_debug
+                | Self::typed_scalars
+                | Self::nested_records
         )
     }
 
     const fn global_forms(self) -> bool {
         matches!(
             self,
-            Self::globals | Self::enums | Self::source_debug | Self::typed_scalars
+            Self::globals
+                | Self::enums
+                | Self::source_debug
+                | Self::typed_scalars
+                | Self::nested_records
         )
     }
 
     const fn enum_forms(self) -> bool {
-        matches!(self, Self::enums | Self::source_debug | Self::typed_scalars)
+        matches!(
+            self,
+            Self::enums | Self::source_debug | Self::typed_scalars | Self::nested_records
+        )
+    }
+
+    const fn typed_scalar_forms(self) -> bool {
+        matches!(self, Self::typed_scalars | Self::nested_records)
     }
 
     const fn source_debug_forms(self) -> bool {
-        matches!(self, Self::source_debug | Self::typed_scalars)
+        matches!(
+            self,
+            Self::source_debug | Self::typed_scalars | Self::nested_records
+        )
     }
 }
 
@@ -337,6 +362,9 @@ pub mod source_debug;
 /// Explicit profile-11 boolean, byte and finite binary64 scalar values.
 pub mod typed_scalars;
 
+/// Explicit profile-12 nested records and bounded concrete generic identities.
+pub mod nested_records;
+
 /// Raw host language checks, deliberately separate from manifest admission.
 #[cfg(feature = "host_conformance")]
 pub mod conformance;
@@ -450,6 +478,7 @@ pub struct record_layout<'a> {
     pub name: &'a str,
     context: Option<&'a str>,
     fields: [u8; maximum_record_fields],
+    field_kinds: [kind; maximum_record_fields],
     field_count: usize,
 }
 
@@ -459,6 +488,7 @@ impl<'a> record_layout<'a> {
             name: "",
             context: None,
             fields: [0; maximum_record_fields],
+            field_kinds: [kind::integer; maximum_record_fields],
             field_count: 0,
         }
     }
@@ -468,6 +498,17 @@ impl<'a> record_layout<'a> {
     /// Global field-name IDs in this layout's declaration order.
     pub fn field_ids(&self) -> &[u8] {
         &self.fields[..self.field_count]
+    }
+    /// Exact field kinds, parallel to `field_ids` in declaration order.
+    pub fn field_kinds(&self) -> &[kind] {
+        &self.field_kinds[..self.field_count]
+    }
+    /// Resolve a global field-name ID within this exact nominal layout.
+    pub fn field_kind(&self, field_id: u8) -> Option<kind> {
+        self.field_ids()
+            .iter()
+            .position(|field| *field == field_id)
+            .map(|index| self.field_kinds[index])
     }
 }
 
@@ -703,6 +744,7 @@ impl flow_state {
 pub struct validation_workspace<'a> {
     plan: program<'a>,
     references: [(&'a str, usize); maximum_instructions],
+    record_field_types: [&'a str; maximum_declared_record_fields],
     labels: [label<'a>; maximum_basic_blocks],
     label_count: usize,
     block_start: [bool; maximum_instructions],
@@ -727,6 +769,7 @@ impl<'a> validation_workspace<'a> {
         Self {
             plan: program::new(),
             references: [("", 0); maximum_instructions],
+            record_field_types: [""; maximum_declared_record_fields],
             labels: [label {
                 name: "",
                 target: 0,
@@ -753,6 +796,7 @@ impl<'a> validation_workspace<'a> {
         self.plan.record_count = 0;
         self.plan.field_name_count = 0;
         self.plan.declared_field_count = 0;
+        self.record_field_types.fill("");
         self.plan.global_count = 0;
         self.plan.enumeration_count = 0;
         self.plan.declared_variant_count = 0;
@@ -828,7 +872,8 @@ impl<'a> validation_workspace<'a> {
                     };
                     identifier(name)?;
                     let layout = &mut self.plan.enumerations[owner];
-                    if layout.name.len() + 2 + name.len() > maximum_name_bytes {
+                    let tag_base = nominal_identifier(layout.name, profile)?;
+                    if tag_base.len() + 2 + name.len() > maximum_name_bytes {
                         return Err(error::limit);
                     }
                     if layout.variants().iter().any(|variant| variant.name == name) {
@@ -852,8 +897,14 @@ impl<'a> validation_workspace<'a> {
                     let (name, field_type) = line.split_once(':').ok_or(error::syntax)?;
                     let name = trim(name);
                     identifier(name)?;
-                    if trim(field_type) != "i64" {
+                    let field_type = trim(field_type);
+                    if field_type != "i64" && profile != parse_profile::nested_records {
                         return Err(error::unsupported);
+                    }
+                    if profile == parse_profile::nested_records {
+                        // Resolve the exact target after all declarations have
+                        // been read; this permits forward and cyclic references.
+                        nominal_identifier(field_type, profile)?;
                     }
                     let layout = &self.plan.records[owner];
                     if layout
@@ -885,6 +936,9 @@ impl<'a> validation_workspace<'a> {
                     let layout = &mut self.plan.records[owner];
                     layout.fields[layout.field_count] =
                         u8::try_from(field).map_err(|_| error::limit)?;
+                    if profile == parse_profile::nested_records {
+                        self.record_field_types[self.plan.declared_field_count] = field_type;
+                    }
                     layout.field_count += 1;
                     self.plan.declared_field_count += 1;
                 }
@@ -926,8 +980,8 @@ impl<'a> validation_workspace<'a> {
                 if !records || declaration || self.plan.function_count != 0 {
                     return Err(error::syntax);
                 }
-                record_identifier(name)?;
-                if reserved_record_name(name) {
+                let base = nominal_identifier(name, profile)?;
+                if reserved_record_name(base) {
                     return Err(error::unsupported);
                 }
                 if self
@@ -960,9 +1014,9 @@ impl<'a> validation_workspace<'a> {
                 if !enum_section || declaration || self.plan.function_count != 0 {
                     return Err(error::syntax);
                 }
-                record_identifier(name)?;
-                let terminal = name.rsplit("::").next().ok_or(error::syntax)?;
-                if reserved_record_name(name)
+                let base = nominal_identifier(name, profile)?;
+                let terminal = base.rsplit("::").next().ok_or(error::syntax)?;
+                if reserved_record_name(base)
                     || terminal.eq_ignore_ascii_case("option")
                     || terminal.eq_ignore_ascii_case("result")
                 {
@@ -1001,6 +1055,9 @@ impl<'a> validation_workspace<'a> {
                 let index = self.plan.function_count;
                 if index == maximum_functions {
                     return Err(error::limit);
+                }
+                if index == 0 && profile == parse_profile::nested_records {
+                    self.resolve_record_fields()?;
                 }
                 let mut function = parse_function(
                     header,
@@ -1184,9 +1241,7 @@ impl<'a> validation_workspace<'a> {
         let fields = &fields[..count];
         self.references[pc] = ("", 0);
         let operation = match fields {
-            ["PUSH_CONST", value] if profile == parse_profile::typed_scalars => {
-                typed_scalars::literal(value)?
-            }
+            ["PUSH_CONST", value] if profile.typed_scalar_forms() => typed_scalars::literal(value)?,
             ["PUSH_CONST", value] => operation::integer(integer_literal(value, profile)?),
             ["PUSH_CONST_STR", name] => {
                 identifier(name)?;
@@ -1228,7 +1283,7 @@ impl<'a> validation_workspace<'a> {
                 }
             }
             ["CAST", "text"] if profile.global_forms() => operation::integer_text,
-            ["CAST", value] if profile == parse_profile::typed_scalars => {
+            ["CAST", value] if profile.typed_scalar_forms() => {
                 operation::scalar_cast(match *value {
                     "bool" => scalar_cast::boolean,
                     "u8" => scalar_cast::byte,
@@ -1275,20 +1330,20 @@ impl<'a> validation_workspace<'a> {
             ["NEW_VARIANT", tag, count, name, payload] if profile.enum_forms() => {
                 let payload = enum_payload(payload)?;
                 enum_arity(count, payload)?;
-                let layout = self.enum_reference(name)?;
-                let variant = self.enum_variant_reference(tag, layout, payload)?;
+                let layout = self.enum_reference(name, profile)?;
+                let variant = self.enum_variant_reference(tag, layout, payload, profile)?;
                 operation::enum_new { layout, variant }
             }
             ["IS_VARIANT", tag, name, payload] if profile.enum_forms() => {
                 let payload = enum_payload(payload)?;
-                let layout = self.enum_reference(name)?;
-                let variant = self.enum_variant_reference(tag, layout, payload)?;
+                let layout = self.enum_reference(name, profile)?;
+                let variant = self.enum_variant_reference(tag, layout, payload, profile)?;
                 operation::enum_is { layout, variant }
             }
             ["UNWRAP_VARIANT", count, name, payload] if profile.enum_forms() => {
                 let payload = enum_payload(payload)?;
                 enum_arity(count, payload)?;
-                let layout = self.enum_reference(name)?;
+                let layout = self.enum_reference(name, profile)?;
                 if !self.plan.enumerations[usize::from(layout)]
                     .variants()
                     .iter()
@@ -1299,7 +1354,7 @@ impl<'a> validation_workspace<'a> {
                 operation::enum_unwrap { layout, payload }
             }
             ["NEW_STRUCT", name] if profile.record_forms() => {
-                record_identifier(name)?;
+                nominal_identifier(name, profile)?;
                 let index = self
                     .plan
                     .record_layouts()
@@ -1414,8 +1469,8 @@ impl<'a> validation_workspace<'a> {
         Ok(())
     }
 
-    fn enum_reference(&self, name: &str) -> Result<u8, error> {
-        record_identifier(name)?;
+    fn enum_reference(&self, name: &str, profile: parse_profile) -> Result<u8, error> {
+        nominal_identifier(name, profile)?;
         self.plan
             .enum_layouts()
             .iter()
@@ -1424,10 +1479,41 @@ impl<'a> validation_workspace<'a> {
             .ok_or(error::unsupported)
     }
 
-    fn enum_variant_reference(&self, tag: &str, layout: u8, payload: bool) -> Result<u8, error> {
+    fn enum_variant_reference(
+        &self,
+        tag: &str,
+        layout: u8,
+        payload: bool,
+        profile: parse_profile,
+    ) -> Result<u8, error> {
+        if profile == parse_profile::nested_records && tag.len() > maximum_name_bytes {
+            return Err(error::limit);
+        }
+        if profile == parse_profile::nested_records
+            && tag.bytes().any(|byte| matches!(byte, b'<' | b'>'))
+        {
+            return Err(error::unsupported);
+        }
         record_identifier(tag)?;
         let (name, variant) = tag.rsplit_once("::").ok_or(error::syntax)?;
-        let declared = self.enum_reference(name)?;
+        let expected = &self.plan.enumerations[usize::from(layout)];
+        if profile == parse_profile::nested_records && expected.name.contains('<') {
+            // The explicit concrete metadata selects the nominal identity.
+            // An erased tag is never looked up as an unrelated declaration.
+            if name != nested_records::identity(expected.name)? {
+                return Err(error::syntax);
+            }
+            let index = expected
+                .variants()
+                .iter()
+                .position(|item| item.name == variant)
+                .ok_or(error::unsupported)?;
+            if expected.variants[index].has_payload != payload {
+                return Err(error::syntax);
+            }
+            return Ok(index as u8);
+        }
+        let declared = self.enum_reference(name, profile)?;
         let declaration = &self.plan.enumerations[usize::from(declared)];
         let index = declaration
             .variants()
@@ -1438,6 +1524,29 @@ impl<'a> validation_workspace<'a> {
             return Err(error::syntax);
         }
         Ok(index as u8)
+    }
+
+    fn resolve_record_fields(&mut self) -> Result<(), error> {
+        let mut declaration = 0;
+        for owner in 0..self.plan.record_count {
+            for field in 0..self.plan.records[owner].field_count {
+                let name = self.record_field_types[declaration];
+                let value = if name == "i64" {
+                    kind::integer
+                } else {
+                    let target = self
+                        .plan
+                        .record_layouts()
+                        .iter()
+                        .position(|layout| layout.name == name)
+                        .ok_or(error::unsupported)?;
+                    kind::record(target as u8)
+                };
+                self.plan.records[owner].field_kinds[field] = value;
+                declaration += 1;
+            }
+        }
+        Ok(())
     }
 
     fn resolve(&mut self, profile: parse_profile) -> Result<(), error> {
@@ -1716,22 +1825,20 @@ impl<'a> validation_workspace<'a> {
                             self.plan.instructions[pc].operation,
                             operation::record_set(_)
                         );
-                        if write {
-                            state.integer()?;
-                        }
+                        let incoming = if write { Some(state.pop()?) } else { None };
                         let kind::record(layout) = state.pop()? else {
                             return Err(error::syntax);
                         };
-                        if !self.plan.records[usize::from(layout)]
-                            .field_ids()
-                            .contains(&field)
-                        {
+                        let field_kind = self.plan.records[usize::from(layout)]
+                            .field_kind(field)
+                            .ok_or(error::syntax)?;
+                        if incoming.is_some_and(|actual| actual != field_kind) {
                             return Err(error::syntax);
                         }
                         state.push(if write {
                             kind::record(layout)
                         } else {
-                            kind::integer
+                            field_kind
                         })?;
                     }
                     operation::concat => {
@@ -2078,9 +2185,9 @@ fn value_kind(
 ) -> Result<kind, error> {
     match value {
         "i32" | "i64" => Ok(kind::integer),
-        "bool" if profile == parse_profile::typed_scalars => Ok(kind::boolean),
-        "u8" if profile == parse_profile::typed_scalars => Ok(kind::byte),
-        "f64" if profile == parse_profile::typed_scalars => Ok(kind::float),
+        "bool" if profile.typed_scalar_forms() => Ok(kind::boolean),
+        "u8" if profile.typed_scalar_forms() => Ok(kind::byte),
+        "f64" if profile.typed_scalar_forms() => Ok(kind::float),
         "text" => Ok(kind::text),
         "array<i64>" if profile.array_forms() => Ok(kind::array_integer),
         "array<text>" if profile.array_forms() => Ok(kind::array_text),
@@ -2317,6 +2424,14 @@ fn record_identifier(value: &str) -> Result<(), error> {
     }
     Ok(())
 }
+fn nominal_identifier(value: &str, profile: parse_profile) -> Result<&str, error> {
+    if profile == parse_profile::nested_records {
+        nested_records::identity(value)
+    } else {
+        record_identifier(value)?;
+        Ok(value)
+    }
+}
 fn reserved_record_name(value: &str) -> bool {
     // Mirror the pinned loader's reserved nominal-name vocabulary. In
     // particular, bool has runtime primitive validation before schema lookup.
@@ -2395,3 +2510,6 @@ mod source_debug_tests;
 
 #[cfg(test)]
 mod typed_scalars_tests;
+
+#[cfg(test)]
+mod nested_records_tests;

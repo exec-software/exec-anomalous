@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! Experimental host qualification executors for admitted NIL (ADRs 0104–0115).
+//! Experimental host qualification executors for admitted NIL (ADRs 0104–0116).
 //! This is not a native-integrated or full-corpus-qualified NIL interpreter.
 //! Production entries require whole-edition admission. The opt-in host conformance
 //! entry accepts a distinct raw validation witness, never a production package.
@@ -46,6 +46,7 @@ pub enum error {
     global_uninitialized,
     enum_shape,
     scalar_conversion,
+    record_uninitialized,
 }
 
 impl error {
@@ -70,6 +71,7 @@ impl error {
             Self::global_uninitialized => "global_uninitialized",
             Self::enum_shape => "enum_shape",
             Self::scalar_conversion => "scalar_conversion",
+            Self::record_uninitialized => "record_uninitialized",
         }
     }
 }

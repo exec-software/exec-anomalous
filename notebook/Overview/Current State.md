@@ -1,6 +1,6 @@
 ---
 title: "Anomalous — Current State"
-date: 2026-11-20
+date: 2026-11-21
 tags: [status, milestone, boot, kernel, memory, interrupts, input, shell, session, display, desktop, privacy, waiting, circle, ring3, scheduler, supervision, rites, x86-64]
 status: active
 domain: foundations
@@ -8,7 +8,28 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current host checkpoint — bounded typed scalars
+## Current host checkpoint — bounded nested records
+
+[ADR 0116](../../docs/adr/0116-add-bounded-nested-records.md) adds explicitly
+selected profile 12 for shared nominal record fields and concrete generic
+record/enum identities. Forward and cyclic references resolve within fixed
+schema bounds. Child handles preserve aliases across nested access, field
+replacement and helper calls. Missing record fields fail explicitly; integer
+fields keep their zero default. Generic arguments are exact nominal labels,
+with no template instantiation or broader aggregate field types.
+
+The new 161-case final proof and independent audit pass. Eighteen
+of 45 unchanged raw invocations match, including 12 of 38 roots. The complete
+`aggregates-twin.ny` edition is newly supported. The other 27 remain unmet
+coverage; production refuses all 45. Earlier profiles retain their grammar
+and tags. The [Nested Records Log](../Development/2026-11-20%20Nested%20Records%20Log.md)
+records evidence and limits. All 56 fresh jobs pass on 742 unchanged source
+files, including 1,377 boundary cases across thirteen language suites and 478
+oracle checks. Native NIL execution remains gated; Linux-loader behavior is
+unchanged. The next focused host slice is canonical compiler-generated local
+identities, targeting the complete `records-and-choices` edition.
+
+## Previous host checkpoint — bounded typed scalars
 
 [ADR 0115](../../docs/adr/0115-add-bounded-typed-scalars.md) adds explicitly
 selected profile 11 for distinct boolean, byte and finite binary64 values.

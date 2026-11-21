@@ -1,5 +1,27 @@
 # Native execution and compatibility readiness
 
+## Bounded nested records (2026-11-20)
+
+[ADR 0116](../adr/0116-add-bounded-nested-records.md) adds explicit profile 12
+for shared nominal child records and concrete generic identities. Exact field
+kinds survive locals, helper calls and control-flow joins. Fixed descriptor and
+field arenas support forward, self and mutual references without recursive
+allocation or cleanup. Uninitialized child reads report an attributable fault;
+integer fields retain their zero default. Concrete generic names distinguish
+fully declared layouts and enums; they do not instantiate templates.
+
+The 161-case final proof passes with independent alias, cycle,
+capacity and complete-artifact checks. Eighteen of 45 raw corpus invocations
+match, including 12 of 38 roots. Complete `aggregates-twin.ny` is the new root.
+The other 27 remain unmet coverage, and all 45 production attempts refuse.
+The [Nested Records Log](../../notebook/Development/2026-11-20%20Nested%20Records%20Log.md)
+records evidence. All 56 fresh jobs pass on 742 unchanged source files, with
+1,377 boundary cases across thirteen language suites, 478 oracle checks and
+native artifact continuity. Earlier profile contracts, binary NIL v5 and native
+execution retain separate gates. This host profile changes no kernel, native
+admission or Linux guest behavior. Canonical hygienic local identities are the
+next focused host slice.
+
 ## Bounded typed scalars (2026-11-20)
 
 [ADR 0115](../adr/0115-add-bounded-typed-scalars.md) adds explicit profile 11

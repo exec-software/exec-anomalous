@@ -27,7 +27,7 @@ pub const maximum_text_bytes: usize = 65536;
 /// Immutable arrays retain descriptors and elements until the execution ends.
 pub const maximum_arrays: usize = 128;
 pub const maximum_array_elements: usize = 1024;
-/// Mutable records retain descriptors and zero-initialized i64 fields for a run.
+/// Mutable records retain descriptors and typed integer/record fields for a run.
 pub const maximum_records: usize = 128;
 pub const maximum_record_fields: usize = 1024;
 
@@ -376,20 +376,25 @@ impl<'a> execution_workspace<'a> {
                     self.push(value::record(handle))?;
                 }
                 operation::record_get(field) => {
-                    let value::record(handle) = self.pop()? else {
-                        return Err(error::invalid_state);
-                    };
-                    self.push(value::integer(self.records.get(program, handle, field)?))?;
-                }
-                operation::record_set(field) => {
-                    let number = self.integer()?;
                     if self.depth <= self.current()?.floor {
                         return Err(error::invalid_state);
                     }
                     let value::record(handle) = self.values[self.depth - 1] else {
                         return Err(error::invalid_state);
                     };
-                    self.records.set(program, handle, field, number)?;
+                    let item = self.records.get(program, handle, field)?;
+                    self.pop()?;
+                    self.push(item)?;
+                }
+                operation::record_set(field) => {
+                    let item = self.pop()?;
+                    if self.depth <= self.current()?.floor {
+                        return Err(error::invalid_state);
+                    }
+                    let value::record(handle) = self.values[self.depth - 1] else {
+                        return Err(error::invalid_state);
+                    };
+                    self.records.set(program, handle, field, item)?;
                 }
                 operation::array_literal { count, element } => {
                     let start = self.depth.checked_sub(count).ok_or(error::invalid_state)?;
@@ -595,7 +600,7 @@ fn value_kind(value: value<'_>) -> kind {
     }
 }
 
-/// Execute only a validated control-flow witness (profiles 2 through 11).
+/// Execute only a validated control-flow witness (profiles 2 through 12).
 /// Every return, arithmetic error, policy
 /// refusal or service refusal clears the internal frame/value storage. Earlier
 /// acknowledged sink effects remain committed; there is no automatic retry.
@@ -669,3 +674,6 @@ mod source_debug_tests;
 
 #[cfg(test)]
 mod typed_scalar_tests;
+
+#[cfg(test)]
+mod nested_record_tests;

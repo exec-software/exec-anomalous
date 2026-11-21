@@ -52,7 +52,9 @@ desktop, or a security boundary for sensitive workloads.
   strict source paths and lexical debug bindings with read-only decoded views.
   [Profile 11](docs/adr/0115-add-bounded-typed-scalars.md) adds distinct boolean
   and byte values, finite binary64 literals and explicit scalar casts.
-  Seventeen of 45 unchanged raw corpus invocations match; full corpus qualification
+  [Profile 12](docs/adr/0116-add-bounded-nested-records.md) adds shared nested
+  record fields and exact concrete generic record/enum identities.
+  Eighteen of 45 unchanged raw corpus invocations match; full corpus qualification
   and native execution remain gated.
 - Host-side libraries explore typed session routing, shared semantic scenes,
   presentation acknowledgement, and recovery.
