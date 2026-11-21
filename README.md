@@ -56,7 +56,9 @@ desktop, or a security boundary for sensitive workloads.
   record fields and exact concrete generic record/enum identities.
   [Profile 13](docs/adr/0117-admit-canonical-compiler-local-identities.md)
   recognizes distinct compiler-generated names for shadowed local bindings.
-  Nineteen of 45 unchanged raw corpus invocations match. Full corpus
+  [Profile 14](docs/adr/0118-add-bounded-indexed-storage.md) adds bounded
+  integer array writes and growth and explicitly released integer buffers.
+  Twenty of 45 unchanged raw corpus invocations match. Full corpus
   qualification and native execution remain gated.
 - Host-side libraries explore typed session routing, shared semantic scenes,
   presentation acknowledgement, and recovery.

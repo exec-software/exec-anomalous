@@ -6,7 +6,7 @@ use anomalous_program_executor::flow;
 use anomalous_program_flow::{hygienic_locals, validation_workspace};
 use anomalous_program_manifest::maximum_image_bytes;
 
-#[path = "support/hygienic_locals.rs"]
+#[path = "support/flow_receipt.rs"]
 mod probe;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

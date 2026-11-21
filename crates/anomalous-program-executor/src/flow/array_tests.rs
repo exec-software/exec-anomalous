@@ -2,7 +2,9 @@ extern crate std;
 
 use super::*;
 use crate::{console_request, service_error};
-use anomalous_program_flow::{array as array_profile, sha256, validation_workspace};
+use anomalous_program_flow::{
+    array as array_profile, indexed_storage, sha256, validation_workspace,
+};
 use anomalous_program_manifest::maximum_image_bytes;
 use std::{boxed::Box, format, string::String, vec, vec::Vec};
 
@@ -82,6 +84,34 @@ fn run(edition: &[u8], budget: limits, sink: &mut recorder) -> execution {
     assert_cleared(&workspace);
     result
 }
+
+#[test]
+fn released_alias_fault_clears_workspace_after_acknowledged_output() {
+    with_storage(|| {
+        let edition = source(
+            "PUSH_CONST 2\nALLOC i64\nSTORE_LOCAL buffer\nLOAD_LOCAL buffer\nSTORE_LOCAL alias\nLOAD_LOCAL alias\nPUSH_CONST 1\nPUSH_CONST 42\nSET_INDEX\nLOAD_LOCAL buffer\nPUSH_CONST 1\nGET_INDEX\nCONSOLE_WRITELN\nLOAD_LOCAL buffer\nFREE\nLOAD_LOCAL alias\nPUSH_CONST 1\nGET_INDEX\nRET",
+            "",
+        );
+        let mut validation = Box::new(validation_workspace::new());
+        let mut image = vec![0; maximum_image_bytes];
+        let size =
+            indexed_storage::encode(edition.as_bytes(), &mut image, &mut validation).unwrap();
+        let admitted = indexed_storage::admit(&image[..size], 1, &mut validation).unwrap();
+        let mut workspace = Box::new(execution_workspace::new());
+        for _ in 0..2 {
+            let mut sink = recorder::default();
+            let result = execute(&admitted, limits::default(), &mut workspace, &mut sink);
+            assert_eq!(result.outcome, Err(error::buffer_released));
+            assert_eq!(result.statistics.instructions, 18);
+            assert_eq!(result.statistics.console_calls, 1);
+            assert_eq!(result.statistics.output_bytes, 3);
+            assert_eq!(result.line, edition.lines().count() - 2);
+            assert_eq!(sink.output, b"42\n");
+            assert_cleared(&workspace);
+        }
+    });
+}
+
 #[test]
 fn literal_order_and_full_width_integer_elements() {
     with_storage(|| {

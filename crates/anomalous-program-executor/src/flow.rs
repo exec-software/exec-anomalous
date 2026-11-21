@@ -24,7 +24,7 @@ pub const maximum_locals: usize = 128;
 /// Cumulative decoded computed-text bytes per execution, with no reclamation
 /// until the run ends. Literals remain borrowed and do not consume this arena.
 pub const maximum_text_bytes: usize = 65536;
-/// Immutable arrays retain descriptors and elements until the execution ends.
+/// Array and buffer descriptors and backing cells are charged for the run.
 pub const maximum_arrays: usize = 128;
 pub const maximum_array_elements: usize = 1024;
 /// Mutable records retain descriptors and typed integer/record fields for a run.
@@ -424,6 +424,32 @@ impl<'a> execution_workspace<'a> {
                     };
                     self.push(self.arrays.get(handle, index)?)?;
                 }
+                operation::array_set => {
+                    let number = self.integer()?;
+                    let index = self.integer()?;
+                    let value::array(handle) = self.pop()? else {
+                        return Err(error::invalid_state);
+                    };
+                    self.arrays.set(handle, index, number)?;
+                }
+                operation::array_push => {
+                    let number = self.integer()?;
+                    let value::array(handle) = self.pop()? else {
+                        return Err(error::invalid_state);
+                    };
+                    self.arrays.append(handle, number)?;
+                }
+                operation::buffer_alloc => {
+                    let count = self.integer()?;
+                    let handle = self.arrays.allocate_buffer(count)?;
+                    self.push(value::array(handle))?;
+                }
+                operation::buffer_free => {
+                    let value::array(handle) = self.pop()? else {
+                        return Err(error::invalid_state);
+                    };
+                    self.arrays.release(handle)?;
+                }
                 operation::load(index) => {
                     let item = self
                         .current()?
@@ -600,7 +626,7 @@ fn value_kind(value: value<'_>) -> kind {
     }
 }
 
-/// Execute only a validated control-flow witness (profiles 2 through 13).
+/// Execute only a validated control-flow witness (profiles 2 through 14).
 /// Every return, arithmetic error, policy
 /// refusal or service refusal clears the internal frame/value storage. Earlier
 /// acknowledged sink effects remain committed; there is no automatic retry.

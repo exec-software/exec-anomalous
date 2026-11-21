@@ -47,6 +47,7 @@ pub enum error {
     enum_shape,
     scalar_conversion,
     record_uninitialized,
+    buffer_released,
 }
 
 impl error {
@@ -72,6 +73,7 @@ impl error {
             Self::enum_shape => "enum_shape",
             Self::scalar_conversion => "scalar_conversion",
             Self::record_uninitialized => "record_uninitialized",
+            Self::buffer_released => "buffer_released",
         }
     }
 }

@@ -5,7 +5,7 @@
 use anomalous_program_executor::{conformance, flow};
 use anomalous_program_flow::{conformance::validate_hygienic_locals, validation_workspace};
 
-#[path = "support/hygienic_locals.rs"]
+#[path = "support/flow_receipt.rs"]
 mod probe;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

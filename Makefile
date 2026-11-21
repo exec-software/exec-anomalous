@@ -350,6 +350,7 @@ check:
 	python3 scripts/program_typed_scalars_proof.py --self-test
 	python3 scripts/program_nested_records_proof.py --self-test
 	python3 scripts/program_hygienic_locals_proof.py --self-test
+	python3 scripts/program_indexed_storage_proof.py --self-test
 	cargo test --package anomalous-document-protocol
 	cargo test --package anomalous-document-protocol --features remote_workspace
 	cargo test --package anomalous-elf-adapter

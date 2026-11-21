@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! Host-only profile-2 and explicitly selected profile-3 through profile-13 admission.
+//! Host-only profile-2 and explicitly selected profile-3 through profile-14 admission.
 //! All syntax and references are checked before
 //! reachable CFG validation; even dead instructions contribute authority.
 //! The immutable plan is accessible only through a complete validation witness.
@@ -49,6 +49,7 @@ enum parse_profile {
     typed_scalars,
     nested_records,
     hygienic_locals,
+    indexed_storage,
 }
 
 #[derive(Clone, Copy)]
@@ -83,6 +84,7 @@ impl parse_profile {
             Self::typed_scalars => typed_scalars::derivation_profile,
             Self::nested_records => nested_records::derivation_profile,
             Self::hygienic_locals => hygienic_locals::derivation_profile,
+            Self::indexed_storage => indexed_storage::derivation_profile,
         }
     }
 
@@ -100,6 +102,7 @@ impl parse_profile {
                 | Self::typed_scalars
                 | Self::nested_records
                 | Self::hygienic_locals
+                | Self::indexed_storage
         )
     }
 
@@ -116,6 +119,7 @@ impl parse_profile {
                 | Self::typed_scalars
                 | Self::nested_records
                 | Self::hygienic_locals
+                | Self::indexed_storage
         )
     }
 
@@ -131,6 +135,7 @@ impl parse_profile {
                 | Self::typed_scalars
                 | Self::nested_records
                 | Self::hygienic_locals
+                | Self::indexed_storage
         )
     }
 
@@ -145,6 +150,7 @@ impl parse_profile {
                 | Self::typed_scalars
                 | Self::nested_records
                 | Self::hygienic_locals
+                | Self::indexed_storage
         )
     }
 
@@ -158,6 +164,7 @@ impl parse_profile {
                 | Self::typed_scalars
                 | Self::nested_records
                 | Self::hygienic_locals
+                | Self::indexed_storage
         )
     }
 
@@ -170,6 +177,7 @@ impl parse_profile {
                 | Self::typed_scalars
                 | Self::nested_records
                 | Self::hygienic_locals
+                | Self::indexed_storage
         )
     }
 
@@ -181,24 +189,39 @@ impl parse_profile {
                 | Self::typed_scalars
                 | Self::nested_records
                 | Self::hygienic_locals
+                | Self::indexed_storage
         )
     }
 
     const fn typed_scalar_forms(self) -> bool {
         matches!(
             self,
-            Self::typed_scalars | Self::nested_records | Self::hygienic_locals
+            Self::typed_scalars
+                | Self::nested_records
+                | Self::hygienic_locals
+                | Self::indexed_storage
         )
     }
 
     const fn nested_record_forms(self) -> bool {
-        matches!(self, Self::nested_records | Self::hygienic_locals)
+        matches!(
+            self,
+            Self::nested_records | Self::hygienic_locals | Self::indexed_storage
+        )
+    }
+
+    const fn hygienic_local_forms(self) -> bool {
+        matches!(self, Self::hygienic_locals | Self::indexed_storage)
     }
 
     const fn source_debug_forms(self) -> bool {
         matches!(
             self,
-            Self::source_debug | Self::typed_scalars | Self::nested_records | Self::hygienic_locals
+            Self::source_debug
+                | Self::typed_scalars
+                | Self::nested_records
+                | Self::hygienic_locals
+                | Self::indexed_storage
         )
     }
 }
@@ -387,6 +410,9 @@ pub mod nested_records;
 /// Explicit profile-13 canonical compiler-generated local storage identities.
 pub mod hygienic_locals;
 
+/// Explicit profile-14 integer indexed writes, array extension and opaque buffers.
+pub mod indexed_storage;
+
 /// Raw host language checks, deliberately separate from manifest admission.
 #[cfg(feature = "host_conformance")]
 pub mod conformance;
@@ -404,6 +430,8 @@ pub enum kind {
     function(u8),
     record(u8),
     enumeration(u8),
+    /// Opaque i64 storage from ALLOC, with no source-level signature spelling.
+    buffer_integer,
 }
 
 /// Explicit profile-11 conversions. Floating-point identity is the only
@@ -432,6 +460,14 @@ pub enum operation {
     },
     array_len,
     array_get,
+    /// Consume an integer array or buffer, integer index and integer value.
+    array_set,
+    /// Consume an integer array and integer value; mutate the shared array.
+    array_push,
+    /// Consume an explicit integer count and produce an opaque integer buffer.
+    buffer_alloc,
+    /// Consume an opaque integer buffer; aliases are checked by the executor.
+    buffer_free,
     record_new(u8),
     /// Global field-name identity; membership is proved against the receiver.
     record_get(u8),
@@ -1344,6 +1380,11 @@ impl<'a> validation_workspace<'a> {
             }
             ["LEN"] if profile.array_forms() => operation::array_len,
             ["GET_INDEX"] if profile.array_forms() => operation::array_get,
+            ["SET_INDEX"] if profile == parse_profile::indexed_storage => operation::array_set,
+            ["ALLOC", "i64"] if profile == parse_profile::indexed_storage => {
+                operation::buffer_alloc
+            }
+            ["FREE"] if profile == parse_profile::indexed_storage => operation::buffer_free,
             ["PUSH_FN_PTR", name] if profile.callable_forms() => {
                 identifier(name)?;
                 self.references[pc] = (name, 0);
@@ -1646,6 +1687,12 @@ impl<'a> validation_workspace<'a> {
                                 return Err(error::unsupported);
                             }
                             operation::console { newline }
+                        } else if profile == parse_profile::indexed_storage && name == "array__push"
+                        {
+                            if count != 2 {
+                                return Err(error::unsupported);
+                            }
+                            operation::array_push
                         } else {
                             return Err(error::unsupported);
                         }
@@ -1891,11 +1938,33 @@ impl<'a> validation_workspace<'a> {
                     operation::array_get => {
                         state.integer()?;
                         let element = match state.pop()? {
-                            kind::array_integer => kind::integer,
+                            kind::array_integer | kind::buffer_integer => kind::integer,
                             kind::array_text => kind::text,
                             _ => return Err(error::syntax),
                         };
                         state.push(element)?;
+                    }
+                    operation::array_set => {
+                        state.integer()?;
+                        state.integer()?;
+                        if !matches!(state.pop()?, kind::array_integer | kind::buffer_integer) {
+                            return Err(error::syntax);
+                        }
+                    }
+                    operation::array_push => {
+                        state.integer()?;
+                        if state.pop()? != kind::array_integer {
+                            return Err(error::syntax);
+                        }
+                    }
+                    operation::buffer_alloc => {
+                        state.integer()?;
+                        state.push(kind::buffer_integer)?;
+                    }
+                    operation::buffer_free => {
+                        if state.pop()? != kind::buffer_integer {
+                            return Err(error::syntax);
+                        }
                     }
                     operation::load(index) => {
                         state.push(state.locals[index].ok_or(error::syntax)?)?
@@ -2165,7 +2234,7 @@ fn identifier(value: &str) -> Result<(), error> {
 }
 
 fn local_identifier(value: &str, profile: parse_profile) -> Result<(), error> {
-    if profile == parse_profile::hygienic_locals
+    if profile.hygienic_local_forms()
         && let Some(suffix) = value.strip_prefix("$ny.local.")
     {
         if value.len() > maximum_name_bytes {
@@ -2550,3 +2619,6 @@ mod nested_records_tests;
 
 #[cfg(test)]
 mod hygienic_locals_tests;
+
+#[cfg(test)]
+mod indexed_storage_tests;

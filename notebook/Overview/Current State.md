@@ -8,7 +8,22 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current host checkpoint — canonical compiler local identities
+## Current host checkpoint — bounded indexed storage
+
+[ADR 0118](../../docs/adr/0118-add-bounded-indexed-storage.md) adds bounded
+integer array writes and append, and explicit allocation and release of
+integer buffers. Array aliases survive growth. Releasing a buffer clears
+its cells and revokes every alias.
+
+The complete `aggregates.matrix` edition matches the pinned VM with
+result zero and 70 console bytes. Raw host coverage reaches 20 of 45
+invocations and 14 of 38 roots. All 45 production attempts refuse. The
+[Indexed Storage Log](../Development/2026-11-21%20Indexed%20Storage%20Log.md)
+records the exact proof and remaining gates. All 50 qualification jobs pass
+on 756 frozen source files, with 1,532 boundary cases and 636 reference
+checks. `bindings.matrix` now reaches the boolean-control-flow boundary.
+
+## Previous host checkpoint — canonical compiler local identities
 
 [ADR 0117](../../docs/adr/0117-admit-canonical-compiler-local-identities.md)
 adds explicitly selected profile 13. Generated local names retain their full
@@ -21,9 +36,7 @@ and 13 of 38 roots. All 45 production attempts refuse. The
 [Hygienic Locals Log](../Development/2026-11-21%20Hygienic%20Locals%20Log.md)
 records evidence and limits. All 48 qualification jobs pass on 749 frozen
 source files, including 1,430 boundary cases and 535 reference checks.
-The remaining `aggregates.matrix` edition
-requires mutable indexed storage and allocation. Native NIL execution
-remains gated.
+Native NIL execution remains gated.
 
 ## Previous host checkpoint — bounded nested records
 

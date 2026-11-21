@@ -1,5 +1,22 @@
 # Native execution and compatibility readiness
 
+## Bounded indexed storage (2026-11-21)
+
+[ADR 0118](../adr/0118-add-bounded-indexed-storage.md) adds explicit host
+profile 14. Integer arrays share indexed writes and growth through stable
+handles. Explicit allocation creates an opaque zeroed buffer. Release
+scrubs its cells and invalidates all its aliases. Arrays and buffers share
+the existing descriptor and backing cell budgets.
+
+The complete `aggregates.matrix` edition matches the pinned VM, bringing
+raw host coverage to 20 of 45 invocations and 14 of 38 roots. All 45
+production admission attempts still refuse. The
+[Indexed Storage Log](../../notebook/Development/2026-11-21%20Indexed%20Storage%20Log.md)
+records the compared results and the deliberate lifetime and capacity
+policies. All 50 qualification jobs pass, including 15 language suites,
+fresh native admission boots, and the retained Linux-loader regression.
+Full corpus qualification and native NIL execution remain gated.
+
 ## Canonical compiler local identities (2026-11-21)
 
 [ADR 0117](../adr/0117-admit-canonical-compiler-local-identities.md) adds
