@@ -1,5 +1,23 @@
 # Native execution and compatibility readiness
 
+## Boolean control and floating-point console output (2026-11-21)
+
+[ADR 0119](../adr/0119-add-boolean-control-and-float-console.md) adds
+explicit host profile 15. Boolean values drive conditional jumps and
+`NOT`. An initialized local can join integer and boolean paths when its
+load feeds an immediately adjacent checked `CAST bool`. Built-in console
+calls format finite binary64 values with six significant digits and use
+the existing acknowledged console request.
+
+The complete `bindings.matrix` edition matches the pinned VM, bringing
+raw host coverage to 21 of 45 invocations and 15 of 38 roots. All 45
+production admission attempts still refuse. The
+[Boolean Control Log](../../notebook/Development/2026-11-21%20Boolean%20Control%20Log.md)
+records the exact result and console bytes. All 52 qualification jobs pass,
+including the earlier language suites, fresh native admission boots, and
+the retained Linux-loader regression. Native NIL execution and full corpus
+qualification remain gated.
+
 ## Bounded indexed storage (2026-11-21)
 
 [ADR 0118](../adr/0118-add-bounded-indexed-storage.md) adds explicit host

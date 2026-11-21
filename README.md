@@ -58,8 +58,11 @@ desktop, or a security boundary for sensitive workloads.
   recognizes distinct compiler-generated names for shadowed local bindings.
   [Profile 14](docs/adr/0118-add-bounded-indexed-storage.md) adds bounded
   integer array writes and growth and explicitly released integer buffers.
-  Twenty of 45 unchanged raw corpus invocations match. Full corpus
-  qualification and native execution remain gated.
+  [Profile 15](docs/adr/0119-add-boolean-control-and-float-console.md) adds
+  boolean control flow, checked short-circuit joins, and binary64 output
+  through built-in console calls. Twenty-one of 45 unchanged raw corpus
+  invocations match. Full corpus qualification and native execution remain
+  gated.
 - Host-side libraries explore typed session routing, shared semantic scenes,
   presentation acknowledgement, and recovery.
 - **Eidolon** supplies an independent Python reference codec for lossless

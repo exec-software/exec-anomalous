@@ -202,6 +202,16 @@ pub fn validate_indexed_storage<'a, 'w>(
     validate_profile(edition, ceiling, workspace, parse_profile::indexed_storage)
 }
 
+/// Validate profile-15 boolean control and f64 builtin output without admission.
+/// Mixed local reads still require explicit normalization and output authority.
+pub fn validate_boolean_control<'a, 'w>(
+    edition: &'a [u8],
+    ceiling: u64,
+    workspace: &'w mut validation_workspace<'a>,
+) -> Result<checked_edition<'a, 'w>, error> {
+    validate_profile(edition, ceiling, workspace, parse_profile::boolean_control)
+}
+
 fn validate_profile<'a, 'w>(
     edition: &'a [u8],
     ceiling: u64,

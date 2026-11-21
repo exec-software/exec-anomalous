@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! Host-only profile-2 and explicitly selected profile-3 through profile-14 admission.
+//! Host-only profile-2 and explicitly selected profile-3 through profile-15 admission.
 //! All syntax and references are checked before
 //! reachable CFG validation; even dead instructions contribute authority.
 //! The immutable plan is accessible only through a complete validation witness.
@@ -50,6 +50,7 @@ enum parse_profile {
     nested_records,
     hygienic_locals,
     indexed_storage,
+    boolean_control,
 }
 
 #[derive(Clone, Copy)]
@@ -85,6 +86,7 @@ impl parse_profile {
             Self::nested_records => nested_records::derivation_profile,
             Self::hygienic_locals => hygienic_locals::derivation_profile,
             Self::indexed_storage => indexed_storage::derivation_profile,
+            Self::boolean_control => boolean_control::derivation_profile,
         }
     }
 
@@ -103,6 +105,7 @@ impl parse_profile {
                 | Self::nested_records
                 | Self::hygienic_locals
                 | Self::indexed_storage
+                | Self::boolean_control
         )
     }
 
@@ -120,6 +123,7 @@ impl parse_profile {
                 | Self::nested_records
                 | Self::hygienic_locals
                 | Self::indexed_storage
+                | Self::boolean_control
         )
     }
 
@@ -136,6 +140,7 @@ impl parse_profile {
                 | Self::nested_records
                 | Self::hygienic_locals
                 | Self::indexed_storage
+                | Self::boolean_control
         )
     }
 
@@ -151,6 +156,7 @@ impl parse_profile {
                 | Self::nested_records
                 | Self::hygienic_locals
                 | Self::indexed_storage
+                | Self::boolean_control
         )
     }
 
@@ -165,6 +171,7 @@ impl parse_profile {
                 | Self::nested_records
                 | Self::hygienic_locals
                 | Self::indexed_storage
+                | Self::boolean_control
         )
     }
 
@@ -178,6 +185,7 @@ impl parse_profile {
                 | Self::nested_records
                 | Self::hygienic_locals
                 | Self::indexed_storage
+                | Self::boolean_control
         )
     }
 
@@ -190,6 +198,7 @@ impl parse_profile {
                 | Self::nested_records
                 | Self::hygienic_locals
                 | Self::indexed_storage
+                | Self::boolean_control
         )
     }
 
@@ -200,18 +209,29 @@ impl parse_profile {
                 | Self::nested_records
                 | Self::hygienic_locals
                 | Self::indexed_storage
+                | Self::boolean_control
         )
     }
 
     const fn nested_record_forms(self) -> bool {
         matches!(
             self,
-            Self::nested_records | Self::hygienic_locals | Self::indexed_storage
+            Self::nested_records
+                | Self::hygienic_locals
+                | Self::indexed_storage
+                | Self::boolean_control
         )
     }
 
     const fn hygienic_local_forms(self) -> bool {
-        matches!(self, Self::hygienic_locals | Self::indexed_storage)
+        matches!(
+            self,
+            Self::hygienic_locals | Self::indexed_storage | Self::boolean_control
+        )
+    }
+
+    const fn indexed_storage_forms(self) -> bool {
+        matches!(self, Self::indexed_storage | Self::boolean_control)
     }
 
     const fn source_debug_forms(self) -> bool {
@@ -222,6 +242,7 @@ impl parse_profile {
                 | Self::nested_records
                 | Self::hygienic_locals
                 | Self::indexed_storage
+                | Self::boolean_control
         )
     }
 }
@@ -413,6 +434,9 @@ pub mod hygienic_locals;
 /// Explicit profile-14 integer indexed writes, array extension and opaque buffers.
 pub mod indexed_storage;
 
+/// Explicit profile-15 boolean control, normalized local joins and f64 builtin output.
+pub mod boolean_control;
+
 /// Raw host language checks, deliberately separate from manifest admission.
 #[cfg(feature = "host_conformance")]
 pub mod conformance;
@@ -514,6 +538,10 @@ pub enum operation {
     ret,
     generated_fallthrough,
     console {
+        newline: bool,
+    },
+    /// Profile-15 CALL fallback only; integer, text or finite f64 output.
+    builtin_console {
         newline: bool,
     },
 }
@@ -748,11 +776,40 @@ struct label<'a> {
     owner: usize,
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum local_type {
+    exact(kind),
+    // Validation-only predecessor union. It never enters a signature or stack.
+    boolean_integer,
+}
+
+impl local_type {
+    fn boolean_integer_member(self) -> bool {
+        matches!(
+            self,
+            Self::exact(kind::boolean | kind::integer) | Self::boolean_integer
+        )
+    }
+
+    fn merge(self, incoming: Self, profile: parse_profile) -> Result<Self, error> {
+        if self == incoming {
+            Ok(self)
+        } else if profile == parse_profile::boolean_control
+            && self.boolean_integer_member()
+            && incoming.boolean_integer_member()
+        {
+            Ok(Self::boolean_integer)
+        } else {
+            Err(error::syntax)
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct flow_state {
     stack: [kind; maximum_stack_values],
     depth: usize,
-    locals: [Option<kind>; maximum_locals],
+    locals: [Option<local_type>; maximum_locals],
 }
 
 impl flow_state {
@@ -795,6 +852,15 @@ impl flow_state {
         }
         Ok(())
     }
+    fn truth(&mut self, profile: parse_profile) -> Result<(), error> {
+        let value = self.pop()?;
+        if value != kind::integer
+            && !(profile == parse_profile::boolean_control && value == kind::boolean)
+        {
+            return Err(error::syntax);
+        }
+        Ok(())
+    }
 }
 
 /// Caller-owned fixed storage. Failed validation cannot expose a plan; a live
@@ -814,6 +880,9 @@ pub struct validation_workspace<'a> {
     queue: [usize; maximum_basic_blocks],
     queue_head: usize,
     queue_length: usize,
+    // A loop may widen a STORE's input after its first visit. Recheck these
+    // conflicts at convergence instead of depending on predecessor visit order.
+    store_conflicts: [bool; maximum_instructions],
 }
 
 impl<'a> Default for validation_workspace<'a> {
@@ -843,6 +912,7 @@ impl<'a> validation_workspace<'a> {
             queue: [0; maximum_basic_blocks],
             queue_head: 0,
             queue_length: 0,
+            store_conflicts: [false; maximum_instructions],
         }
     }
 
@@ -868,6 +938,7 @@ impl<'a> validation_workspace<'a> {
         self.queued.fill(false);
         self.queue_head = 0;
         self.queue_length = 0;
+        self.store_conflicts.fill(false);
     }
 
     fn parse(
@@ -1251,7 +1322,7 @@ impl<'a> validation_workspace<'a> {
             return Err(error::intent);
         }
         self.resolve(profile)?;
-        self.validate_flow()
+        self.validate_flow(profile)
     }
 
     fn local(
@@ -1380,11 +1451,9 @@ impl<'a> validation_workspace<'a> {
             }
             ["LEN"] if profile.array_forms() => operation::array_len,
             ["GET_INDEX"] if profile.array_forms() => operation::array_get,
-            ["SET_INDEX"] if profile == parse_profile::indexed_storage => operation::array_set,
-            ["ALLOC", "i64"] if profile == parse_profile::indexed_storage => {
-                operation::buffer_alloc
-            }
-            ["FREE"] if profile == parse_profile::indexed_storage => operation::buffer_free,
+            ["SET_INDEX"] if profile.indexed_storage_forms() => operation::array_set,
+            ["ALLOC", "i64"] if profile.indexed_storage_forms() => operation::buffer_alloc,
+            ["FREE"] if profile.indexed_storage_forms() => operation::buffer_free,
             ["PUSH_FN_PTR", name] if profile.callable_forms() => {
                 identifier(name)?;
                 self.references[pc] = (name, 0);
@@ -1686,9 +1755,12 @@ impl<'a> validation_workspace<'a> {
                             if count != 1 {
                                 return Err(error::unsupported);
                             }
-                            operation::console { newline }
-                        } else if profile == parse_profile::indexed_storage && name == "array__push"
-                        {
+                            if profile == parse_profile::boolean_control {
+                                operation::builtin_console { newline }
+                            } else {
+                                operation::console { newline }
+                            }
+                        } else if profile.indexed_storage_forms() && name == "array__push" {
                             if count != 2 {
                                 return Err(error::unsupported);
                             }
@@ -1725,7 +1797,7 @@ impl<'a> validation_workspace<'a> {
                 };
                 if matches!(
                     self.plan.instructions[pc].operation,
-                    operation::console { .. }
+                    operation::console { .. } | operation::builtin_console { .. }
                 ) {
                     self.plan.authority |= authority::console_write;
                 }
@@ -1756,7 +1828,12 @@ impl<'a> validation_workspace<'a> {
         Ok(())
     }
 
-    fn enqueue(&mut self, destination: usize, state: &flow_state) -> Result<(), error> {
+    fn enqueue(
+        &mut self,
+        destination: usize,
+        state: &flow_state,
+        profile: parse_profile,
+    ) -> Result<(), error> {
         let index = self.blocks[..self.block_count]
             .binary_search(&destination)
             .map_err(|_| error::syntax)?;
@@ -1771,7 +1848,13 @@ impl<'a> validation_workspace<'a> {
             }
             for (prior, incoming) in old.locals.iter_mut().zip(state.locals) {
                 match (*prior, incoming) {
-                    (Some(a), Some(b)) if a != b => return Err(error::syntax),
+                    (Some(a), Some(b)) if a != b => {
+                        let merged = a.merge(b, profile)?;
+                        if merged != a {
+                            *prior = Some(merged);
+                            changed = true;
+                        }
+                    }
                     (Some(_), None) => {
                         *prior = None;
                         changed = true;
@@ -1792,7 +1875,7 @@ impl<'a> validation_workspace<'a> {
         Ok(())
     }
 
-    fn validate_flow(&mut self) -> Result<(), error> {
+    fn validate_flow(&mut self, profile: parse_profile) -> Result<(), error> {
         for index in 0..self.plan.function_count {
             let function = &self.plan.functions[index];
             let start = function.start;
@@ -1800,7 +1883,7 @@ impl<'a> validation_workspace<'a> {
             for kind in function.parameter_kinds() {
                 state.push(*kind)?;
             }
-            self.enqueue(start, &state)?;
+            self.enqueue(start, &state, profile)?;
         }
         let mut transfers = 0;
         while self.queue_length != 0 {
@@ -1967,17 +2050,43 @@ impl<'a> validation_workspace<'a> {
                         }
                     }
                     operation::load(index) => {
-                        state.push(state.locals[index].ok_or(error::syntax)?)?
+                        let value = match state.locals[index].ok_or(error::syntax)? {
+                            local_type::exact(value) => value,
+                            local_type::boolean_integer => {
+                                if pc + 1 >= function_end
+                                    || self.plan.instructions[pc + 1].operation
+                                        != operation::scalar_cast(scalar_cast::boolean)
+                                {
+                                    return Err(error::syntax);
+                                }
+                                // No label or alternate entry can separate this
+                                // pair. Both runtime kinds are admitted CAST bool
+                                // inputs, and integer 0/1 is checked at execution.
+                                // Only the exact cast result can leave the pair.
+                                kind::boolean
+                            }
+                        };
+                        state.push(value)?;
                     }
                     operation::store(index) => {
-                        let kind = state.pop()?;
-                        if state.locals[index].is_some_and(|old| old != kind) {
-                            return Err(error::syntax);
+                        let incoming = local_type::exact(state.pop()?);
+                        self.store_conflicts[pc] = false;
+                        if let Some(old) = state.locals[index] {
+                            let merged = old.merge(incoming, profile)?;
+                            self.store_conflicts[pc] = old != incoming
+                                && old != local_type::boolean_integer
+                                && merged == local_type::boolean_integer;
                         }
-                        state.locals[index] = Some(kind);
+                        // STORE kills the previous state. Only predecessor
+                        // merging creates a union, never a speculative store.
+                        state.locals[index] = Some(incoming);
                     }
-                    operation::cast(_) | operation::negate(_) | operation::not => {
+                    operation::cast(_) | operation::negate(_) => {
                         state.integer()?;
+                        state.push(kind::integer)?;
+                    }
+                    operation::not => {
+                        state.truth(profile)?;
                         state.push(kind::integer)?;
                     }
                     operation::binary { .. } | operation::compare(_) => {
@@ -1993,13 +2102,20 @@ impl<'a> validation_workspace<'a> {
                             return Err(error::syntax);
                         }
                     }
+                    operation::builtin_console { .. } => {
+                        if !matches!(state.pop()?, kind::integer | kind::text | kind::float) {
+                            return Err(error::syntax);
+                        }
+                    }
                     operation::nop | operation::label => {}
                     operation::call(target) => {
                         let function = &self.plan.functions[target];
                         state.call(function, function.parameter_count)?;
                     }
                     operation::call_local { local, arguments } => {
-                        let Some(kind::function(signature)) = state.locals[local] else {
+                        let Some(local_type::exact(kind::function(signature))) =
+                            state.locals[local]
+                        else {
                             return Err(error::syntax);
                         };
                         let function = self
@@ -2010,12 +2126,12 @@ impl<'a> validation_workspace<'a> {
                         state.call(function, arguments)?;
                     }
                     operation::jump(target) => {
-                        self.enqueue(target, &state)?;
+                        self.enqueue(target, &state, profile)?;
                         terminal = true;
                     }
                     operation::branch { target, .. } => {
-                        state.integer()?;
-                        self.enqueue(target, &state)?;
+                        state.truth(profile)?;
+                        self.enqueue(target, &state, profile)?;
                     }
                     operation::ret => {
                         match self.plan.functions[owner].return_kind {
@@ -2032,8 +2148,14 @@ impl<'a> validation_workspace<'a> {
                 if end == function_end {
                     return Err(error::syntax);
                 }
-                self.enqueue(end, &state)?;
+                self.enqueue(end, &state, profile)?;
             }
+        }
+        if self.store_conflicts[..self.plan.instruction_count]
+            .iter()
+            .any(|conflict| *conflict)
+        {
+            return Err(error::syntax);
         }
         Ok(())
     }
@@ -2622,3 +2744,6 @@ mod hygienic_locals_tests;
 
 #[cfg(test)]
 mod indexed_storage_tests;
+
+#[cfg(test)]
+mod boolean_control_tests;

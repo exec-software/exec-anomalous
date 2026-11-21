@@ -8,7 +8,21 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current host checkpoint — bounded indexed storage
+## Current host checkpoint — boolean control and floating-point console output
+
+[ADR 0119](../../docs/adr/0119-add-boolean-control-and-float-console.md)
+adds host profile 15 for boolean branches, `NOT`, and checked
+short-circuit local joins. Built-in console calls now format finite binary64
+values and use the existing acknowledged request path.
+
+The complete `bindings.matrix` edition returns zero with all 24 console
+bytes matching the pinned VM. Raw host coverage reaches 21 of 45
+invocations and 15 of 38 roots. All 45 production attempts refuse. The
+[Boolean Control Log](../Development/2026-11-21%20Boolean%20Control%20Log.md)
+records the proof and limits. All 52 qualification jobs pass on 764
+frozen source files, with 1,632 boundary cases and 742 reference checks.
+
+## Previous host checkpoint — bounded indexed storage
 
 [ADR 0118](../../docs/adr/0118-add-bounded-indexed-storage.md) adds bounded
 integer array writes and append, and explicit allocation and release of

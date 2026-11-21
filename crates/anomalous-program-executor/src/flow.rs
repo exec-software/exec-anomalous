@@ -13,6 +13,7 @@ mod record;
 use record::{record_arena, record_handle};
 mod enumeration;
 use enumeration::enum_value;
+mod float_console;
 mod text;
 mod typed_scalar;
 use text::{text_arena, text_span};
@@ -197,6 +198,14 @@ impl<'a> execution_workspace<'a> {
             | value::function(_)
             | value::record(_)
             | value::enumeration(_) => Err(error::invalid_state),
+        }
+    }
+
+    fn condition(&mut self) -> Result<bool, error> {
+        match self.pop()? {
+            value::integer(number) => Ok(number != 0),
+            value::boolean(flag) => Ok(flag),
+            _ => Err(error::invalid_state),
         }
     }
 
@@ -495,8 +504,8 @@ impl<'a> execution_workspace<'a> {
                     self.push(value::integer(i64::from(result)))?;
                 }
                 operation::not => {
-                    let value = self.integer()?;
-                    self.push(value::integer(i64::from(value == 0)))?;
+                    let condition = self.condition()?;
+                    self.push(value::integer(i64::from(!condition)))?;
                 }
                 operation::pop => {
                     self.pop()?;
@@ -507,8 +516,7 @@ impl<'a> execution_workspace<'a> {
                     continue;
                 }
                 operation::branch { target, nonzero } => {
-                    let condition = self.integer()?;
-                    if (condition != 0) == nonzero {
+                    if self.condition()? == nonzero {
                         self.pc = target;
                         continue;
                     }
@@ -538,9 +546,26 @@ impl<'a> execution_workspace<'a> {
                     continue;
                 }
                 operation::generated_fallthrough => return Err(error::generated_fallthrough),
-                operation::console { newline } => {
+                operation::console { newline } | operation::builtin_console { newline } => {
                     let item = self.pop()?;
                     match item {
+                        value::float(bits)
+                            if matches!(
+                                instruction.operation,
+                                operation::builtin_console { .. }
+                            ) =>
+                        {
+                            let decimal = float_console::format(bits)?;
+                            publish_decoded_console(
+                                decimal.bytes(),
+                                newline,
+                                identity,
+                                granted,
+                                budget.output_bytes,
+                                &mut self.stats,
+                                sink,
+                            )?;
+                        }
                         value::boolean(_)
                         | value::byte(_)
                         | value::float(_)
@@ -626,7 +651,7 @@ fn value_kind(value: value<'_>) -> kind {
     }
 }
 
-/// Execute only a validated control-flow witness (profiles 2 through 14).
+/// Execute only a validated control-flow witness (profiles 2 through 15).
 /// Every return, arithmetic error, policy
 /// refusal or service refusal clears the internal frame/value storage. Earlier
 /// acknowledged sink effects remain committed; there is no automatic retry.
@@ -703,3 +728,6 @@ mod typed_scalar_tests;
 
 #[cfg(test)]
 mod nested_record_tests;
+
+#[cfg(test)]
+mod boolean_control_tests;
