@@ -1,6 +1,6 @@
 ---
 title: "Anomalous — Current State"
-date: 2026-11-13
+date: 2026-11-20
 tags: [status, milestone, boot, kernel, memory, interrupts, input, shell, session, display, desktop, privacy, waiting, circle, ring3, scheduler, supervision, rites, x86-64]
 status: active
 domain: foundations
@@ -8,7 +8,29 @@ domain: foundations
 
 # Anomalous — Current State
 
-## Current host checkpoint — nominal enums
+## Current host checkpoint — textual source-debug metadata
+
+[ADR 0114](../../docs/adr/0114-add-bounded-textual-source-debug-metadata.md)
+adds explicitly selected profile 10 for validated source paths and lexical
+binding snapshots. Each record attaches to the exact next instruction within
+its function. Read-only views retain decoded bytes without an allocation arena;
+metadata cannot open files, change operand types, supply intent or grant authority.
+Earlier profiles retain their grammar and envelope tags.
+
+The new 111-case final proof passes, including independent metadata
+comparison with both pinned reference parsers and the loaded VM. Sixteen of
+45 unchanged raw invocations match, including 10 of 38 roots. The new match is
+one textual source-debug auxiliary invocation, with 23 records across three
+functions. The other 29 remain unmet coverage; production refuses all 45.
+The [Source Debug Metadata Log](../Development/2026-11-20%20Source%20Debug%20Metadata%20Log.md)
+records evidence and remaining gates. All 50 fresh final jobs pass on 726
+unchanged source files, with independent audits of all eleven language suites,
+260 oracle checks and 13 input-selection checks. After a host package update,
+explicit input paths retain the same pinned Linux regression bytes. The initial
+failed cohort is preserved separately. This adds no native NIL execution or
+Linux compatibility behavior.
+
+## Previous host checkpoint — nominal enums
 
 [ADR 0113](../../docs/adr/0113-add-bounded-nominal-unit-and-integer-enums.md)
 adds explicitly selected profile 9 for declared variants with unit or full

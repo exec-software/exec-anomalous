@@ -152,6 +152,16 @@ pub fn validate_enums<'a, 'w>(
     validate_profile(edition, ceiling, workspace, parse_profile::enums)
 }
 
+/// Validate profile-10 descriptive source metadata without production admission.
+/// Source paths and lexical bindings never supply intent, types or authority.
+pub fn validate_source_debug<'a, 'w>(
+    edition: &'a [u8],
+    ceiling: u64,
+    workspace: &'w mut validation_workspace<'a>,
+) -> Result<checked_edition<'a, 'w>, error> {
+    validate_profile(edition, ceiling, workspace, parse_profile::source_debug)
+}
+
 fn validate_profile<'a, 'w>(
     edition: &'a [u8],
     ceiling: u64,

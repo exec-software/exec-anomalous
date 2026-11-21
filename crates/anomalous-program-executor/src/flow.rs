@@ -576,7 +576,7 @@ fn value_kind(value: value<'_>) -> kind {
     }
 }
 
-/// Execute only a validated control-flow witness (profiles 2 through 9).
+/// Execute only a validated control-flow witness (profiles 2 through 10).
 /// Every return, arithmetic error, policy
 /// refusal or service refusal clears the internal frame/value storage. Earlier
 /// acknowledged sink effects remain committed; there is no automatic retry.
@@ -644,3 +644,6 @@ mod global_tests;
 
 #[cfg(test)]
 mod enum_tests;
+
+#[cfg(test)]
+mod source_debug_tests;

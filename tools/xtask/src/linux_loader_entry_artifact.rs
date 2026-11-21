@@ -589,11 +589,19 @@ pub(super) fn package_image(root: &Path, build: &Path) -> Result<artifact, Strin
     let output = build.join("linux-loader-entry");
     fs::create_dir_all(&output).map_err(|e| e.to_string())?;
     let output = fs::canonicalize(output).map_err(|e| e.to_string())?;
-    let program = held_bytes(Path::new("/usr/bin/true"), source_limit)?;
-    let interpreter = held_bytes(Path::new("/lib64/ld-linux-x86-64.so.2"), source_limit)?;
+    // Explicit retained inputs keep the same proof reproducible after host
+    // package upgrades. Selection never relaxes the reviewed byte identities.
+    let configured_program = env::var_os("ANOMALOUS_LINUX_LOADER_PROGRAM")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/usr/bin/true"));
+    let configured_interpreter = env::var_os("ANOMALOUS_LINUX_LOADER_INTERPRETER")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/lib64/ld-linux-x86-64.so.2"));
+    let program = held_bytes(&configured_program, source_limit)?;
+    let interpreter = held_bytes(&configured_interpreter, source_limit)?;
     if sha256(&program)? != program_hash || sha256(&interpreter)? != interpreter_hash {
         return Err(
-            "installed true/interpreter hashes changed; review new inputs explicitly".into(),
+            "configured true/interpreter hashes changed; review new inputs explicitly".into(),
         );
     }
     let configured_file = env::var_os("ANOMALOUS_LINUX_LOADER_LIBC")

@@ -48,7 +48,9 @@ desktop, or a security boundary for sensitive workloads.
   per-execution integer globals and bounded integer-to-text conversion.
   [Profile 9](docs/adr/0113-add-bounded-nominal-unit-and-integer-enums.md) adds
   nominal unit/integer enums, typed tag tests and checked payload extraction.
-  Fifteen of 45 unchanged raw corpus invocations match; full corpus qualification
+  [Profile 10](docs/adr/0114-add-bounded-textual-source-debug-metadata.md) adds
+  strict source paths and lexical debug bindings with read-only decoded views.
+  Sixteen of 45 unchanged raw corpus invocations match; full corpus qualification
   and native execution remain gated.
 - Host-side libraries explore typed session routing, shared semantic scenes,
   presentation acknowledgement, and recovery.
@@ -65,6 +67,17 @@ and [execution-readiness gates](docs/architecture/execution-readiness.md)
 distinguish implemented mechanisms from proposals. Dated test results describe
 the recorded checkpoint; they are not a claim that this public export was
 rebuilt on every supported host.
+
+## Pinned Linux regression inputs
+
+Linux loader regression inputs keep fixed reviewed hashes. After host package
+updates, select retained qualified copies explicitly with
+`ANOMALOUS_LINUX_LOADER_PROGRAM`, `ANOMALOUS_LINUX_LOADER_INTERPRETER` and
+`ANOMALOUS_LINUX_LOADER_LIBC`. Defaults remain `/usr/bin/true`,
+`/lib64/ld-linux-x86-64.so.2` and `/lib/x86_64-linux-gnu/libc.so.6` respectively.
+Every selected file must pass the same bounded read and hash checks; an invalid
+configured path refuses instead of falling back. These settings select host
+provisioning files and do not change guest paths or Linux compatibility policy.
 
 ## Build and boot
 

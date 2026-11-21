@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 #![allow(non_camel_case_types, non_upper_case_globals)]
 
-//! Host-only profile-2 and explicitly selected profile-3 through profile-9 admission.
+//! Host-only profile-2 and explicitly selected profile-3 through profile-10 admission.
 //! All syntax and references are checked before
 //! reachable CFG validation; even dead instructions contribute authority.
 //! The immutable plan is accessible only through a complete validation witness.
@@ -45,6 +45,7 @@ enum parse_profile {
     record,
     globals,
     enums,
+    source_debug,
 }
 
 #[derive(Clone, Copy)]
@@ -75,6 +76,7 @@ impl parse_profile {
             Self::record => record::derivation_profile,
             Self::globals => globals::derivation_profile,
             Self::enums => enums::derivation_profile,
+            Self::source_debug => source_debug::derivation_profile,
         }
     }
 
@@ -88,36 +90,55 @@ impl parse_profile {
                 | Self::record
                 | Self::globals
                 | Self::enums
+                | Self::source_debug
         )
     }
 
     const fn text_forms(self) -> bool {
         matches!(
             self,
-            Self::text | Self::array | Self::callable | Self::record | Self::globals | Self::enums
+            Self::text
+                | Self::array
+                | Self::callable
+                | Self::record
+                | Self::globals
+                | Self::enums
+                | Self::source_debug
         )
     }
 
     const fn array_forms(self) -> bool {
         matches!(
             self,
-            Self::array | Self::callable | Self::record | Self::globals | Self::enums
+            Self::array
+                | Self::callable
+                | Self::record
+                | Self::globals
+                | Self::enums
+                | Self::source_debug
         )
     }
 
     const fn callable_forms(self) -> bool {
         matches!(
             self,
-            Self::callable | Self::record | Self::globals | Self::enums
+            Self::callable | Self::record | Self::globals | Self::enums | Self::source_debug
         )
     }
 
     const fn record_forms(self) -> bool {
-        matches!(self, Self::record | Self::globals | Self::enums)
+        matches!(
+            self,
+            Self::record | Self::globals | Self::enums | Self::source_debug
+        )
     }
 
     const fn global_forms(self) -> bool {
-        matches!(self, Self::globals | Self::enums)
+        matches!(self, Self::globals | Self::enums | Self::source_debug)
+    }
+
+    const fn enum_forms(self) -> bool {
+        matches!(self, Self::enums | Self::source_debug)
     }
 }
 
@@ -292,6 +313,9 @@ pub mod enums {
         super::admit_profile(image, ceiling, workspace, parse_profile::enums)
     }
 }
+
+/// Explicit profile-10 source locations and lexical bindings; descriptive only.
+pub mod source_debug;
 
 /// Raw host language checks, deliberately separate from manifest admission.
 #[cfg(feature = "host_conformance")]
@@ -493,6 +517,7 @@ pub struct program<'a> {
     function_count: usize,
     instructions: [instruction; maximum_instructions],
     instruction_count: usize,
+    source_debug_lines: [Option<&'a str>; maximum_instructions],
     constants: [constant<'a>; maximum_constants],
     constant_count: usize,
     records: [record_layout<'a>; maximum_record_layouts],
@@ -520,6 +545,7 @@ impl<'a> program<'a> {
                 line: 0,
             }; maximum_instructions],
             instruction_count: 0,
+            source_debug_lines: [None; maximum_instructions],
             constants: [constant {
                 name: "",
                 escaped: "",
@@ -546,6 +572,16 @@ impl<'a> program<'a> {
     }
     pub fn instructions(&self) -> &[instruction] {
         &self.instructions[..self.instruction_count]
+    }
+    /// Descriptive source metadata for a global plan instruction index.
+    /// Its own instruction index is relative to the containing function.
+    /// This does not resolve a filesystem path or establish runtime types.
+    pub fn source_debug(&self, instruction_index: usize) -> Option<source_debug::record<'a>> {
+        if instruction_index >= self.instruction_count {
+            return None;
+        }
+        // Stored lines have been validated completely before a plan is exposed.
+        source_debug::view(self.source_debug_lines[instruction_index]?)
     }
     pub fn constants(&self) -> &[constant<'a>] {
         &self.constants[..self.constant_count]
@@ -675,6 +711,7 @@ impl<'a> validation_workspace<'a> {
     fn reset(&mut self) {
         self.plan.function_count = 0;
         self.plan.instruction_count = 0;
+        self.plan.source_debug_lines.fill(None);
         self.plan.constant_count = 0;
         self.plan.record_count = 0;
         self.plan.field_name_count = 0;
@@ -722,9 +759,22 @@ impl<'a> validation_workspace<'a> {
         let mut active_record: Option<usize> = None;
         let mut enum_section = false;
         let mut active_enum: Option<usize> = None;
+        let mut pending_debug: Option<&'a str> = None;
         for (line_number, raw) in lines {
             let line = trim(raw);
             if line.is_empty() {
+                continue;
+            }
+            if profile == parse_profile::source_debug && source_debug::is_record(line) {
+                let owner = active.ok_or(error::syntax)?;
+                if pending_debug.is_some() {
+                    return Err(error::syntax);
+                }
+                source_debug::validate(
+                    line,
+                    self.plan.instruction_count - self.plan.functions[owner].start,
+                )?;
+                pending_debug = Some(line);
                 continue;
             }
             if let Some(owner) = active_enum {
@@ -805,6 +855,9 @@ impl<'a> validation_workspace<'a> {
             }
             if let Some(owner) = active {
                 if line == "end function" {
+                    if pending_debug.is_some() {
+                        return Err(error::syntax);
+                    }
                     let function = &mut self.plan.functions[owner];
                     function.end = self.plan.instruction_count;
                     if function.start == function.end {
@@ -815,7 +868,9 @@ impl<'a> validation_workspace<'a> {
                     }
                     active = None;
                 } else {
+                    let pc = self.plan.instruction_count;
                     self.parse_instruction(owner, line, line_number + 1, profile)?;
+                    self.plan.source_debug_lines[pc] = pending_debug.take();
                 }
                 continue;
             }
@@ -864,10 +919,7 @@ impl<'a> validation_workspace<'a> {
                 active_record = Some(index);
                 continue;
             }
-            if let Some(name) = line
-                .strip_prefix("enum ")
-                .filter(|_| profile == parse_profile::enums)
-            {
+            if let Some(name) = line.strip_prefix("enum ").filter(|_| profile.enum_forms()) {
                 if !enum_section || declaration || self.plan.function_count != 0 {
                     return Err(error::syntax);
                 }
@@ -994,7 +1046,7 @@ impl<'a> validation_workspace<'a> {
                 records = true;
                 continue;
             }
-            if line == "# Enum definitions" && profile == parse_profile::enums {
+            if line == "# Enum definitions" && profile.enum_forms() {
                 if enum_section || self.plan.function_count != 0 {
                     return Err(error::syntax);
                 }
@@ -1035,6 +1087,7 @@ impl<'a> validation_workspace<'a> {
             || active.is_some()
             || active_record.is_some()
             || active_enum.is_some()
+            || pending_debug.is_some()
             || declaration
             || pending_context.is_some()
         {
@@ -1169,20 +1222,20 @@ impl<'a> validation_workspace<'a> {
                 self.references[pc] = (name, 0);
                 operation::function(0)
             }
-            ["NEW_VARIANT", tag, count, name, payload] if profile == parse_profile::enums => {
+            ["NEW_VARIANT", tag, count, name, payload] if profile.enum_forms() => {
                 let payload = enum_payload(payload)?;
                 enum_arity(count, payload)?;
                 let layout = self.enum_reference(name)?;
                 let variant = self.enum_variant_reference(tag, layout, payload)?;
                 operation::enum_new { layout, variant }
             }
-            ["IS_VARIANT", tag, name, payload] if profile == parse_profile::enums => {
+            ["IS_VARIANT", tag, name, payload] if profile.enum_forms() => {
                 let payload = enum_payload(payload)?;
                 let layout = self.enum_reference(name)?;
                 let variant = self.enum_variant_reference(tag, layout, payload)?;
                 operation::enum_is { layout, variant }
             }
-            ["UNWRAP_VARIANT", count, name, payload] if profile == parse_profile::enums => {
+            ["UNWRAP_VARIANT", count, name, payload] if profile.enum_forms() => {
                 let payload = enum_payload(payload)?;
                 enum_arity(count, payload)?;
                 let layout = self.enum_reference(name)?;
@@ -2260,3 +2313,6 @@ mod globals_tests;
 
 #[cfg(test)]
 mod enums_tests;
+
+#[cfg(test)]
+mod source_debug_tests;

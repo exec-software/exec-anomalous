@@ -1,5 +1,29 @@
 # Native execution and compatibility readiness
 
+## Bounded textual source-debug metadata (2026-11-20)
+
+[ADR 0114](../adr/0114-add-bounded-textual-source-debug-metadata.md) adds explicit
+profile 10 for reserved textual source records. Validated per-function indices
+attach metadata to actual instructions, including labels, unused helpers and
+dead instructions. Bounded decoded paths and lexical bindings remain descriptive:
+they neither open files nor affect runtime types, authority, intent or fuel.
+The immutable plan exposes borrowed read-only records and decoded byte views.
+
+A separate oracle checks metadata against both pinned parsers and the loaded VM.
+The new 111-case final proof passes; its stricter spellings, escape policy
+and capacities remain explicit finite-reference policy contrasts. Sixteen of
+45 unchanged raw corpus invocations match, with 10 of 38 roots. The additional
+match is one textual source-debug auxiliary invocation, not a new root program.
+The other 29 remain unmet coverage; all 45 production attempts refuse. The
+[Source Debug Metadata Log](../../notebook/Development/2026-11-20%20Source%20Debug%20Metadata%20Log.md)
+records the evidence. All 50 fresh final jobs pass on 726 unchanged source
+files, including all earlier proof suites, native artifact continuity and
+Linux-loader regression. The initial host-input refusal remains separately
+recorded; no evidence is transferred from that incomplete cohort. Binary NIL v5,
+full corpus qualification and native execution retain
+separate gates. Native and guest Linux-loader implementations are unchanged;
+the host artifact tool adds explicit paths for the same pinned regression inputs.
+
 ## Bounded nominal enums (2026-11-13)
 
 [ADR 0113](../adr/0113-add-bounded-nominal-unit-and-integer-enums.md) adds
