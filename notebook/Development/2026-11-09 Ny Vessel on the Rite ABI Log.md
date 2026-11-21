@@ -561,6 +561,82 @@ That is a rebuild for an increment that is the kernel scheduler's rather than
 the vessel's, and it is recorded here as a decision rather than taken
 quietly.
 
+## A second task, and the wipe that cost a boot
+
+The address-space round trip left `peer_ran` false, and that was the honest
+half of the question. Closing the other half meant a second task actually
+getting the processor while the vessel was parked.
+
+**The cheap route was measured first.** `scheduler::preempt_current` is
+ungated, and so are `scheduler_table::new`, `admit`, `snapshot` and
+`task_yield`'s completion -- which is the ordinary `finish_ok`. Only the
+*blocking* path is tied to session input: its `prepared_scheduler_block`
+carries wait and readiness identities, so there is no generic park. Sharing
+`scheduler_test`'s whole module was tried and abandoned: it compiles 2,494
+lines into this build and drags items from `interrupts` and `time` with it,
+when what a second task actually needs is four privilege-stack items in
+`descriptors`. Those four were widened by line, from what the compiler named,
+rather than by matching cfg lists -- the lesson from the earlier slice where a
+pattern reached thirty-four of them. A fifth,
+`restore_bootstrap_privilege_stack`, was widened and then reverted when the
+hand-off turned out not to need it; a gate should not stay open for something
+nothing calls.
+
+**The peer is this image at a different door.** `anomalous_ny_vessel_peer_entry`
+writes one constant and jumps into the entry's own exit submission, so it adds
+no resume address and no second payload: the peer's code page is the same
+bytes in its own address space. It never enters `__ny_entry`, which the
+transcript records as `entered_ny` false, and its grant is `console_write` and
+`task_exit` alone.
+
+It is also a third *mode*, not a special case. The peer's context is an
+ordinary `vessel_context` in the peering mode with its own two-phase chain, so
+the dispatcher, the validators, the evidence check and the reporting all work
+on it unchanged. The evidence check was extracted into one function at the
+same time, so all three runs are held to the same conditions instead of to
+copies that could drift.
+
+**The wipe.** The first boot died with an invalid opcode at kernel
+instruction pointer zero. `execute_task`'s completion calls
+`descriptors::wipe_privilege_stack`, which zeroes the single static
+transition stack -- and the parked vessel's saved gate frame and the
+dispatch's own return addresses were on it. The function's own comment states
+the contract it broke: it may be called only after the caller "has abandoned
+the TSS RSP0 stack and restored the original kernel stack", which is true of a
+run entered from the bootstrap stack and false of a nested one. Zeroing it
+destroyed the path back, hence the jump to zero. A nested entry no longer
+wipes; nothing is left unscrubbed, because the peer's transition stack is its
+own lease and `release_peer` clears it with the same contract as every other
+frame.
+
+This is the kind of thing only running it finds. The code was correct about
+every invariant it stated and wrong about one it inherited.
+
+    kernel.ny_vessel.yielded        sequence 4, round_trips 1, peer_ran true,
+                                    scheduler_preempted false
+    kernel.ny_vessel.console.committed sequence 5, 21 bytes, from_region true
+    kernel.ny_vessel.exited         sequence 6, code 42, returned_from_ny true
+    kernel.ny_vessel.peer.committed sequence 1, 33 bytes, composed_by image,
+                                    issued_by binding, entered_ny false
+    kernel.ny_vessel.exited         sequence 2, run "peering", code 55
+    kernel.ny_vessel.passed         runs 2, peer_tasks 1, calls 10, commits 10,
+                                    console_writes 5, deliveries 1, yields 1,
+                                    ny_failures 1
+
+**What it is not.** The hand-off is this fixture's own, not the scheduler's,
+and `scheduler_preempted` is required to be false so the transcript cannot be
+read as more. Whether this kernel's *scheduler* can park and resume a Ny
+vessel is a separate claim, and it belongs with the scheduler. The groundwork
+for it is now done and measured: every primitive is ungated and the
+privilege-stack items are reachable.
+
+**A smaller thing worth keeping.** Both tasks commit through one console,
+because `screen_console` is handed in by boot and cannot be constructed here.
+`run_once` owns it and each context holds a pointer, which is sound because
+the gate admits one dispatch at a time -- and it means the peer's bytes reach
+the console by exactly the path the vessel's do, rather than by a second one
+written for it.
+
 ## Open, in the order they probably matter
 
 1. ~~**Ny cannot issue a rite itself.**~~ Done, above.
@@ -568,33 +644,36 @@ quietly.
    `display_update` and the scheduler gate are still not declared and so are
    not imported, and the plain `input_read` operation remains the one no
    fixture in this kernel has ever seen succeed.
-3. **No rite here blocks, and no peer runs.** Partly closed: the vessel now
-   yields and its address space is left and resumed around that rite, which
-   was the part specific to a Ny vessel -- see above. What is left is the
-   kernel's half, a peer task reached through `preempt_current`, and the
-   honest value of it is smaller than this note first claimed. The cost is a
-   rebuild of this fixture's control flow; the primitives are already
-   ungated.
-4. ~~**A vessel that exhausts its region hangs, and nothing here would
+3. ~~**No rite here blocks, and no peer runs.**~~ A peer runs now, in its own
+   address space, while the vessel is parked mid-`main` -- see above. What is
+   left is narrower than this note has claimed twice: not whether a Ny vessel
+   survives, but whether this kernel's *scheduler* is what parks and resumes
+   it. The hand-off here is the fixture's own and the transcript says so. The
+   groundwork is measured and done: every scheduler primitive is ungated and
+   the privilege-stack items are reachable from this feature.
+4. **Nothing blocks, still.** The input request asks to wait and is never
+   made to wait, because this fixture is its only source of input. That is a
+   different limit from the one above and the transcript keeps them apart.
+5. ~~**A vessel that exhausts its region hangs, and nothing here would
    know.**~~ Closed: the binding defines `__ny_host_fail`, and the failing run
    proves it in the running system rather than on a Linux host. What is left
    is the ordinary limit -- a long-running vessel still has no way to reclaim
    the region short of ending the context.
-5. **A Ny failure is an exit code, not a status.** Nothing distinguishes a
+6. **A Ny failure is an exit code, not a status.** Nothing distinguishes a
    vessel whose runtime gave up from one that chose to exit 70. That wants a
    place in the ABI rather than a convention held one vessel at a time, and it
    is the first thing this slice found that cannot be fixed inside Anomalous.
-6. **Text comparison is unusable in a freestanding object.** `==` on text
+7. **Text comparison is unusable in a freestanding object.** `==` on text
    emits a direct `strcmp` at three sites in NIL's backend, so it would fail
    this vessel's own import check. The concat path was fixed exactly this way
    once already -- it used to import `strlen`, `calloc` and `memcpy` -- so
    this is the same defect in the comparison path, and it wants an `nyrt_`
    hook beside the others. It is why the failing run is selected by a cell
    rather than by the vessel recognising a word in the line it was delivered.
-7. **The code extent has room again, and the region is the tighter of the
-   two.** 4,113 of 8,192 bytes of code; the region is one page and the working
-   run spends 30 of its 4,096 bytes.
-8. **Nothing checks the host signature.** The toolchain cannot see the
+8. **The code extent has room, and the region is the tighter of the two.**
+   4,515 of 8,192 bytes of code, now that it carries a peer door as well; the
+   region is one page and the working run spends 30 of its 4,096 bytes.
+9. **Nothing checks the host signature.** The toolchain cannot see the
    definition, so the declarations in `vessel.ny` and the stubs in `entry.S`
    are reviewed together; a mismatch would be caught by neither side.
 3. ~~**The kernel harness.**~~ Done. For the record, the design as planned:

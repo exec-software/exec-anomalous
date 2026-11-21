@@ -61,6 +61,7 @@ const exception_stack_size: usize = 16 * 1024;
     feature = "supervision_test",
     feature = "shell_vessel_test",
     feature = "input_wait_test",
+    feature = "ny_vessel_test",
     feature = "display_vessel_test",
     feature = "supervised_renderer_test",
     feature = "semantic_surface_transport_test"
@@ -399,6 +400,7 @@ pub(super) unsafe fn selected_privilege_stack_top() -> u64 {
     feature = "supervision_test",
     feature = "shell_vessel_test",
     feature = "input_wait_test",
+    feature = "ny_vessel_test",
     feature = "display_vessel_test",
     feature = "supervised_renderer_test",
     feature = "semantic_surface_transport_test"
@@ -473,6 +475,7 @@ fn stack_top(stack: *const aligned_stack) -> u64 {
     feature = "supervision_test",
     feature = "shell_vessel_test",
     feature = "input_wait_test",
+    feature = "ny_vessel_test",
     feature = "display_vessel_test",
     feature = "supervised_renderer_test",
     feature = "semantic_surface_transport_test"
@@ -520,6 +523,7 @@ unsafe fn read_privilege_stack_top(tss: *const task_state_segment) -> u64 {
     feature = "supervision_test",
     feature = "shell_vessel_test",
     feature = "input_wait_test",
+    feature = "ny_vessel_test",
     feature = "display_vessel_test",
     feature = "supervised_renderer_test",
     feature = "semantic_surface_transport_test"

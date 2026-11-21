@@ -31,9 +31,10 @@ vessel boots or completes a rite, which is what this slice is for.
 ## Decision
 
 Add the opt-in `ny_vessel_test` fixture: one Ny vessel, booted by this kernel
-twice from the same image, completing eight rites across three operations
-through the ordinary dispatcher -- six on the run that works, two on the run
-that fails inside Ny on purpose.
+twice from the same image, completing ten rites across three operations
+through the ordinary dispatcher -- six on the run that works, two on a second
+task that runs while that one is parked, and two on the run that fails inside
+Ny on purpose.
 
 The vessel is `vessels/anomalous-ny-vessel`. **Ny issues the rites itself.**
 The console write is a symbol this vessel's Anomalous half defines and its Ny
@@ -50,15 +51,47 @@ to bring the vessel data it could not have contained, so it is the first thing
 in this profile that makes the boundary two-way: text from the kernel, into
 Ny's own variables, composed in the region, and back out through a write.
 
-It also gives up the processor. Between reading the line and composing its
-answer, Ny submits one `task_yield`, and this fixture answers it by leaving
-the vessel's address space entirely -- writing the kernel's own root to CR3,
-checking that it took, and restoring the vessel's root before resuming. The
-answer is then composed from a pointer Ny was holding before the yield, so
-the bytes found in the region afterwards are what shows that Ny's stack
-frame, the pointer and the bump allocator all survived the round trip. The
-vessel checks it too: the stub returns how many yields have completed and Ny
-refuses with its own status if that is not one.
+It also gives up the processor, and something else takes it. Between reading
+the line and composing its answer, Ny submits one `task_yield`. Answering that
+rite is where a second task runs: its own circle, its own address space, its
+own mailbox and its own privilege-transition stack, entered at the image's
+peer door while the vessel sits parked in the gate. The answer is then
+composed from a pointer Ny was holding before the yield, so the bytes found in
+the region afterwards are what shows that Ny's stack frame, that pointer and
+the bump allocator all survived another task running. The vessel checks it
+too: the stub returns how many yields have completed and Ny refuses with its
+own status if that is not one.
+
+**The second task is this image at a different door.** It borrows the console
+stub and the entry's exit submission, because a second task makes its point by
+running at all -- in its own address space, through its own mailbox -- not by
+running something the vessel does not already contain. It never enters
+`__ny_entry`, and the transcript records that as `entered_ny` false. Its grant
+is `console_write` and `task_exit` and nothing else, so a peer that tried to
+read input or yield would be refused by its own channel.
+
+**The hand-off is this fixture's, not the scheduler's.** It enters the second
+task from inside the parked vessel's dispatch, which means saving and clearing
+the three single-use continuation cells and the reentry latch for the inner
+entry and restoring them afterwards. The latch is released across exactly that
+window: it means "a dispatch is in progress on this context", and the inner
+task legitimately begins its own, during which the vessel cannot run.
+`scheduler::preempt_current` is ungated and would serve, but reaching it needs
+per-task privilege stacks, a gate entry that returns the frame to resume and a
+scheduler queue -- a rebuild of this fixture's control flow. The transcript
+states `scheduler_preempted` as false so this cannot be read as evidence of
+scheduler-driven preemption.
+
+One bug that cost a boot is worth recording, because the next nested entry
+anywhere will meet it. `descriptors::wipe_privilege_stack` zeroes the single
+static transition stack, and its own contract says it may be called only after
+the caller has abandoned that stack and restored the original kernel stack.
+That holds for a run entered from the bootstrap stack and not for a nested
+one: the parked vessel's saved frame and the dispatch's own return addresses
+are on it, so wiping produced an invalid opcode at kernel instruction pointer
+zero. A nested entry does not wipe, and nothing is left unscrubbed -- the
+second task's transition stack is its own lease and is cleared when that lease
+is released.
 
 And it can fail. The shipped runtime defines `__ny_host_fail` as a weak
 no-op and spins in `nyrt_fail` once it returns, so a Ny failure in a vessel is
@@ -152,10 +185,12 @@ Qualified on 2026-11-09 under TCG. The vessel entered user mode with three
 mappings and absent guards, committed sequence 1 as 38 bytes of UTF-8 through
 `console_write` with status `ok`, committed sequence 2 as a further 23 bytes --
 which it sends only because the first rite returned the count it had passed --
-was delivered 11 bytes of `human_text` at sequence 3, yielded at sequence 4
-and was resumed after one address-space round trip, committed sequence 5 as
-the 21 bytes it composed around the delivered line *after* that round trip,
-and exited at sequence 6 with status `ok` and code 42.
+was delivered 11 bytes of `human_text` at sequence 3, yielded at sequence 4,
+committed sequence 5 as the 21 bytes it composed around the delivered line
+*after* the second task had run, and exited at sequence 6 with status `ok` and
+code 42. The second task committed 33 bytes of its own at its sequence 1 and
+exited at its sequence 2 with code 55, in its own address space, while that
+vessel was parked.
 
 The same image was then entered a second time with its mode cell set. It
 exhausted its region, the runtime's failure hook reached the binding, and the
@@ -209,24 +244,26 @@ than an omission:
    `display_update` and the scheduler gate are not declared and so are not
    imported. Each is a line of binding when a vessel needs it, and the import
    surface states which exist.
-2. **Nothing blocks, and no peer runs.** Two different limits that are easy
-   to confuse. The input request sets `wait_if_empty`, which is what a vessel
-   should send, but this fixture is the only source of input and its line is
-   ready before the vessel asks, so no wait is ever installed -- `waited` is
-   required to be `false`. And the yield leaves and resumes the vessel's
-   address space without dispatching anything else: `peer_ran` is required to
-   be `false`, so a reader cannot take the yield for evidence that a
-   scheduler handed the processor to another task.
+2. **Nothing blocks, and the hand-off is not the scheduler's.** Two limits
+   that are easy to confuse, kept apart by the transcript. The input request
+   sets `wait_if_empty`, which is what a vessel should send, but this fixture
+   is the only source of input and its line is ready before the vessel asks,
+   so no wait is ever installed -- `waited` is required to be `false`. And a
+   second task does get the processor, but this fixture enters it directly
+   rather than the scheduler selecting it: `scheduler_preempted` is required
+   to be `false`.
 
-   What the yield does establish is the part specific to a Ny vessel: its
-   state survives its address space being deactivated and reactivated
-   mid-`main`. What is left to establish is the kernel's, and
-   `scheduler_test` already proves it for its own task shape -- a peer task
-   reached through `scheduler::preempt_current` needs per-task privilege
-   stacks, a frame-returning gate entry and a scheduler queue here, which is
-   a rebuild of this fixture's control flow rather than an extension of it.
-   The primitives are not the obstacle: `preempt_current` and `task_yield`
-   are both ungated and this vessel already submits the latter.
+   So what is established is the part specific to a Ny vessel -- its state
+   survives another task running in its own address space while it is parked
+   mid-`main`. What is not established is that this kernel's scheduler can
+   park and resume such a task, which is a different claim and belongs with
+   the scheduler rather than with the vessel. `scheduler_test` proves it for
+   its own task shape, and reaching it from here needs per-task privilege
+   stacks for both tasks, a gate entry that returns the frame to resume and a
+   scheduler queue. The primitives are not the obstacle: `preempt_current`,
+   `scheduler_table::new`, `admit` and `task_yield`'s completion are all
+   ungated, and the four privilege-stack items a second task needs are now
+   reachable from this feature.
 3. **The region is never reclaimed inside a context.** A vessel that
    concatenates in a loop runs out, which is correct for this contract and
    wrong for a long-running one. The failing run is that case on purpose, so

@@ -93,6 +93,11 @@ const status_completed: u64 = 0x40;
 enum vessel_mode {
     speaking,
     failing,
+    /// The second task, entered at the image's own peer door while the vessel
+    /// is parked at its yield. The same image, its own address space and its
+    /// own mailbox: a second task proves its point by running at all, not by
+    /// running something the vessel does not already contain.
+    peering,
 }
 
 const speaking_phases: [gate_phase; 6] = [
@@ -104,6 +109,7 @@ const speaking_phases: [gate_phase; 6] = [
     gate_phase::task_exit,
 ];
 const failing_phases: [gate_phase; 2] = [gate_phase::failure_console_write, gate_phase::task_exit];
+const peering_phases: [gate_phase; 2] = [gate_phase::peer_console_write, gate_phase::task_exit];
 /// The longest run, which is what the observation array has to hold.
 const max_call_count: usize = speaking_phases.len();
 
@@ -112,6 +118,10 @@ impl vessel_mode {
         match self {
             Self::speaking => 0,
             Self::failing => 1,
+            // The peer never reaches Ny, so the cell it reads is immaterial;
+            // it is still written, because a task space this fixture prepares
+            // and does not initialize is one it cannot reason about.
+            Self::peering => 0,
         }
     }
 
@@ -119,6 +129,7 @@ impl vessel_mode {
         match self {
             Self::speaking => "speaking",
             Self::failing => "failing",
+            Self::peering => "peering",
         }
     }
 
@@ -126,7 +137,14 @@ impl vessel_mode {
         match self {
             Self::speaking => &speaking_phases,
             Self::failing => &failing_phases,
+            Self::peering => &peering_phases,
         }
+    }
+
+    /// Where this run is entered. The peer is the same image at a different
+    /// door; everything else starts at the entry.
+    const fn entry_is_peer_door(self) -> bool {
+        matches!(self, Self::peering)
     }
 
     const fn call_count(self) -> usize {
@@ -140,6 +158,7 @@ impl vessel_mode {
         match self {
             Self::speaking => expected_exit_code,
             Self::failing => expected_failure_exit_code,
+            Self::peering => expected_peer_exit_code,
         }
     }
 }
@@ -176,6 +195,12 @@ const expected_exit_code: i32 = 42;
 /// `vessels/anomalous-ny-vessel/entry.S`, and deliberately outside the range
 /// of values Ny itself returns.
 const expected_failure_exit_code: i32 = 70;
+/// What the peer exits with. Stated in the binding beside the other two, and
+/// outside the range of both so a transcript cannot confuse the three exits.
+const expected_peer_exit_code: i32 = 55;
+/// What the peer says. It is a constant in the image, so it is quoted rather
+/// than composed and never touches a region.
+const expected_peer_text: &[u8] = b"a peer task spoke while ny waited";
 /// The runtime's own failure message is not pinned by its bytes: it is English
 /// prose owned upstream, and this fixture is not where its wording is decided.
 /// What is required of it is that it is printable, that it fits the cell the
@@ -193,7 +218,7 @@ const yield_trace_word: u64 = 0x4e59_5645_5353_4c34;
 
 /// The payload header the build stage writes ahead of the image.
 const header_magic: u64 = 0x4e59_5f56_4553_5331;
-const header_words: usize = 9;
+const header_words: usize = 10;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum gate_phase {
@@ -208,6 +233,8 @@ enum gate_phase {
     /// The only rite of the failing run before its exit: the runtime's failure
     /// message, spoken through the same stub the other writes use.
     failure_console_write,
+    /// The peer's one write, through the same stub the vessel's writes use.
+    peer_console_write,
     task_exit,
     idle,
 }
@@ -247,7 +274,8 @@ impl gate_phase {
             Self::first_console_write
             | Self::second_console_write
             | Self::third_console_write
-            | Self::failure_console_write => Some(console_trace_word),
+            | Self::failure_console_write
+            | Self::peer_console_write => Some(console_trace_word),
             Self::input_read => Some(input_trace_word),
             Self::processor_yield => Some(yield_trace_word),
             Self::task_exit => Some(exit_trace_word),
@@ -260,7 +288,8 @@ impl gate_phase {
             Self::first_console_write
             | Self::second_console_write
             | Self::third_console_write
-            | Self::failure_console_write => Some(rite_operation::console_write),
+            | Self::failure_console_write
+            | Self::peer_console_write => Some(rite_operation::console_write),
             Self::input_read => Some(rite_operation::session_input_read),
             Self::processor_yield => Some(rite_operation::task_yield),
             Self::task_exit => Some(rite_operation::task_exit),
@@ -292,6 +321,7 @@ impl gate_phase {
             Self::first_console_write => Some(expected_first_text),
             Self::second_console_write => Some(expected_second_text),
             Self::third_console_write => Some(expected_third_text),
+            Self::peer_console_write => Some(expected_peer_text),
             Self::failure_console_write
             | Self::input_read
             | Self::processor_yield
@@ -312,6 +342,8 @@ fn phase_from_index(mode: vessel_mode, index: usize) -> Option<gate_phase> {
 struct vessel_header {
     image_length: u64,
     entry: u64,
+    /// The door the second task is entered at, in the same code extent.
+    peer_entry: u64,
     console_return: u64,
     input_return: u64,
     yield_return: u64,
@@ -342,7 +374,13 @@ struct vessel_context {
     circles: circle_table,
     tasks: task_table,
     channel: Option<rite_channel>,
-    screen: screen_console,
+    /// The one console both tasks commit through. `run_once` owns it for the
+    /// whole run and each context points at it, because a second task has to
+    /// commit its bytes the same way the vessel does and `screen_console` is
+    /// handed in by boot rather than constructed here. Only one task runs at a
+    /// time and the gate serializes every commit, so the aliasing is exactly
+    /// as wide as the dispatch that uses it.
+    screen: *mut screen_console,
     current_task: Option<task_identity>,
     phase: gate_phase,
     header: vessel_header,
@@ -364,12 +402,34 @@ struct vessel_context {
     /// many times the vessel's own root has been left and resumed.
     kernel_root: u64,
     address_space_round_trips: usize,
+    /// The second task to enter while this one is parked, prepared before the
+    /// vessel was entered because only the outer scope holds the allocator.
+    /// Null on the runs that have no peer.
+    peer: *mut peer_handoff,
+    peer_ran: bool,
     body_copy_count: usize,
     body_bytes_copied: usize,
     reply_copy_count: usize,
     console_bytes_committed: usize,
     exit_code: Option<i32>,
     terminal_reply_copied: bool,
+}
+
+/// Everything a second task needs, held where the parked vessel's dispatch
+/// can reach it. Its context is an ordinary `vessel_context` in the peering
+/// mode, so the dispatcher, the validators and the reporting all work on it
+/// unchanged -- a second task is a third run of the same machinery, not a
+/// second machine.
+struct peer_handoff {
+    context: vessel_context,
+    space: task_space,
+    task: task_identity,
+    circle: circle_id,
+    /// The peer's own privilege-transition stack. The vessel is parked in the
+    /// gate with its frame on the stack selected until the hand-off, so the
+    /// peer cannot be allowed to push onto that one.
+    privilege_stack: frame_lease,
+    privilege_stack_top: u64,
 }
 
 struct task_space {
@@ -505,7 +565,7 @@ pub(super) fn run(mut screen: screen_console) -> ! {
     serial.initialize();
     let _ = writeln!(
         serial,
-        r#"{{"schema":1,"event":"kernel.ny_vessel.passed","level":"info","runs":2,"calls":8,"commits":8,"console_writes":4,"deliveries":1,"yields":1,"ny_failures":1,"issued_by":"ny","terminal":true}}"#
+        r#"{{"schema":1,"event":"kernel.ny_vessel.passed","level":"info","runs":2,"peer_tasks":1,"calls":10,"commits":10,"console_writes":5,"deliveries":1,"yields":1,"ny_failures":1,"issued_by":"ny","terminal":true}}"#
     );
     super::qemu_exit_success();
     super::halt_forever()
@@ -576,6 +636,19 @@ fn run_once(
     serial: &mut serial_port,
     initial: frame_accounting,
 ) -> Result<screen_console, &'static str> {
+    let mut screen = screen;
+    // Both contexts point at this one console. Naming the slot separately
+    // keeps the console itself nameable, so it goes back to the caller by
+    // value at the end rather than being read out through the pointer.
+    let screen_slot = ptr::from_mut(&mut screen);
+    // The run that yields is the one that has somewhere to yield to. Prepared
+    // before the vessel is entered, because the dispatch that hands over does
+    // not hold the allocator and must find the second task already standing.
+    let mut peer = if mode == vessel_mode::speaking {
+        Some(prepare_peer(allocator, kernel_cr3, header, screen_slot)?)
+    } else {
+        None
+    };
     let mut circles = circle_table::new();
     let mut tasks = task_table::new();
     let circle = circles
@@ -623,7 +696,7 @@ fn run_once(
         circles,
         tasks,
         channel: Some(channel),
-        screen,
+        screen: screen_slot,
         current_task: None,
         phase: *mode.phases().first().ok_or("ny_vessel_run_has_no_phases")?,
         header: *header,
@@ -641,6 +714,8 @@ fn run_once(
         failure_message_recognised: false,
         kernel_root: paging::entry_address(kernel_cr3),
         address_space_round_trips: 0,
+        peer: ptr::null_mut(),
+        peer_ran: false,
         body_copy_count: 0,
         body_bytes_copied: 0,
         reply_copy_count: 0,
@@ -650,110 +725,34 @@ fn run_once(
     };
 
     let arena_alias = space.arena_alias();
-    execute_task(&mut context, &space, task, kernel_cr3)?;
+    context.peer = peer.as_mut().map_or(ptr::null_mut(), ptr::from_mut);
+    let entry = if mode.entry_is_peer_door() {
+        header.peer_entry
+    } else {
+        header.entry
+    };
+    execute_task(&mut context, &space, task, kernel_cr3, entry, true)?;
 
-    let exited = context
-        .tasks
-        .snapshot(task)
-        .map_err(|_| "ny_vessel_task_final_snapshot_failed")?;
-    // Each body is copied once. The working run copies three messages, the
-    // input request and the exit payload; the failing run copies the runtime's
-    // message and the exit payload, and its message length is whatever
-    // arrived, so it is taken from the run rather than stated here.
-    let (expected_body_bytes, expected_console_bytes, expected_deliveries, expected_round_trips) =
-        match mode {
-            vessel_mode::speaking => (
-                expected_first_text.len()
-                    + expected_second_text.len()
-                    + session_input_request_size
-                    + expected_third_text.len()
-                    + mem::size_of::<u64>(),
-                expected_first_text.len() + expected_second_text.len() + expected_third_text.len(),
-                1,
-                1,
-            ),
-            // The failing run never reaches the yield: it exhausts the region
-            // before it gets there.
-            vessel_mode::failing => (
-                context.failure_message_length + mem::size_of::<u64>(),
-                context.failure_message_length,
-                0,
-                0,
-            ),
-        };
-    let call_count = mode.call_count();
-    if exited.state() != task_state::exited
-        || context.phase != gate_phase::idle
-        || context.observation_count != call_count
-        || context.body_copy_count != call_count
-        || context.body_bytes_copied != expected_body_bytes
-        || context.reply_copy_count != call_count - 1
-        || context.console_bytes_committed != expected_console_bytes
-        || context.deliveries_published != expected_deliveries
-        || context.address_space_round_trips != expected_round_trips
-        || context.exit_code != Some(mode.exit_code())
-        || context.terminal_reply_copied
-        || !scratch_is_zero(&context.scratch)
-    {
-        return Err("ny_vessel_completion_evidence_invalid");
+    check_run_evidence(&context, task, arena_alias)?;
+    // The second task is held to the same evidence as the vessel, on its own
+    // region and its own task, and the vessel is required to have reported
+    // that it handed over at all.
+    if let Some(peer) = peer.as_mut() {
+        if !context.peer_ran {
+            return Err("ny_vessel_peer_never_ran");
+        }
+        let peer_arena = peer.space.arena_alias();
+        check_run_evidence(&peer.context, peer.task, peer_arena)?;
+        if !clear_and_verify_bytes(&mut peer.context.console_copy)
+            || !clear_and_verify_bytes(&mut peer.context.scratch)
+        {
+            return Err("ny_vessel_peer_private_storage_clear_failed");
+        }
+        release_peer(allocator, peer)?;
+    } else if context.peer_ran {
+        return Err("ny_vessel_peer_ran_without_one");
     }
-    match mode {
-        vessel_mode::speaking => {
-            if context.console_copy_length != expected_third_text.len()
-                || context.console_copy[..context.console_copy_length] != *expected_third_text
-            {
-                return Err("ny_vessel_last_message_invalid");
-            }
-        }
-        // The failing run's last message is the runtime's. It is required to
-        // have been recognised and to be the length the body copy measured,
-        // not to be any particular prose.
-        vessel_mode::failing => {
-            if !context.failure_message_recognised
-                || context.failure_message_length == 0
-                || context.failure_message_length > failure_message_capacity
-                || context.console_copy_length != context.failure_message_length
-            {
-                return Err("ny_vessel_failure_message_invalid");
-            }
-        }
-    }
-    validate_observations(mode, &context.observations[..call_count])?;
-
-    match mode {
-        vessel_mode::speaking => {
-            // The vessel composed its message in the region this fixture
-            // installed, so the bytes are still there to be compared against
-            // what the rite carried. A vessel that had sent something it did
-            // not compose fails here.
-            if !region_holds_message(arena_alias) {
-                return Err("ny_vessel_region_message_absent");
-            }
-            // The answer is in the region too, and it contains the line this
-            // fixture delivered -- which the vessel's image does not and
-            // cannot contain. That is the claim, stated as bytes in a page
-            // rather than as a count the vessel reported.
-            if !region_contains(arena_alias, expected_third_text) {
-                return Err("ny_vessel_region_answer_absent");
-            }
-            // And the quoted message is not there. A literal needs no
-            // allocation, so finding it in the region would mean the vessel
-            // composed where it was expected to quote, and `from_region` in
-            // the transcript would be wrong.
-            if region_contains(arena_alias, expected_second_text) {
-                return Err("ny_vessel_region_quoted_text_present");
-            }
-        }
-        // The failing run exhausted the region by concatenating, so its first
-        // allocation is still at the base. Without this the run could have
-        // failed for some other reason entirely and still looked the same.
-        vessel_mode::failing => {
-            if !region_starts_with(arena_alias, expected_exhausted_region_prefix) {
-                return Err("ny_vessel_region_was_not_exhausted_by_ny");
-            }
-        }
-    }
-
+    context.peer = ptr::null_mut();
     context
         .channel
         .take()
@@ -794,6 +793,12 @@ fn run_once(
     }
 
     emit_outcomes(serial, &context)?;
+    // The second task's own outcomes, after the run it interrupted. It ran
+    // between this run's yield and its last write; the transcript reports it
+    // after, because every run here reports once it is over.
+    if let Some(peer) = peer.as_ref() {
+        emit_outcomes(serial, &peer.context)?;
+    }
     let _ = writeln!(
         serial,
         r#"{{"schema":1,"event":"kernel.ny_vessel.released","level":"info","free_frames":{},"initial_free_frames":{},"data_owned_frames":{},"table_owned_frames":{},"active_circles":{},"active_tasks":{},"active_mappings":{},"channel_retired":true,"region_wiped":true,"transition_stack_wiped":true}}"#,
@@ -805,7 +810,8 @@ fn run_once(
         context.tasks.active_count(),
         circle_accounting.mappings
     );
-    let vessel_context { screen, .. } = context;
+    // Neither context is used past this point, so nothing reads the slot
+    // again and the console moves out by value.
     Ok(screen)
 }
 
@@ -884,6 +890,18 @@ fn emit_outcomes(serial: &mut serial_port, context: &vessel_context) -> Result<(
                     delivery_sequence
                 );
             }
+            // The peer's one write. `issued_by` is the binding, not Ny: this
+            // task never entered Ny at all, which is what makes it a second
+            // task rather than a second vessel.
+            gate_phase::peer_console_write => {
+                let _ = writeln!(
+                    serial,
+                    r#"{{"schema":1,"event":"kernel.ny_vessel.peer.committed","level":"info","sequence":{},"status":"{}","bytes":{},"composed_by":"image","issued_by":"binding","from_region":false,"entered_ny":false}}"#,
+                    observation.sequence,
+                    status,
+                    expected_peer_text.len()
+                );
+            }
             // What the runtime's failure hook reached the kernel as. The
             // bytes are not echoed and not pinned: they are upstream's prose,
             // and what matters is that they arrived as a rite at all instead
@@ -904,8 +922,11 @@ fn emit_outcomes(serial: &mut serial_port, context: &vessel_context) -> Result<(
             gate_phase::processor_yield => {
                 let _ = writeln!(
                     serial,
-                    r#"{{"schema":1,"event":"kernel.ny_vessel.yielded","level":"info","sequence":{},"status":"{}","address_space_round_trips":{},"resumed_in_ny":true,"peer_ran":false}}"#,
-                    observation.sequence, status, context.address_space_round_trips
+                    r#"{{"schema":1,"event":"kernel.ny_vessel.yielded","level":"info","sequence":{},"status":"{}","address_space_round_trips":{},"resumed_in_ny":true,"peer_ran":{},"scheduler_preempted":false}}"#,
+                    observation.sequence,
+                    status,
+                    context.address_space_round_trips,
+                    context.peer_ran
                 );
             }
             gate_phase::task_exit => {
@@ -984,12 +1005,13 @@ fn read_header() -> Result<vessel_header, &'static str> {
     let header = vessel_header {
         image_length: words[1],
         entry: words[2],
-        console_return: words[3],
-        input_return: words[4],
-        yield_return: words[5],
-        exit_return: words[6],
-        failed: words[7],
-        mode_cell: words[8],
+        peer_entry: words[3],
+        console_return: words[4],
+        input_return: words[5],
+        yield_return: words[6],
+        exit_return: words[7],
+        failed: words[8],
+        mode_cell: words[9],
     };
     let payload_start = ptr::addr_of!(x86_64_ny_vessel_payload_start);
     let payload_end = ptr::addr_of!(x86_64_ny_vessel_payload_end);
@@ -1004,6 +1026,7 @@ fn read_header() -> Result<vessel_header, &'static str> {
         || carried as u64 != header.image_length
         || header.entry != code_address
         || ![
+            header.peer_entry,
             header.console_return,
             header.input_return,
             header.yield_return,
@@ -1338,6 +1361,23 @@ fn region_starts_with(arena_alias: u64, text: &[u8]) -> bool {
     true
 }
 
+/// Requires the region to hold nothing at all. The peer never enters Ny, so
+/// it never installs or allocates from a region, and anything found here
+/// would mean this task did more than it was entered to do.
+fn region_is_untouched(arena_alias: u64) -> bool {
+    let Ok(base) = usize::try_from(arena_alias) else {
+        return false;
+    };
+    for offset in 0..page_size as usize {
+        // SAFETY: The region page is identity mapped and this fixture retains
+        // its exclusive lease until release.
+        if unsafe { ptr::read_volatile((base as *const u8).add(offset)) } != 0 {
+            return false;
+        }
+    }
+    true
+}
+
 fn validate_mapping(
     evidence: mapping_evidence,
     physical_address: u64,
@@ -1355,11 +1395,377 @@ fn validate_mapping(
     Ok(())
 }
 
+/// Enters the second task and runs it to completion while the vessel is
+/// parked at its yield, then puts everything back as the vessel left it.
+///
+/// The nesting is deliberate and its cost is explicit. Three single-use cells
+/// and the reentry latch belong to one execution at a time, so each is saved,
+/// cleared for the inner task, and restored afterwards. The latch in
+/// particular is released across this window: it means "a dispatch is in
+/// progress on this context", and the inner task legitimately begins its own.
+/// The window is exactly the peer's lifetime, during which the vessel cannot
+/// run -- it is parked in the gate with its frame on its own privilege stack,
+/// which is why the peer needs a stack of its own and why its frames cannot
+/// reach the vessel's.
+fn run_peer_while_parked(context: &mut vessel_context) -> Result<(), &'static str> {
+    // SAFETY: The pointer was published by `run_once`, whose frame outlives
+    // this dispatch, and nothing else holds a reference to that handoff while
+    // this single-BSP fixture is inside the gate.
+    let handoff = unsafe { &mut *context.peer };
+    if context.peer_ran
+        || handoff.privilege_stack_top == 0
+        || handoff.privilege_stack_top & 0x0f != 0
+        || handoff.context.mode != vessel_mode::peering
+    {
+        return Err("ny_vessel_peer_handoff_invalid");
+    }
+    let vessel_root = paging::entry_address(paging::read_cr3());
+    let vessel_stack_top = context.transition_stack_top;
+    if vessel_root == context.kernel_root || vessel_stack_top == 0 {
+        return Err("ny_vessel_peer_departure_state_invalid");
+    }
+
+    // SAFETY: Single-BSP, interrupts excluded; these are this fixture's own
+    // cells and the values belong to the parked vessel's own completion.
+    let saved_stack = unsafe { ptr::read_volatile(ptr::addr_of!(saved_kernel_stack)) };
+    // SAFETY: The same exclusive interval protects the saved TS cell.
+    let saved_switched = unsafe { ptr::read_volatile(ptr::addr_of!(saved_task_switched)) };
+    let parked = active_context.swap(ptr::null_mut(), Ordering::AcqRel);
+    if parked != ptr::from_mut(context) {
+        return Err("ny_vessel_peer_context_not_parked");
+    }
+    // SAFETY: Cleared so the inner entry's own preconditions hold; both are
+    // restored below before the vessel resumes.
+    unsafe {
+        ptr::write_volatile(ptr::addr_of_mut!(saved_kernel_stack), 0);
+        ptr::write_volatile(ptr::addr_of_mut!(saved_task_switched), 0);
+    }
+    gate_active.store(false, Ordering::Release);
+
+    // SAFETY: The peer owns this exact bound privilege-stack lease, and the
+    // vessel's own frames stay on the stack selected until now.
+    if !unsafe { descriptors::select_privilege_stack_top(handoff.privilege_stack_top) } {
+        return Err("ny_vessel_peer_stack_selection_failed");
+    }
+
+    let outcome = execute_task(
+        &mut handoff.context,
+        &handoff.space,
+        handoff.task,
+        context.kernel_root,
+        context.header.peer_entry,
+        false,
+    );
+
+    // SAFETY: The peer has completed and abandoned its stack; the vessel's
+    // frames are still where its own gate left them.
+    let stack_restored = unsafe { descriptors::select_privilege_stack_top(vessel_stack_top) };
+    // SAFETY: The peer's completion left the kernel root active. The vessel's
+    // root is the one read above and its mappings were never withdrawn.
+    unsafe { paging::write_cr3(vessel_root) };
+    let root_restored = paging::entry_address(paging::read_cr3()) == vessel_root;
+    // SAFETY: Restoring the parked vessel's own single-use continuation.
+    unsafe {
+        ptr::write_volatile(ptr::addr_of_mut!(saved_kernel_stack), saved_stack);
+        ptr::write_volatile(ptr::addr_of_mut!(saved_task_switched), saved_switched);
+    }
+    if active_context
+        .compare_exchange(
+            ptr::null_mut(),
+            parked,
+            Ordering::Release,
+            Ordering::Relaxed,
+        )
+        .is_err()
+        || gate_active
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+    {
+        return Err("ny_vessel_peer_resumption_failed");
+    }
+    outcome?;
+    if !stack_restored || !root_restored {
+        return Err("ny_vessel_peer_restore_failed");
+    }
+    context.peer_ran = true;
+    context.address_space_round_trips += 1;
+    Ok(())
+}
+
+/// Prepares the second task: its own circle, address space, mailbox and
+/// privilege stack, and a context in the peering mode. Everything is built
+/// here because only this scope holds the allocator; the parked vessel's
+/// dispatch does nothing but enter what this left ready.
+fn prepare_peer(
+    allocator: &mut frame_allocator<'_>,
+    kernel_cr3: u64,
+    header: &vessel_header,
+    screen: *mut screen_console,
+) -> Result<peer_handoff, &'static str> {
+    let mut circles = circle_table::new();
+    let mut tasks = task_table::new();
+    let circle = circles
+        .create()
+        .map_err(|_| "ny_vessel_peer_circle_create_failed")?;
+    let space = prepare_task_space(allocator, kernel_cr3, header)?;
+    // SAFETY: The extent's lease is exclusively held and not yet active, and
+    // the header's cell was bounded inside its first page.
+    unsafe { write_mode_cell(&space, header, vessel_mode::peering)? };
+    attach_task_space(&mut circles, circle)?;
+    let task = create_task(&mut circles, &mut tasks, circle, space.payload_length)?;
+    // The peer writes and exits. Its grant is those two rights and no others,
+    // so a peer that tried to read input or yield would be refused by its own
+    // channel rather than by a check further in.
+    let channel = rite_channel::try_new(task, rite_rights::console_write | rite_rights::task_exit)
+        .map_err(|_| "ny_vessel_peer_channel_create_failed")?;
+    let privilege_stack = allocate_pages(
+        allocator,
+        privilege_stack_pages,
+        "ny_vessel_peer_privilege_stack_allocation_failed",
+    )?;
+    let privilege_stack_top = privilege_stack
+        .range()
+        .and_then(|range| range.end())
+        .ok_or("ny_vessel_peer_privilege_stack_extent_missing")?;
+    if privilege_stack_top & 0x0f != 0 {
+        return Err("ny_vessel_peer_privilege_stack_misaligned");
+    }
+    let context = vessel_context {
+        circles,
+        tasks,
+        channel: Some(channel),
+        screen,
+        current_task: None,
+        phase: *vessel_mode::peering
+            .phases()
+            .first()
+            .ok_or("ny_vessel_run_has_no_phases")?,
+        header: *header,
+        mailbox_alias: space.mailbox_alias(),
+        active_root: 0,
+        transition_stack_top: 0,
+        scratch: [0; page_size as usize],
+        console_copy: [0; console_capacity],
+        console_copy_length: 0,
+        mode: vessel_mode::peering,
+        observations: [vessel_observation::empty(); max_call_count],
+        observation_count: 0,
+        deliveries_published: 0,
+        failure_message_length: 0,
+        failure_message_recognised: false,
+        kernel_root: paging::entry_address(kernel_cr3),
+        address_space_round_trips: 0,
+        peer: ptr::null_mut(),
+        peer_ran: false,
+        body_copy_count: 0,
+        body_bytes_copied: 0,
+        reply_copy_count: 0,
+        console_bytes_committed: 0,
+        exit_code: None,
+        terminal_reply_copied: false,
+    };
+    Ok(peer_handoff {
+        context,
+        space,
+        task,
+        circle,
+        privilege_stack,
+        privilege_stack_top,
+    })
+}
+
+/// Returns everything the second task held. Its frames are released with the
+/// same clearing contract as the vessel's, including the privilege stack its
+/// own gate frames were pushed onto.
+fn release_peer(
+    allocator: &mut frame_allocator<'_>,
+    peer: &mut peer_handoff,
+) -> Result<(), &'static str> {
+    peer.context
+        .channel
+        .take()
+        .ok_or("ny_vessel_peer_channel_missing_at_retirement")?;
+    release_task_space(
+        allocator,
+        &mut peer.context.circles,
+        peer.circle,
+        &mut peer.space,
+    )?;
+    let task = peer.task;
+    let circle = peer.circle;
+    let (tasks, circles) = (&mut peer.context.tasks, &mut peer.context.circles);
+    tasks
+        .destroy(circles, task)
+        .map_err(|_| "ny_vessel_peer_task_destroy_failed")?;
+    circles
+        .destroy(circle)
+        .map_err(|_| "ny_vessel_peer_circle_destroy_failed")?;
+    // SAFETY: The peer has completed, abandoned this stack and is no longer
+    // selected in the TSS, so the lease is inactive and exclusively held.
+    unsafe {
+        allocator.release_with(&mut peer.privilege_stack, |range| {
+            memory::clear_and_verify(range)
+        })
+    }
+    .map_err(|_| "ny_vessel_peer_privilege_stack_release_failed")?;
+    peer.privilege_stack_top = 0;
+    Ok(())
+}
+
+/// How many pages a privilege-transition stack takes, from the size the
+/// descriptor tables state rather than a number repeated here.
+const privilege_stack_pages: u64 = descriptors::privilege_stack_size as u64 / page_size;
+
+/// What every run of this image must leave behind. The vessel's runs and
+/// the second task's are all checked here, so none of them is held to a
+/// copy of these conditions that could drift from the others.
+fn check_run_evidence(
+    context: &vessel_context,
+    task: task_identity,
+    arena_alias: u64,
+) -> Result<(), &'static str> {
+    let mode = context.mode;
+    let exited = context
+        .tasks
+        .snapshot(task)
+        .map_err(|_| "ny_vessel_task_final_snapshot_failed")?;
+    // Each body is copied once. The working run copies three messages, the
+    // input request and the exit payload; the failing run copies the runtime's
+    // message and the exit payload, and its message length is whatever
+    // arrived, so it is taken from the run rather than stated here.
+    let (expected_body_bytes, expected_console_bytes, expected_deliveries, expected_round_trips) =
+        match mode {
+            vessel_mode::speaking => (
+                expected_first_text.len()
+                    + expected_second_text.len()
+                    + session_input_request_size
+                    + expected_third_text.len()
+                    + mem::size_of::<u64>(),
+                expected_first_text.len() + expected_second_text.len() + expected_third_text.len(),
+                1,
+                1,
+            ),
+            // The failing run never reaches the yield: it exhausts the region
+            // before it gets there.
+            vessel_mode::failing => (
+                context.failure_message_length + mem::size_of::<u64>(),
+                context.failure_message_length,
+                0,
+                0,
+            ),
+            // The peer quotes one constant and exits. It allocates nothing,
+            // reads nothing and yields nothing, which is why its run is two
+            // rites and not eight.
+            vessel_mode::peering => (
+                expected_peer_text.len() + mem::size_of::<u64>(),
+                expected_peer_text.len(),
+                0,
+                0,
+            ),
+        };
+    let call_count = mode.call_count();
+    if exited.state() != task_state::exited
+        || context.phase != gate_phase::idle
+        || context.observation_count != call_count
+        || context.body_copy_count != call_count
+        || context.body_bytes_copied != expected_body_bytes
+        || context.reply_copy_count != call_count - 1
+        || context.console_bytes_committed != expected_console_bytes
+        || context.deliveries_published != expected_deliveries
+        || context.address_space_round_trips != expected_round_trips
+        || context.exit_code != Some(mode.exit_code())
+        || context.terminal_reply_copied
+        || !scratch_is_zero(&context.scratch)
+    {
+        return Err("ny_vessel_completion_evidence_invalid");
+    }
+    match mode {
+        vessel_mode::speaking => {
+            if context.console_copy_length != expected_third_text.len()
+                || context.console_copy[..context.console_copy_length] != *expected_third_text
+            {
+                return Err("ny_vessel_last_message_invalid");
+            }
+        }
+        vessel_mode::peering => {
+            if context.console_copy_length != expected_peer_text.len()
+                || context.console_copy[..context.console_copy_length] != *expected_peer_text
+            {
+                return Err("ny_vessel_peer_message_invalid");
+            }
+        }
+        // The failing run's last message is the runtime's. It is required to
+        // have been recognised and to be the length the body copy measured,
+        // not to be any particular prose.
+        vessel_mode::failing => {
+            if !context.failure_message_recognised
+                || context.failure_message_length == 0
+                || context.failure_message_length > failure_message_capacity
+                || context.console_copy_length != context.failure_message_length
+            {
+                return Err("ny_vessel_failure_message_invalid");
+            }
+        }
+    }
+    validate_observations(mode, &context.observations[..call_count])?;
+
+    match mode {
+        vessel_mode::speaking => {
+            // The vessel composed its message in the region this fixture
+            // installed, so the bytes are still there to be compared against
+            // what the rite carried. A vessel that had sent something it did
+            // not compose fails here.
+            if !region_holds_message(arena_alias) {
+                return Err("ny_vessel_region_message_absent");
+            }
+            // The answer is in the region too, and it contains the line this
+            // fixture delivered -- which the vessel's image does not and
+            // cannot contain. That is the claim, stated as bytes in a page
+            // rather than as a count the vessel reported.
+            if !region_contains(arena_alias, expected_third_text) {
+                return Err("ny_vessel_region_answer_absent");
+            }
+            // And the quoted message is not there. A literal needs no
+            // allocation, so finding it in the region would mean the vessel
+            // composed where it was expected to quote, and `from_region` in
+            // the transcript would be wrong.
+            if region_contains(arena_alias, expected_second_text) {
+                return Err("ny_vessel_region_quoted_text_present");
+            }
+        }
+        // The peer never allocates, so its region must still be untouched.
+        // A peer that had somehow reached Ny would show up here.
+        vessel_mode::peering => {
+            if !region_is_untouched(arena_alias) {
+                return Err("ny_vessel_peer_region_not_untouched");
+            }
+        }
+        // The failing run exhausted the region by concatenating, so its first
+        // allocation is still at the base. Without this the run could have
+        // failed for some other reason entirely and still looked the same.
+        vessel_mode::failing => {
+            if !region_starts_with(arena_alias, expected_exhausted_region_prefix) {
+                return Err("ny_vessel_region_was_not_exhausted_by_ny");
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn execute_task(
     context: &mut vessel_context,
     space: &task_space,
     task: task_identity,
     kernel_cr3: u64,
+    entry: u64,
+    // `wipe_privilege_stack` zeroes the one static transition stack, which is
+    // sound for a run entered from the bootstrap stack and ruinous for a
+    // nested one: the parked task's saved frame and this dispatch's own return
+    // addresses are on it. A nested entry therefore does not wipe, and nothing
+    // is left unscrubbed -- the second task's transition stack is its own
+    // lease and is cleared when that lease is released.
+    wipe_transition_stack: bool,
 ) -> Result<(), &'static str> {
     // SAFETY: This single-BSP feature exclusively owns both continuation cells.
     let saved_stack_clear = unsafe { ptr::read_volatile(ptr::addr_of!(saved_kernel_stack)) == 0 };
@@ -1427,7 +1833,7 @@ fn execute_task(
     // enters CPL3.
     let status = unsafe {
         x86_64_enter_ny_vessel_task(
-            code_address,
+            entry,
             stack_top,
             u64::from(descriptors::user_data_selector),
             u64::from(descriptors::user_code_selector),
@@ -1444,7 +1850,7 @@ fn execute_task(
     context.current_task = None;
     context.mailbox_alias = 0;
     context.active_root = 0;
-    let transition_stack_wiped = descriptors::wipe_privilege_stack();
+    let transition_stack_wiped = !wipe_transition_stack || descriptors::wipe_privilege_stack();
     context.transition_stack_top = 0;
     // SAFETY: Completion consumed both single-use continuation values.
     unsafe {
@@ -1670,7 +2076,8 @@ fn expected_gate_instruction_pointer(context: &vessel_context) -> Option<u64> {
         gate_phase::first_console_write
         | gate_phase::second_console_write
         | gate_phase::third_console_write
-        | gate_phase::failure_console_write => Some(context.header.console_return),
+        | gate_phase::failure_console_write
+        | gate_phase::peer_console_write => Some(context.header.console_return),
         gate_phase::input_read => Some(context.header.input_return),
         gate_phase::processor_yield => Some(context.header.yield_return),
         gate_phase::task_exit => Some(context.header.exit_return),
@@ -1713,7 +2120,10 @@ fn dispatch_gate(context: &mut vessel_context) -> Result<gate_action, &'static s
                 phase,
                 admission,
                 &mut context.tasks,
-                &mut context.screen,
+                // SAFETY: `run_once` owns the console for this whole run and
+                // the gate admits one dispatch at a time, so this is the only
+                // live reference while the commit runs.
+                unsafe { &mut *context.screen },
                 context.mailbox_alias,
                 &mut context.scratch,
                 &mut context.console_copy,
@@ -1725,7 +2135,6 @@ fn dispatch_gate(context: &mut vessel_context) -> Result<gate_action, &'static s
                 &mut context.failure_message_length,
                 &mut context.failure_message_recognised,
                 context.kernel_root,
-                &mut context.address_space_round_trips,
                 &mut context.exit_code,
             )?,
         }
@@ -1744,6 +2153,13 @@ fn dispatch_gate(context: &mut vessel_context) -> Result<gate_action, &'static s
         status: reply.status,
     };
     context.observation_count += 1;
+
+    // The yield is where a second task gets the processor. It happens here
+    // rather than inside the completion because this is the only place the
+    // parked vessel's whole context -- and so its peer -- is in hand.
+    if phase == gate_phase::processor_yield && !context.peer.is_null() {
+        run_peer_while_parked(context)?;
+    }
 
     if let rite_outcome::terminal = outcome {
         if phase != gate_phase::task_exit
@@ -1790,7 +2206,6 @@ fn complete_admitted(
     failure_message_length: &mut usize,
     failure_message_recognised: &mut bool,
     kernel_root: u64,
-    address_space_round_trips: &mut usize,
     exit_code: &mut Option<i32>,
 ) -> Result<(rite_reply, rite_outcome), &'static str> {
     let vessel = admission.vessel();
@@ -1799,7 +2214,8 @@ fn complete_admitted(
         gate_phase::first_console_write
         | gate_phase::second_console_write
         | gate_phase::third_console_write
-        | gate_phase::failure_console_write => {
+        | gate_phase::failure_console_write
+        | gate_phase::peer_console_write => {
             // SAFETY: `mailbox` is the active task space's exclusively owned,
             // identity-mapped alias for the vessel's mailbox page.
             unsafe {
@@ -1946,29 +2362,14 @@ fn complete_admitted(
             if !scratch_is_zero(scratch) {
                 return Err("ny_vessel_yield_body_present");
             }
-            let vessel_root = paging::entry_address(paging::read_cr3());
-            if vessel_root == kernel_root || vessel_root == 0 {
+            // The departure itself is not performed here. Answering the
+            // yield only settles the rite; what leaves the vessel's address
+            // space is the second task being entered, and that happens where
+            // the parked vessel's whole context is in hand. Counting the round
+            // trip here as well would count one departure twice.
+            if paging::entry_address(paging::read_cr3()) == kernel_root {
                 return Err("ny_vessel_yield_root_invalid");
             }
-            // Leave the vessel's address space entirely. Everything this
-            // fixture needs while the vessel is parked -- the mailbox, the
-            // region, its own state -- it reaches through the kernel's own
-            // aliases, so nothing here depends on the vessel's mappings being
-            // live, and the vessel's user addresses are unreachable while it
-            // is away.
-            // SAFETY: The kernel root is the exact one captured before the
-            // proof and its supervisor branch is still live.
-            unsafe { paging::write_cr3(kernel_root) };
-            if paging::entry_address(paging::read_cr3()) != kernel_root {
-                return Err("ny_vessel_yield_departure_failed");
-            }
-            // SAFETY: The vessel's root is the live, exclusively owned root of
-            // the task that is about to resume, and it was read above.
-            unsafe { paging::write_cr3(vessel_root) };
-            if paging::entry_address(paging::read_cr3()) != vessel_root {
-                return Err("ny_vessel_yield_return_failed");
-            }
-            *address_space_round_trips += 1;
             let reply = admission
                 .finish_ok(tasks, |_, exact_vessel| {
                     if exact_vessel != vessel {
@@ -2024,7 +2425,8 @@ fn validate_vessel_call(phase: gate_phase, call: &rite_call) -> Result<(), &'sta
         gate_phase::first_console_write
         | gate_phase::second_console_write
         | gate_phase::third_console_write
-        | gate_phase::failure_console_write => rite_payload_kind::utf8_text,
+        | gate_phase::failure_console_write
+        | gate_phase::peer_console_write => rite_payload_kind::utf8_text,
         gate_phase::input_read => rite_payload_kind::session_input_request,
         gate_phase::processor_yield => rite_payload_kind::none,
         gate_phase::task_exit => rite_payload_kind::exit_status,
@@ -2037,7 +2439,8 @@ fn validate_vessel_call(phase: gate_phase, call: &rite_call) -> Result<(), &'sta
     let expected_size = match phase {
         gate_phase::first_console_write
         | gate_phase::second_console_write
-        | gate_phase::third_console_write => {
+        | gate_phase::third_console_write
+        | gate_phase::peer_console_write => {
             Some(phase.text().ok_or("ny_vessel_phase_has_no_text")?.len() as u32)
         }
         gate_phase::failure_console_write => None,
@@ -2086,6 +2489,7 @@ fn validate_reply(
         | gate_phase::second_console_write
         | gate_phase::third_console_write
         | gate_phase::failure_console_write
+        | gate_phase::peer_console_write
         | gate_phase::processor_yield
         | gate_phase::task_exit => (rite_payload_kind::none, 0),
         gate_phase::idle => return Err("ny_vessel_idle_reply"),

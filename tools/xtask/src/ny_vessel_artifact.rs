@@ -88,9 +88,9 @@ const expected_object_imports: [&str; 12] = [
 /// Identifies the header the kernel parses, so a payload from some other
 /// stage cannot be mistaken for this one.
 pub(super) const header_magic: u64 = 0x4e59_5f56_4553_5331;
-/// magic, image length, entry, console return, input return, yield return,
-/// exit return, failure, mode cell.
-pub(super) const header_bytes: usize = 9 * 8;
+/// magic, image length, entry, peer entry, console return, input return,
+/// yield return, exit return, failure, mode cell.
+pub(super) const header_bytes: usize = 10 * 8;
 
 pub(super) struct artifact {
     /// The relocation-free wrapper the kernel link consumes.
@@ -99,6 +99,10 @@ pub(super) struct artifact {
     pub(super) image: Vec<u8>,
     /// Addresses the kernel harness checks against its own mapping.
     pub(super) entry: u64,
+    /// The door a second task is entered at. The same image serves both, so
+    /// this is an address in the one code extent rather than a payload of its
+    /// own.
+    pub(super) peer_entry: u64,
     pub(super) failed: u64,
     pub(super) console_return: u64,
     pub(super) input_return: u64,
@@ -248,6 +252,7 @@ pub(super) fn package_image(root: &Path, build: &Path) -> Result<artifact, Strin
         object: wrapper,
         image: image_bytes(root, &elf)?,
         entry: symbol_u64_from_listing(&symbols, "anomalous_ny_vessel_entry")?,
+        peer_entry: symbol_u64_from_listing(&symbols, "anomalous_ny_vessel_peer_entry")?,
         failed: symbol_u64_from_listing(&symbols, "anomalous_ny_vessel_failed")?,
         console_return: symbol_u64_from_listing(&symbols, "anomalous_ny_vessel_console_return")?,
         input_return: symbol_u64_from_listing(&symbols, "anomalous_ny_vessel_input_return")?,
@@ -319,6 +324,7 @@ fn check_layout(artifact: &artifact, symbols: &str) -> Result<(), String> {
     }
     for (name, address) in [
         ("failed", artifact.failed),
+        ("peer_entry", artifact.peer_entry),
         ("console_return", artifact.console_return),
         ("input_return", artifact.input_return),
         ("yield_return", artifact.yield_return),
@@ -413,6 +419,7 @@ fn write_wrapper(root: &Path, output: &Path, artifact: &artifact) -> Result<(), 
         header_magic,
         artifact.image.len() as u64,
         artifact.entry,
+        artifact.peer_entry,
         artifact.console_return,
         artifact.input_return,
         artifact.yield_return,
